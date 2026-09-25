@@ -54,7 +54,8 @@
     <string name="slideshow_effect">Transition</string>
     <string name="library_manage">Photo library</string>
     <string name="library_title">Library</string>
-    <string name="library_empty">No photos yet — send some with the tiles.</string>
+    <string name="library_empty">No photos yet — tap + to add some.</string>
+    <string name="library_hint">Drag the handle to reorder · tap a photo to show it now</string>
     <string name="badge_now">NOW</string>
     <string name="badge_next">NEXT</string>
     <string name="clear_library">Clear all photos</string>

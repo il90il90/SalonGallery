@@ -22,17 +22,20 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BrightnessMedium
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.FilterFrames
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
@@ -66,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -93,6 +97,9 @@ import com.meylon.salongallery.ui.theme.NeonViolet
 import com.meylon.salongallery.ui.theme.NeonVioletLight
 import com.meylon.salongallery.ui.theme.TextPrimary
 import com.meylon.salongallery.ui.theme.TextSecondary
+import com.meylon.salongallery.ui.theme.TextTertiary
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -344,10 +351,12 @@ private fun LibraryButton(onClick: () -> Unit) {
 
 @Composable
 private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var items by remember { mutableStateOf<List<String>>(emptyList()) }
     var current by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
 
     fun refresh() {
         scope.launch {
@@ -358,44 +367,93 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
     }
     LaunchedEffect(Unit) { refresh() }
 
+    val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        busy = true
+        scope.launch {
+            uris.forEach { u ->
+                val b = withContext(Dispatchers.IO) {
+                    runCatching { context.contentResolver.openInputStream(u)?.use { it.readBytes() } }.getOrNull()
+                }
+                if (b != null) PhotoSender.sendPhoto(screen.host, screen.port, b)
+            }
+            busy = false; refresh()
+        }
+    }
+
+    val lazyState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(lazyState) { from, to ->
+        items = items.toMutableList().apply { add(to.index, removeAt(from.index)) }
+    }
+
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(com.meylon.salongallery.ui.theme.ElecBg)) {
             SalonBackground {
                 Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 20.dp, vertical = 16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier.size(42.dp).clip(RoundedCornerShape(50)).border(1.dp, ElecBorder, RoundedCornerShape(50))
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClose() },
-                            contentAlignment = Alignment.Center,
-                        ) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = TextPrimary, modifier = Modifier.size(22.dp)) }
+                        RoundIconBtn(Icons.AutoMirrored.Outlined.ArrowBack) { onClose() }
                         Spacer(Modifier.size(14.dp))
                         Text("${stringResource(R.string.library_title)} · ${items.size}", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                        Spacer(Modifier.weight(1f))
+                        if (busy) CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                        else RoundIconBtn(Icons.Outlined.Add, accent = true) {
+                            addPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
                     }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.library_hint), style = MaterialTheme.typography.labelMedium, color = TextTertiary)
+                    Spacer(Modifier.height(12.dp))
                     when {
                         loading -> Box(Modifier.fillMaxWidth().padding(40.dp), Alignment.Center) { CircularProgressIndicator(color = NeonCyan) }
                         items.isEmpty() -> Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                        else -> LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        else -> LazyColumn(state = lazyState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             itemsIndexed(items, key = { _, n -> n }) { i, name ->
-                                LibraryRow(
-                                    thumbUrl = PhotoSender.thumbUrl(screen.host, screen.port, name),
-                                    index = i,
-                                    isNow = i == current,
-                                    isNext = items.size > 1 && i == (current + 1) % items.size,
-                                    onShow = { scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refresh() } },
-                                    onUp = if (i > 0) ({
-                                        items = items.toMutableList().apply { add(i - 1, removeAt(i)) }
-                                        scope.launch { PhotoSender.reorder(screen.host, screen.port, items) }
-                                    }) else null,
-                                    onDown = if (i < items.size - 1) ({
-                                        items = items.toMutableList().apply { add(i + 1, removeAt(i)) }
-                                        scope.launch { PhotoSender.reorder(screen.host, screen.port, items) }
-                                    }) else null,
-                                    onDelete = {
-                                        items = items.filterIndexed { j, _ -> j != i }
-                                        scope.launch { PhotoSender.deletePhoto(screen.host, screen.port, name); refresh() }
-                                    },
-                                )
+                                ReorderableItem(reorderState, key = name) { isDragging ->
+                                    val isNow = i == current
+                                    val isNext = items.size > 1 && i == (current + 1) % items.size
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .border(
+                                                if (isNow || isDragging) 1.5.dp else 1.dp,
+                                                if (isDragging) NeonViolet else if (isNow) NeonCyan else ElecBorder,
+                                                RoundedCornerShape(16.dp),
+                                            )
+                                            .background(ElecSurface)
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        AsyncImage(
+                                            model = PhotoSender.thumbUrl(screen.host, screen.port, name),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.size(58.dp).clip(RoundedCornerShape(10.dp))
+                                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                                    scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refresh() }
+                                                },
+                                        )
+                                        Spacer(Modifier.size(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text("#${i + 1}", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                                            if (isNow) Badge(stringResource(R.string.badge_now), NeonCyan)
+                                            else if (isNext) Badge(stringResource(R.string.badge_next), NeonViolet)
+                                        }
+                                        Icon(
+                                            Icons.Outlined.DragIndicator, contentDescription = "Drag to reorder",
+                                            tint = TextSecondary,
+                                            modifier = Modifier
+                                                .size(40.dp).padding(8.dp)
+                                                .draggableHandle(
+                                                    onDragStopped = { scope.launch { PhotoSender.reorder(screen.host, screen.port, items) } },
+                                                ),
+                                        )
+                                        SmallBtn(Icons.Outlined.Close, Color(0xFFF87171)) {
+                                            items = items.filterIndexed { j, _ -> j != i }
+                                            scope.launch { PhotoSender.deletePhoto(screen.host, screen.port, name); refresh() }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -406,44 +464,13 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
 }
 
 @Composable
-private fun LibraryRow(
-    thumbUrl: String,
-    index: Int,
-    isNow: Boolean,
-    isNext: Boolean,
-    onShow: () -> Unit,
-    onUp: (() -> Unit)?,
-    onDown: (() -> Unit)?,
-    onDelete: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .border(if (isNow) 1.5.dp else 1.dp, if (isNow) NeonCyan else ElecBorder, RoundedCornerShape(16.dp))
-            .background(ElecSurface)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AsyncImage(
-            model = thumbUrl,
-            contentDescription = null,
-            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            modifier = Modifier
-                .size(58.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onShow() },
-        )
-        Spacer(Modifier.size(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text("#${index + 1}", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            if (isNow) Badge(stringResource(R.string.badge_now), NeonCyan)
-            else if (isNext) Badge(stringResource(R.string.badge_next), NeonViolet)
-        }
-        SmallBtn(Icons.Outlined.KeyboardArrowUp, if (onUp != null) TextPrimary else ElecBorder) { onUp?.invoke() }
-        SmallBtn(Icons.Outlined.KeyboardArrowDown, if (onDown != null) TextPrimary else ElecBorder) { onDown?.invoke() }
-        SmallBtn(Icons.Outlined.Close, Color(0xFFF87171)) { onDelete() }
-    }
+private fun RoundIconBtn(icon: ImageVector, accent: Boolean = false, onClick: () -> Unit) {
+    Box(
+        Modifier.size(42.dp).clip(RoundedCornerShape(50))
+            .border(1.dp, if (accent) NeonCyan.copy(alpha = 0.5f) else ElecBorder, RoundedCornerShape(50))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, null, tint = if (accent) NeonCyan else TextPrimary, modifier = Modifier.size(22.dp)) }
 }
 
 @Composable
