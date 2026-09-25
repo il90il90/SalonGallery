@@ -23,8 +23,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meylon.salongallery.data.DeviceRole
 import com.meylon.salongallery.data.RolePreferences
-import com.meylon.salongallery.ui.HomeScreen
+import com.meylon.salongallery.ui.AppActions
+import com.meylon.salongallery.ui.RemoteModeScreen
 import com.meylon.salongallery.ui.RoleSelectionScreen
+import com.meylon.salongallery.ui.ScreenModeScreen
 import com.meylon.salongallery.ui.theme.SalonGalleryTheme
 import com.meylon.salongallery.update.UpdateManager
 import com.meylon.salongallery.update.UpdateStatus
@@ -124,23 +126,29 @@ private fun AppRoot(prefs: RolePreferences) {
         DeviceRole.UNSET -> RoleSelectionScreen(
             onRoleChosen = { chosen -> scope.launch { prefs.setRole(chosen) } }
         )
-        else -> HomeScreen(
-            role = role,
-            version = UpdateManager.currentVersion,
-            isChecking = isChecking,
-            availableVersion = availableVersion,
-            onCheckUpdate = { runCheck(showToast = true) },
-            onInstallUpdate = {
-                apkUrl?.let { url ->
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.downloading_update),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    scope.launch { UpdateManager.downloadAndInstall(context, url) }
-                }
-            },
-            onChangeRole = { scope.launch { prefs.setRole(DeviceRole.UNSET) } },
-        )
+        else -> {
+            val actions = AppActions(
+                version = UpdateManager.currentVersion,
+                isChecking = isChecking,
+                availableVersion = availableVersion,
+                onCheckUpdate = { runCheck(showToast = true) },
+                onInstallUpdate = {
+                    apkUrl?.let { url ->
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.downloading_update),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        scope.launch { UpdateManager.downloadAndInstall(context, url) }
+                    }
+                },
+                onChangeRole = { scope.launch { prefs.setRole(DeviceRole.UNSET) } },
+            )
+            if (role == DeviceRole.SCREEN) {
+                ScreenModeScreen(actions)
+            } else {
+                RemoteModeScreen(actions)
+            }
+        }
     }
 }

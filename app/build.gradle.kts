@@ -24,8 +24,8 @@ android {
         applicationId = "com.meylon.salongallery"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         buildConfigField("String", "GITHUB_OWNER", "\"il90il90\"")
         buildConfigField("String", "GITHUB_REPO", "\"SalonGallery\"")
@@ -85,5 +85,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.nanohttpd)
+    implementation(libs.coil.compose)
     debugImplementation(libs.androidx.ui.tooling)
 }

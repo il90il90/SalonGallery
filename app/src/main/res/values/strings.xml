@@ -21,6 +21,25 @@
     <string name="home_remote_hint">Next up: find screens &amp; send photos</string>
     <string name="change_role">Change role</string>
 
+    <!-- Screen (display) mode -->
+    <string name="screen_overline">Display screen</string>
+    <string name="screen_ready_title">Ready to receive</string>
+    <string name="screen_ready_hint">On your phone, open Salon Gallery as a Remote and pick this screen to send photos.</string>
+    <string name="screen_advertising">Visible on your Wi-Fi</string>
+    <string name="screen_starting">Starting…</string>
+
+    <!-- Remote mode -->
+    <string name="remote_overline">Remote</string>
+    <string name="remote_screens_title">Screens on your network</string>
+    <string name="remote_searching">Searching for screens…</string>
+    <string name="remote_searching_hint">Make sure both devices are on the same Wi-Fi network.</string>
+    <string name="remote_connected">Connected</string>
+    <string name="remote_send_photo">Send a photo</string>
+    <string name="remote_sending">Sending…</string>
+    <string name="remote_sent">Photo sent ✓</string>
+    <string name="remote_send_failed">Couldn\'t send. Try again.</string>
+    <string name="remote_disconnect">Choose another screen</string>
+
     <!-- Updates -->
     <string name="settings">Settings</string>
     <string name="check_update">Check for updates</string>
