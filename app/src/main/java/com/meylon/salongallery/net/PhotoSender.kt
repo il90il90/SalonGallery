@@ -27,6 +27,7 @@ data class LibraryList(
 
 data class AlbumInfo(val id: String, val name: String, val count: Int)
 data class AlbumList(val activeId: String, val activeName: String, val albums: List<AlbumInfo>)
+data class RemoteTransform(val scale: Float, val x: Float, val y: Float)
 
 /** HTTP client used by the Remote to talk to a Display device. */
 object PhotoSender {
@@ -34,6 +35,21 @@ object PhotoSender {
     private const val TIMEOUT = 8_000
 
     fun thumbUrl(host: String, port: Int, name: String) = "http://$host:$port/thumb?id=$name"
+    fun fullUrl(host: String, port: Int, name: String) = "http://$host:$port/full?id=$name"
+
+    suspend fun getTransform(host: String, port: Int, photo: String): RemoteTransform? = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/transform/get?photo=$photo", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val o = JSONObject(body)
+            RemoteTransform(o.optDouble("s", 1.0).toFloat(), o.optDouble("x", 0.0).toFloat(), o.optDouble("y", 0.0).toFloat())
+        } catch (e: Exception) { null }
+    }
+
+    suspend fun setTransform(host: String, port: Int, photo: String, scale: Float, x: Float, y: Float) =
+        get(host, port, "/transform?photo=$photo&scale=$scale&x=$x&y=$y")
 
     suspend fun getList(host: String, port: Int): LibraryList? = withContext(Dispatchers.IO) {
         try {

@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,14 +44,18 @@ import androidx.compose.material.icons.outlined.FilterFrames
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -75,8 +81,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -92,6 +101,7 @@ import com.meylon.salongallery.net.PhotoSender
 import com.meylon.salongallery.net.RemoteSession
 import com.meylon.salongallery.net.ScreenInfo
 import com.meylon.salongallery.ui.components.AccentGradient
+import com.meylon.salongallery.ui.components.GradientButton
 import com.meylon.salongallery.ui.components.OutlineButton
 import com.meylon.salongallery.ui.components.SalonBackground
 import com.meylon.salongallery.ui.components.SectionLabel
@@ -372,6 +382,7 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var showNew by remember { mutableStateOf(false) }
     var addTarget by remember { mutableStateOf<String?>(null) }
+    var studioPhoto by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
         scope.launch {
@@ -493,7 +504,6 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
                                             if (isNow) Badge(stringResource(R.string.badge_now), NeonCyan)
                                             else if (isNext) Badge(stringResource(R.string.badge_next), NeonViolet)
                                         }
-                                        SmallBtn(Icons.Outlined.Folder, NeonTeal) { addTarget = name }
                                         Icon(
                                             Icons.Outlined.DragIndicator, contentDescription = "Drag to reorder",
                                             tint = TextSecondary,
@@ -503,14 +513,19 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
                                                     onDragStopped = { scope.launch { PhotoSender.reorder(screen.host, screen.port, items) } },
                                                 ),
                                         )
-                                        SmallBtn(Icons.Outlined.Close, Color(0xFFF87171)) {
-                                            items = items.filterIndexed { j, _ -> j != i }
-                                            scope.launch {
-                                                if (isAll) PhotoSender.deletePhoto(screen.host, screen.port, name)
-                                                else PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, name)
-                                                refresh()
-                                            }
-                                        }
+                                        RowOverflow(
+                                            isAll = isAll,
+                                            onEdit = { studioPhoto = name },
+                                            onAddAlbum = { addTarget = name },
+                                            onDelete = {
+                                                items = items.filterIndexed { j, _ -> j != i }
+                                                scope.launch {
+                                                    if (isAll) PhotoSender.deletePhoto(screen.host, screen.port, name)
+                                                    else PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, name)
+                                                    refresh()
+                                                }
+                                            },
+                                        )
                                     }
                                 }
                             }
@@ -541,6 +556,122 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
             onNew = { addTarget = null; showNew = true },
             onDismiss = { addTarget = null },
         )
+    }
+    studioPhoto?.let { photo ->
+        StudioDialog(
+            screen = screen,
+            photo = photo,
+            onShowNow = { scope.launch { PhotoSender.showNow(screen.host, screen.port, photo); refresh() } },
+            onClose = { studioPhoto = null; refresh() },
+        )
+    }
+}
+
+@Composable
+private fun RowOverflow(isAll: Boolean, onEdit: () -> Unit, onAddAlbum: () -> Unit, onDelete: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        SmallBtn(Icons.Outlined.MoreVert, TextSecondary) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = com.meylon.salongallery.ui.theme.ElecSurface) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.studio_edit), color = TextPrimary) },
+                leadingIcon = { Icon(Icons.Outlined.Tune, null, tint = NeonCyan) },
+                onClick = { open = false; onEdit() },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.album_add_to), color = TextPrimary) },
+                leadingIcon = { Icon(Icons.Outlined.Folder, null, tint = NeonTeal) },
+                onClick = { open = false; onAddAlbum() },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(if (isAll) R.string.delete else R.string.album_remove_from), color = Color(0xFFF87171)) },
+                leadingIcon = { Icon(Icons.Outlined.Close, null, tint = Color(0xFFF87171)) },
+                onClick = { open = false; onDelete() },
+            )
+        }
+    }
+}
+
+@Composable
+private fun StudioDialog(screen: DiscoveredScreen, photo: String, onShowNow: () -> Unit, onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offX by remember { mutableFloatStateOf(0f) }
+    var offY by remember { mutableFloatStateOf(0f) }
+    var aspect by remember { mutableFloatStateOf(0.46f) }
+    var boxW by remember { mutableIntStateOf(0) }
+    var boxH by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        PhotoSender.getInfo(screen.host, screen.port)?.let { if (it.widthPx > 0 && it.heightPx > 0) aspect = it.widthPx.toFloat() / it.heightPx }
+        PhotoSender.getTransform(screen.host, screen.port, photo)?.let { scale = it.scale; offX = it.x; offY = it.y }
+    }
+
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(com.meylon.salongallery.ui.theme.ElecBg)) {
+            SalonBackground {
+                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RoundIconBtn(Icons.AutoMirrored.Outlined.ArrowBack) { onClose() }
+                        Spacer(Modifier.size(14.dp))
+                        Text(stringResource(R.string.studio_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(stringResource(R.string.studio_hint), style = MaterialTheme.typography.labelMedium, color = TextTertiary)
+
+                    Spacer(Modifier.weight(1f))
+                    // Preview box in the exact screen aspect ratio.
+                    Box(
+                        Modifier.fillMaxWidth().aspectRatio(aspect)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color.Black)
+                            .border(1.dp, ElecBorder, RoundedCornerShape(14.dp))
+                            .onSizeChanged { boxW = it.width; boxH = it.height }
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    if (boxW > 0) offX = (offX + pan.x / boxW).coerceIn(-0.5f, 0.5f)
+                                    if (boxH > 0) offY = (offY + pan.y / boxH).coerceIn(-0.5f, 0.5f)
+                                }
+                            },
+                    ) {
+                        AsyncImage(
+                            model = PhotoSender.fullUrl(screen.host, screen.port, photo),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().graphicsLayer {
+                                scaleX = scale; scaleY = scale
+                                translationX = offX * size.width; translationY = offY * size.height
+                            },
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlineButton(
+                            text = stringResource(R.string.studio_reset),
+                            modifier = Modifier.weight(1f),
+                            onClick = { scale = 1f; offX = 0f; offY = 0f },
+                        )
+                        OutlineButton(
+                            text = stringResource(R.string.studio_shownow),
+                            modifier = Modifier.weight(1f),
+                            onClick = onShowNow,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    GradientButton(
+                        text = stringResource(R.string.studio_save),
+                        onClick = {
+                            scope.launch {
+                                PhotoSender.setTransform(screen.host, screen.port, photo, scale, offX, offY)
+                                onClose()
+                            }
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 

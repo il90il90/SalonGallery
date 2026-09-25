@@ -66,6 +66,14 @@
     <string name="album_add_to">Add to album</string>
     <string name="album_none_yet">No albums yet — create one below.</string>
     <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="album_remove_from">Remove from album</string>
+    <string name="studio_edit">Edit in Studio</string>
+    <string name="studio_title">Studio</string>
+    <string name="studio_hint">Pinch to zoom · drag to position · preview matches the screen</string>
+    <string name="studio_reset">Reset</string>
+    <string name="studio_shownow">Show now</string>
+    <string name="studio_save">Save</string>
     <string name="badge_now">NOW</string>
     <string name="badge_next">NEXT</string>
     <string name="clear_library">Clear all photos</string>

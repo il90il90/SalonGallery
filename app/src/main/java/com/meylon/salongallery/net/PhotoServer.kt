@@ -29,6 +29,10 @@ interface ScreenCommands {
     fun setActiveAlbum(id: String)
     fun addToAlbum(id: String, photo: String)
     fun removeFromAlbum(id: String, photo: String)
+    // Studio (per-photo crop)
+    fun fullPhoto(name: String): ByteArray?
+    fun onTransform(photo: String, scale: Float, x: Float, y: Float)
+    fun transformJson(photo: String): String
 }
 
 /**
@@ -127,6 +131,28 @@ class PhotoServer(
                 val id = session.parameters["id"]?.firstOrNull()
                 val photo = session.parameters["photo"]?.firstOrNull()
                 if (id != null && photo != null) commands.removeFromAlbum(id, photo); ok()
+            }
+
+            session.method == Method.GET && uri == "/full" -> {
+                val name = session.parameters["id"]?.firstOrNull()
+                val bytes = name?.let { commands.fullPhoto(it) }
+                if (bytes == null) newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "no photo")
+                else newFixedLengthResponse(
+                    Response.Status.OK, "image/jpeg",
+                    java.io.ByteArrayInputStream(bytes), bytes.size.toLong(),
+                )
+            }
+            session.method == Method.GET && uri == "/transform" -> {
+                val photo = session.parameters["photo"]?.firstOrNull()
+                val s = session.parameters["scale"]?.firstOrNull()?.toFloatOrNull()
+                val x = session.parameters["x"]?.firstOrNull()?.toFloatOrNull()
+                val y = session.parameters["y"]?.firstOrNull()?.toFloatOrNull()
+                if (photo != null && s != null && x != null && y != null) commands.onTransform(photo, s, x, y)
+                ok()
+            }
+            session.method == Method.GET && uri == "/transform/get" -> {
+                val photo = session.parameters["photo"]?.firstOrNull()
+                json(if (photo != null) commands.transformJson(photo) else """{"s":1,"x":0,"y":0}""")
             }
 
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "not found")

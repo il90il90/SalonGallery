@@ -69,6 +69,7 @@ import coil.compose.AsyncImage
 import com.meylon.salongallery.R
 import com.meylon.salongallery.net.DisplayMode
 import com.meylon.salongallery.net.PhotoFit
+import com.meylon.salongallery.net.PhotoTransform
 import com.meylon.salongallery.net.ScreenOrientation
 import com.meylon.salongallery.net.SlideEffect
 import com.meylon.salongallery.net.ScreenSessionHolder
@@ -200,6 +201,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         shuffle = shuffle,
                         effect = effect,
                         fit = photoFit,
+                        transformOf = { session.transformFor(it.name) },
                         onNext = { session.currentIndex.value = it },
                     )
                 }
@@ -236,6 +238,7 @@ private fun Slideshow(
     shuffle: Boolean,
     effect: SlideEffect,
     fit: PhotoFit,
+    transformOf: (File) -> PhotoTransform,
     onNext: (Int) -> Unit,
 ) {
     if (files.isEmpty()) return
@@ -264,36 +267,38 @@ private fun Slideshow(
         label = "slide",
     ) { i ->
         val file = files[i.coerceIn(0, files.size - 1)]
-        val scaleMod = if (effect == SlideEffect.KENBURNS) {
-            val scale = remember(i) { Animatable(1f) }
-            LaunchedEffect(i) { scale.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
-            Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value }
-        } else Modifier
-        PhotoContent(file, fit, scaleMod)
+        val kb = if (effect == SlideEffect.KENBURNS) {
+            val a = remember(i) { Animatable(1f) }
+            LaunchedEffect(i) { a.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
+            a
+        } else null
+        PhotoContent(file, fit, transformOf(file)) { kb?.value ?: 1f }
     }
 }
 
+/** Renders one photo, applying its studio [transform] and an optional Ken-Burns [kb] zoom. */
 @Composable
-private fun PhotoContent(file: File, fit: PhotoFit, scaleMod: Modifier) {
+fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, kb: () -> Float = { 1f }) {
+    val cropMod = Modifier.fillMaxSize().graphicsLayer {
+        val s = transform.scale * kb()
+        scaleX = s; scaleY = s
+        translationX = transform.offX * size.width
+        translationY = transform.offY * size.height
+    }
     when (fit) {
         PhotoFit.FILL -> AsyncImage(
-            model = file, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().then(scaleMod),
+            model = file, contentDescription = null, contentScale = ContentScale.Crop, modifier = cropMod,
         )
         PhotoFit.FIT -> AsyncImage(
-            model = file, contentDescription = null, contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize().then(scaleMod),
+            model = file, contentDescription = null, contentScale = ContentScale.Fit, modifier = cropMod,
         )
         PhotoFit.BLUR -> Box(Modifier.fillMaxSize()) {
-            // Blurred, zoomed copy fills the background so there are no black bars…
             AsyncImage(
                 model = file, contentDescription = null, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().blur(28.dp).graphicsLayer { scaleX = 1.1f; scaleY = 1.1f },
             )
-            // …with the whole photo shown, in focus, on top.
             AsyncImage(
-                model = file, contentDescription = null, contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize().then(scaleMod),
+                model = file, contentDescription = null, contentScale = ContentScale.Fit, modifier = cropMod,
             )
         }
     }

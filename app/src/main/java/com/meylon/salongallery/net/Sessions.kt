@@ -28,11 +28,14 @@ class ScreenSession(
 
     val library = LibraryStore(File(app.filesDir, "library"))
     val albums = AlbumStore(File(app.filesDir, "albums.json"), library)
+    val transforms = TransformStore(File(app.filesDir, "transforms.json"))
     val videoFile = File(app.filesDir, "display_current.mp4")
     val musicFile = File(app.filesDir, "display_music.m4a")
 
     /** Files for the active album (or the whole library), in order. */
     fun activeFiles(): List<File> = albums.activePhotoNames().mapNotNull { library.fileFor(it) }
+
+    fun transformFor(name: String): PhotoTransform = transforms.get(name)
 
     val mode = MutableStateFlow(if (library.count() > 0) DisplayMode.SLIDESHOW else DisplayMode.WAITING)
     val libraryVersion = MutableStateFlow(0L)
@@ -191,6 +194,7 @@ class ScreenSession(
         runCatching {
             library.delete(name)
             albums.onPhotoDeleted(name)
+            transforms.remove(name)
             val names = albums.activePhotoNames()
             if (names.isEmpty() && mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
             currentIndex.value = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)
@@ -250,6 +254,21 @@ class ScreenSession(
         albums.removeFromAlbum(id, photo)
         currentIndex.value = currentIndex.value.coerceIn(0, maxOf(0, albums.activePhotoNames().size - 1))
         libraryVersion.value = System.currentTimeMillis()
+    }
+
+    // ---- Studio (per-photo crop) ----
+
+    override fun fullPhoto(name: String): ByteArray? =
+        library.fileFor(name)?.let { runCatching { it.readBytes() }.getOrNull() }
+
+    override fun onTransform(photo: String, scale: Float, x: Float, y: Float) {
+        transforms.set(photo, PhotoTransform(scale.coerceIn(1f, 5f), x.coerceIn(-0.5f, 0.5f), y.coerceIn(-0.5f, 0.5f)))
+        libraryVersion.value = System.currentTimeMillis()
+    }
+
+    override fun transformJson(photo: String): String {
+        val t = transforms.get(photo)
+        return """{"s":${t.scale},"x":${t.offX},"y":${t.offY}}"""
     }
 }
 
