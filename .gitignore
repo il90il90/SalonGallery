@@ -1,0 +1,26 @@
+# Built application files / Gradle
+*.iml
+.gradle/
+build/
+/build/
+.cxx/
+.externalNativeBuild/
+captures/
+
+# IDE
+/.idea/
+*.iws
+*.ipr
+
+# Local config & secrets (never commit)
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# OS
+.DS_Store
+
+# Release artifacts
+*.apk
+*.aab
