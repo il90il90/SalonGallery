@@ -13,6 +13,8 @@ interface ScreenCommands {
     fun onSlideshow(intervalMs: Long, shuffle: Boolean)
     fun onEffect(effect: String)
     fun onFit(fit: String)
+    fun onText(content: String, pos: String, size: String, color: String)
+    fun onClock(on: Boolean)
     fun onOrientation(o: String)
     fun onClear()
     // Library management
@@ -79,6 +81,17 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/fit" -> {
                 session.parameters["f"]?.firstOrNull()?.let { commands.onFit(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/text" -> {
+                commands.onText(
+                    session.parameters["content"]?.firstOrNull().orEmpty(),
+                    session.parameters["pos"]?.firstOrNull() ?: "bottom",
+                    session.parameters["size"]?.firstOrNull() ?: "m",
+                    session.parameters["color"]?.firstOrNull() ?: "white",
+                ); ok()
+            }
+            session.method == Method.GET && uri == "/clock" -> {
+                commands.onClock(session.parameters["on"]?.firstOrNull() == "1"); ok()
             }
             session.method == Method.GET && uri == "/orientation" -> {
                 session.parameters["o"]?.firstOrNull()?.let { commands.onOrientation(it) }; ok()

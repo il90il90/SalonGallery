@@ -23,6 +23,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,13 +49,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
@@ -73,6 +79,8 @@ import com.meylon.salongallery.net.PhotoTransform
 import com.meylon.salongallery.net.ScreenOrientation
 import com.meylon.salongallery.net.SlideEffect
 import com.meylon.salongallery.net.ScreenSessionHolder
+import com.meylon.salongallery.net.TextOverlay
+import com.meylon.salongallery.net.TextPos
 import com.meylon.salongallery.ui.components.LogoChip
 import com.meylon.salongallery.ui.components.SalonBackground
 import com.meylon.salongallery.ui.components.SectionLabel
@@ -107,6 +115,8 @@ fun ScreenModeScreen(actions: AppActions) {
     val shuffle by session.shuffle.collectAsStateWithLifecycle()
     val effect by session.effect.collectAsStateWithLifecycle()
     val photoFit by session.photoFit.collectAsStateWithLifecycle()
+    val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
+    val clockOn by session.clockOn.collectAsStateWithLifecycle()
     val orientation by session.orientation.collectAsStateWithLifecycle()
     val brightness by session.brightness.collectAsStateWithLifecycle()
     val running by session.running.collectAsStateWithLifecycle()
@@ -208,6 +218,8 @@ fun ScreenModeScreen(actions: AppActions) {
 
             else -> WaitingToPair(deviceName = deviceName, running = running)
         }
+
+        if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clockOn)
     }
 
     if (showSettings) {
@@ -302,6 +314,50 @@ fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, kb: () ->
             )
         }
     }
+}
+
+@Composable
+private fun BoxScope.OverlayLayer(text: TextOverlay, clockOn: Boolean) {
+    if (clockOn) ClockText(Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(28.dp))
+    if (text.content.isNotBlank()) {
+        val align = when (text.pos) {
+            TextPos.TOP -> Alignment.TopCenter
+            TextPos.CENTER -> Alignment.Center
+            TextPos.BOTTOM -> Alignment.BottomCenter
+        }
+        Text(
+            text.content,
+            modifier = Modifier.align(align).safeDrawingPadding().padding(horizontal = 24.dp, vertical = 44.dp),
+            style = TextStyle(
+                fontSize = overlaySize(text.size),
+                fontWeight = FontWeight.Bold,
+                color = overlayColor(text.color),
+                textAlign = TextAlign.Center,
+                shadow = Shadow(Color.Black.copy(alpha = 0.7f), Offset(0f, 4f), 16f),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun ClockText(modifier: Modifier) {
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
+    val time = remember(now / 60000) { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(now)) }
+    val date = remember(now / 3600000) { java.text.SimpleDateFormat("EEE, d MMM", java.util.Locale.getDefault()).format(java.util.Date(now)) }
+    Column(modifier) {
+        Text(time, style = TextStyle(fontSize = 46.sp, fontWeight = FontWeight.Bold, color = Color.White, shadow = Shadow(Color.Black.copy(0.7f), Offset(0f, 3f), 14f)))
+        Text(date, style = TextStyle(fontSize = 18.sp, color = Color.White.copy(0.9f), shadow = Shadow(Color.Black.copy(0.7f), Offset(0f, 2f), 10f)))
+    }
+}
+
+private fun overlaySize(s: String) = when (s.lowercase()) { "s" -> 32.sp; "l" -> 82.sp; else -> 54.sp }
+private fun overlayColor(c: String) = when (c.lowercase()) {
+    "black" -> Color(0xFF000000)
+    "gold" -> Color(0xFFD9BE8B)
+    "cyan" -> Color(0xFF22D3EE)
+    "violet" -> Color(0xFFA78BFA)
+    else -> Color.White
 }
 
 @Composable

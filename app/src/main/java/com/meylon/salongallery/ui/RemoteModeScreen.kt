@@ -49,6 +49,7 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.VolumeUp
@@ -64,6 +65,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -229,6 +231,7 @@ private fun ControlPanel(
     var showFrames by remember { mutableStateOf(false) }
     var showSlideshow by remember { mutableStateOf(false) }
     var showLibrary by remember { mutableStateOf(false) }
+    var showText by remember { mutableStateOf(false) }
 
     suspend fun readBytes(uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
         runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
@@ -289,6 +292,9 @@ private fun ControlPanel(
         Spacer(Modifier.height(10.dp))
         WideButton(Icons.Outlined.Slideshow, stringResource(R.string.tile_slideshow), NeonBlue) { showSlideshow = true }
 
+        Spacer(Modifier.height(10.dp))
+        WideButton(Icons.Outlined.TextFields, stringResource(R.string.tile_text), NeonVioletLight) { showText = true }
+
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             ActionTile(Modifier.weight(1f), Icons.Outlined.PhotoLibrary, stringResource(R.string.tile_photos), NeonCyan, !busy) {
@@ -344,6 +350,23 @@ private fun ControlPanel(
     }
     if (showLibrary) {
         LibraryManager(screen = screen, onClose = { showLibrary = false; onInfoRefresh(scope) })
+    }
+    if (showText) {
+        TextSheet(
+            onApply = { content, pos, size, color, clock ->
+                scope.launch {
+                    PhotoSender.setText(screen.host, screen.port, content, pos, size, color)
+                    PhotoSender.setClock(screen.host, screen.port, clock)
+                }
+            },
+            onClear = {
+                scope.launch {
+                    PhotoSender.setText(screen.host, screen.port, "", "bottom", "m", "white")
+                    PhotoSender.setClock(screen.host, screen.port, false)
+                }
+            },
+            onDismiss = { showText = false },
+        )
     }
 }
 
@@ -993,6 +1016,61 @@ private fun SlideshowSheet(
             val orients = listOf("auto", "portrait", "landscape")
             SegRow(listOf("Auto", "Portrait", "Landscape"), orients.indexOf(orientation).coerceAtLeast(0)) { onOrientation(orients[it]) }
             Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TextSheet(
+    onApply: (String, String, String, String, Boolean) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var content by remember { mutableStateOf("") }
+    var posIdx by remember { mutableIntStateOf(2) }
+    var sizeIdx by remember { mutableIntStateOf(1) }
+    var colorIdx by remember { mutableIntStateOf(0) }
+    var clock by remember { mutableStateOf(false) }
+    val positions = listOf("top", "center", "bottom")
+    val sizes = listOf("s", "m", "l")
+    val colors = listOf("white", "black", "gold", "cyan", "violet")
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
+            Text(stringResource(R.string.text_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = content, onValueChange = { content = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(stringResource(R.string.text_hint), color = TextTertiary) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+                    focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+                ),
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.text_position), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            SegRow(listOf("Top", "Center", "Bottom"), posIdx) { posIdx = it }
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.text_size), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            SegRow(listOf("S", "M", "L"), sizeIdx) { sizeIdx = it }
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.text_color), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            SegRow(listOf("White", "Black", "Gold", "Cyan", "Violet"), colorIdx) { colorIdx = it }
+            Spacer(Modifier.height(18.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.text_clock), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                Switch(checked = clock, onCheckedChange = { clock = it })
+            }
+            Spacer(Modifier.height(20.dp))
+            GradientButton(text = stringResource(R.string.text_apply), onClick = { onApply(content, positions[posIdx], sizes[sizeIdx], colors[colorIdx], clock) })
+            Spacer(Modifier.height(12.dp))
+            OutlineButton(text = stringResource(R.string.text_clear), onClick = { content = ""; clock = false; onClear() })
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

@@ -46,6 +46,8 @@ class ScreenSession(
     val shuffle = MutableStateFlow(false)
     val effect = MutableStateFlow(SlideEffect.FADE)
     val photoFit = MutableStateFlow(PhotoFit.FILL)
+    val textOverlay = MutableStateFlow(TextOverlay())
+    val clockOn = MutableStateFlow(false)
     val orientation = MutableStateFlow(ScreenOrientation.AUTO)
     val brightness = MutableStateFlow(-1f)
     val running = MutableStateFlow(false)
@@ -146,6 +148,12 @@ class ScreenSession(
     override fun onFit(fit: String) {
         this.photoFit.value = PhotoFit.from(fit)
     }
+
+    override fun onText(content: String, pos: String, size: String, color: String) {
+        textOverlay.value = TextOverlay(content, TextPos.from(pos), size, color)
+    }
+
+    override fun onClock(on: Boolean) { clockOn.value = on }
 
     override fun onOrientation(o: String) {
         orientation.value = when (o.lowercase()) {

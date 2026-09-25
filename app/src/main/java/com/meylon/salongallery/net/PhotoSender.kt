@@ -167,6 +167,12 @@ object PhotoSender {
     suspend fun setFit(host: String, port: Int, fit: String) =
         get(host, port, "/fit?f=$fit")
 
+    suspend fun setText(host: String, port: Int, content: String, pos: String, size: String, color: String) =
+        get(host, port, "/text?content=${enc(content)}&pos=$pos&size=$size&color=$color")
+
+    suspend fun setClock(host: String, port: Int, on: Boolean) =
+        get(host, port, "/clock?on=${if (on) 1 else 0}")
+
     suspend fun setOrientation(host: String, port: Int, o: String) =
         get(host, port, "/orientation?o=$o")
 

@@ -22,6 +22,18 @@ enum class PhotoFit { FILL, FIT, BLUR;
     }
 }
 
+enum class TextPos { TOP, CENTER, BOTTOM;
+    companion object { fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: BOTTOM }
+}
+
+/** A text overlay shown on the display over the media. */
+data class TextOverlay(
+    val content: String = "",
+    val pos: TextPos = TextPos.BOTTOM,
+    val size: String = "m",     // s | m | l
+    val color: String = "white",
+)
+
 /**
  * A growing, ORDERED library of photos on the Display device. The order is kept in
  * `order.txt` so the Remote can reorder, delete and jump between photos.
