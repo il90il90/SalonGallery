@@ -164,7 +164,7 @@ fun ScreenModeScreen(actions: AppActions) {
         onDispose {}
     }
 
-    val files = remember(libraryVersion) { session.library.list() }
+    val files = remember(libraryVersion) { session.activeFiles() }
 
     Box(
         modifier = Modifier

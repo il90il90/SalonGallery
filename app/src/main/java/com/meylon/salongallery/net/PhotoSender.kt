@@ -16,8 +16,17 @@ data class ScreenInfo(
     val photoCount: Int,
 )
 
-/** The Display's current library, as seen by the Remote. */
-data class LibraryList(val current: Int, val mode: String, val items: List<String>)
+/** The Display's current (active-album) library, as seen by the Remote. */
+data class LibraryList(
+    val current: Int,
+    val mode: String,
+    val albumId: String,
+    val albumName: String,
+    val items: List<String>,
+)
+
+data class AlbumInfo(val id: String, val name: String, val count: Int)
+data class AlbumList(val activeId: String, val activeName: String, val albums: List<AlbumInfo>)
 
 /** HTTP client used by the Remote to talk to a Display device. */
 object PhotoSender {
@@ -35,9 +44,46 @@ object PhotoSender {
             val o = JSONObject(body)
             val arr = o.optJSONArray("items")
             val items = buildList { if (arr != null) for (i in 0 until arr.length()) add(arr.optString(i)) }
-            LibraryList(o.optInt("current", 0), o.optString("mode", ""), items)
+            LibraryList(
+                o.optInt("current", 0), o.optString("mode", ""),
+                o.optString("albumId", "all"), o.optString("album", "All"), items,
+            )
         } catch (e: Exception) { null }
     }
+
+    suspend fun getAlbums(host: String, port: Int): AlbumList? = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/albums", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val o = JSONObject(body)
+            val arr = o.optJSONArray("albums")
+            val list = buildList {
+                if (arr != null) for (i in 0 until arr.length()) {
+                    val a = arr.getJSONObject(i)
+                    add(AlbumInfo(a.optString("id"), a.optString("name"), a.optInt("count")))
+                }
+            }
+            AlbumList(o.optString("active", "all"), o.optString("activeName", "All"), list)
+        } catch (e: Exception) { null }
+    }
+
+    private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+    suspend fun createAlbum(host: String, port: Int, name: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/album/create?name=${enc(name)}", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            JSONObject(body).optString("id").ifEmpty { null }
+        } catch (e: Exception) { null }
+    }
+    suspend fun renameAlbum(host: String, port: Int, id: String, name: String) = get(host, port, "/album/rename?id=$id&name=${enc(name)}")
+    suspend fun deleteAlbum(host: String, port: Int, id: String) = get(host, port, "/album/delete?id=$id")
+    suspend fun setActiveAlbum(host: String, port: Int, id: String) = get(host, port, "/album/active?id=$id")
+    suspend fun addToAlbum(host: String, port: Int, id: String, photo: String) = get(host, port, "/album/add?id=$id&photo=$photo")
+    suspend fun removeFromAlbum(host: String, port: Int, id: String, photo: String) = get(host, port, "/album/remove?id=$id&photo=$photo")
 
     suspend fun deletePhoto(host: String, port: Int, name: String) = get(host, port, "/delete?id=$name")
     suspend fun showNow(host: String, port: Int, name: String) = get(host, port, "/shownow?id=$name")

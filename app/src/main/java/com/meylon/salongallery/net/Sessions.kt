@@ -27,8 +27,12 @@ class ScreenSession(
     private var musicPlayer: MediaPlayer? = null
 
     val library = LibraryStore(File(app.filesDir, "library"))
+    val albums = AlbumStore(File(app.filesDir, "albums.json"), library)
     val videoFile = File(app.filesDir, "display_current.mp4")
     val musicFile = File(app.filesDir, "display_music.m4a")
+
+    /** Files for the active album (or the whole library), in order. */
+    fun activeFiles(): List<File> = albums.activePhotoNames().mapNotNull { library.fileFor(it) }
 
     val mode = MutableStateFlow(if (library.count() > 0) DisplayMode.SLIDESHOW else DisplayMode.WAITING)
     val libraryVersion = MutableStateFlow(0L)
@@ -87,7 +91,8 @@ class ScreenSession(
 
     override fun onPhoto(bytes: ByteArray) {
         runCatching {
-            library.add(bytes)
+            val f = library.add(bytes)
+            if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
             mode.value = DisplayMode.SLIDESHOW
             libraryVersion.value = System.currentTimeMillis()
         }
@@ -150,6 +155,7 @@ class ScreenSession(
     override fun onClear() {
         runCatching {
             library.clear()
+            albums.onPhotosCleared()
             if (mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
             currentIndex.value = 0
             libraryVersion.value = System.currentTimeMillis()
@@ -157,10 +163,11 @@ class ScreenSession(
     }
 
     override fun listJson(): String {
-        val names = library.names()
+        val names = albums.activePhotoNames()
         val cur = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)
         val items = names.joinToString(",") { "\"${esc(it)}\"" }
-        return """{"current":$cur,"mode":"${mode.value.name}","items":[$items]}"""
+        return """{"current":$cur,"mode":"${mode.value.name}","album":"${esc(albums.activeName())}",""" +
+            """"albumId":"${esc(albums.activeId)}","items":[$items]}"""
     }
 
     override fun thumbnail(name: String): ByteArray? {
@@ -183,7 +190,8 @@ class ScreenSession(
     override fun deletePhoto(name: String) {
         runCatching {
             library.delete(name)
-            val names = library.names()
+            albums.onPhotoDeleted(name)
+            val names = albums.activePhotoNames()
             if (names.isEmpty() && mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
             currentIndex.value = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)
             libraryVersion.value = System.currentTimeMillis()
@@ -192,7 +200,7 @@ class ScreenSession(
 
     override fun showNow(name: String) {
         runCatching {
-            val idx = library.names().indexOf(name)
+            val idx = albums.activePhotoNames().indexOf(name)
             if (idx >= 0) {
                 if (mode.value != DisplayMode.SLIDESHOW) mode.value = DisplayMode.SLIDESHOW
                 currentIndex.value = idx
@@ -202,10 +210,46 @@ class ScreenSession(
 
     override fun reorder(names: List<String>) {
         runCatching {
-            library.reorder(names)
-            currentIndex.value = currentIndex.value.coerceIn(0, maxOf(0, library.count() - 1))
+            if (albums.isAllActive()) library.reorder(names) else albums.reorderAlbum(albums.activeId, names)
+            currentIndex.value = currentIndex.value.coerceIn(0, maxOf(0, albums.activePhotoNames().size - 1))
             libraryVersion.value = System.currentTimeMillis()
         }
+    }
+
+    // ---- Albums ----
+
+    override fun albumsJson(): String = albums.albumsJson()
+
+    override fun createAlbum(name: String): String {
+        val id = albums.createAlbum(name)
+        return id
+    }
+
+    override fun renameAlbum(id: String, name: String) { albums.renameAlbum(id, name) }
+
+    override fun deleteAlbum(id: String) {
+        albums.deleteAlbum(id)
+        currentIndex.value = 0
+        libraryVersion.value = System.currentTimeMillis()
+    }
+
+    override fun setActiveAlbum(id: String) {
+        albums.setActive(id)
+        currentIndex.value = 0
+        if (activeFiles().isNotEmpty()) mode.value = DisplayMode.SLIDESHOW
+        else if (mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
+        libraryVersion.value = System.currentTimeMillis()
+    }
+
+    override fun addToAlbum(id: String, photo: String) {
+        albums.addToAlbum(id, photo)
+        libraryVersion.value = System.currentTimeMillis()
+    }
+
+    override fun removeFromAlbum(id: String, photo: String) {
+        albums.removeFromAlbum(id, photo)
+        currentIndex.value = currentIndex.value.coerceIn(0, maxOf(0, albums.activePhotoNames().size - 1))
+        libraryVersion.value = System.currentTimeMillis()
     }
 }
 

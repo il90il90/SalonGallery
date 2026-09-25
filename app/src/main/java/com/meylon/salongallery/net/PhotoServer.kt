@@ -21,6 +21,14 @@ interface ScreenCommands {
     fun deletePhoto(name: String)
     fun showNow(name: String)
     fun reorder(names: List<String>)
+    // Albums
+    fun albumsJson(): String
+    fun createAlbum(name: String): String   // returns new album id
+    fun renameAlbum(id: String, name: String)
+    fun deleteAlbum(id: String)
+    fun setActiveAlbum(id: String)
+    fun addToAlbum(id: String, photo: String)
+    fun removeFromAlbum(id: String, photo: String)
 }
 
 /**
@@ -92,6 +100,33 @@ class PhotoServer(
             session.method == Method.GET && uri == "/reorder" -> {
                 val names = session.parameters["names"]?.firstOrNull()?.split(",")?.filter { it.isNotBlank() }
                 if (names != null) commands.reorder(names); ok()
+            }
+
+            session.method == Method.GET && uri == "/albums" -> json(commands.albumsJson())
+            session.method == Method.GET && uri == "/album/create" -> {
+                val id = commands.createAlbum(session.parameters["name"]?.firstOrNull().orEmpty())
+                json("""{"id":"$id"}""")
+            }
+            session.method == Method.GET && uri == "/album/rename" -> {
+                val id = session.parameters["id"]?.firstOrNull()
+                val name = session.parameters["name"]?.firstOrNull()
+                if (id != null && name != null) commands.renameAlbum(id, name); ok()
+            }
+            session.method == Method.GET && uri == "/album/delete" -> {
+                session.parameters["id"]?.firstOrNull()?.let { commands.deleteAlbum(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/album/active" -> {
+                session.parameters["id"]?.firstOrNull()?.let { commands.setActiveAlbum(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/album/add" -> {
+                val id = session.parameters["id"]?.firstOrNull()
+                val photo = session.parameters["photo"]?.firstOrNull()
+                if (id != null && photo != null) commands.addToAlbum(id, photo); ok()
+            }
+            session.method == Method.GET && uri == "/album/remove" -> {
+                val id = session.parameters["id"]?.firstOrNull()
+                val photo = session.parameters["photo"]?.firstOrNull()
+                if (id != null && photo != null) commands.removeFromAlbum(id, photo); ok()
             }
 
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "not found")

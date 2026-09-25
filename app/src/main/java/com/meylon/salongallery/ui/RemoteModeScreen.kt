@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,9 +35,11 @@ import androidx.compose.material.icons.outlined.BrightnessMedium
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.FilterFrames
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.MusicNote
@@ -45,14 +48,18 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -79,6 +86,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.meylon.salongallery.R
+import com.meylon.salongallery.net.AlbumInfo
 import com.meylon.salongallery.net.DiscoveredScreen
 import com.meylon.salongallery.net.PhotoSender
 import com.meylon.salongallery.net.RemoteSession
@@ -351,19 +359,26 @@ private fun LibraryButton(onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var items by remember { mutableStateOf<List<String>>(emptyList()) }
     var current by remember { mutableIntStateOf(0) }
+    var albums by remember { mutableStateOf<List<AlbumInfo>>(emptyList()) }
+    var activeId by remember { mutableStateOf("all") }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
+    var showNew by remember { mutableStateOf(false) }
+    var addTarget by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
         scope.launch {
             val l = PhotoSender.getList(screen.host, screen.port)
-            if (l != null) { items = l.items; current = l.current }
+            if (l != null) { items = l.items; current = l.current; activeId = l.albumId }
+            val a = PhotoSender.getAlbums(screen.host, screen.port)
+            if (a != null) albums = a.albums
             loading = false
         }
     }
@@ -387,6 +402,7 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
     val reorderState = rememberReorderableLazyListState(lazyState) { from, to ->
         items = items.toMutableList().apply { add(to.index, removeAt(from.index)) }
     }
+    val isAll = activeId == "all"
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(com.meylon.salongallery.ui.theme.ElecBg)) {
@@ -402,12 +418,48 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
                             addPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
+
+                    Spacer(Modifier.height(14.dp))
+                    // Album chips
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AlbumChip(stringResource(R.string.album_all), isAll) {
+                            scope.launch { PhotoSender.setActiveAlbum(screen.host, screen.port, "all"); refresh() }
+                        }
+                        albums.forEach { al ->
+                            AlbumChip("${al.name} · ${al.count}", activeId == al.id) {
+                                scope.launch { PhotoSender.setActiveAlbum(screen.host, screen.port, al.id); refresh() }
+                            }
+                        }
+                        NewAlbumChip { showNew = true }
+                    }
+                    if (!isAll) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            stringResource(R.string.album_delete),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFFF87171),
+                            modifier = Modifier
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                    val id = activeId
+                                    scope.launch { PhotoSender.deleteAlbum(screen.host, screen.port, id); PhotoSender.setActiveAlbum(screen.host, screen.port, "all"); refresh() }
+                                }
+                                .padding(vertical = 4.dp),
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
                     Text(stringResource(R.string.library_hint), style = MaterialTheme.typography.labelMedium, color = TextTertiary)
                     Spacer(Modifier.height(12.dp))
                     when {
                         loading -> Box(Modifier.fillMaxWidth().padding(40.dp), Alignment.Center) { CircularProgressIndicator(color = NeonCyan) }
-                        items.isEmpty() -> Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        items.isEmpty() -> Text(
+                            stringResource(if (isAll) R.string.library_empty else R.string.album_empty),
+                            style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
+                        )
                         else -> LazyColumn(state = lazyState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             itemsIndexed(items, key = { _, n -> n }) { i, name ->
                                 ReorderableItem(reorderState, key = name) { isDragging ->
@@ -435,24 +487,29 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
                                                     scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refresh() }
                                                 },
                                         )
-                                        Spacer(Modifier.size(12.dp))
+                                        Spacer(Modifier.size(10.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text("#${i + 1}", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
                                             if (isNow) Badge(stringResource(R.string.badge_now), NeonCyan)
                                             else if (isNext) Badge(stringResource(R.string.badge_next), NeonViolet)
                                         }
+                                        SmallBtn(Icons.Outlined.Folder, NeonTeal) { addTarget = name }
                                         Icon(
                                             Icons.Outlined.DragIndicator, contentDescription = "Drag to reorder",
                                             tint = TextSecondary,
                                             modifier = Modifier
-                                                .size(40.dp).padding(8.dp)
+                                                .size(38.dp).padding(8.dp)
                                                 .draggableHandle(
                                                     onDragStopped = { scope.launch { PhotoSender.reorder(screen.host, screen.port, items) } },
                                                 ),
                                         )
                                         SmallBtn(Icons.Outlined.Close, Color(0xFFF87171)) {
                                             items = items.filterIndexed { j, _ -> j != i }
-                                            scope.launch { PhotoSender.deletePhoto(screen.host, screen.port, name); refresh() }
+                                            scope.launch {
+                                                if (isAll) PhotoSender.deletePhoto(screen.host, screen.port, name)
+                                                else PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, name)
+                                                refresh()
+                                            }
                                         }
                                     }
                                 }
@@ -461,6 +518,118 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+
+    if (showNew) {
+        NewAlbumDialog(
+            onCreate = { nm ->
+                showNew = false
+                scope.launch {
+                    val id = PhotoSender.createAlbum(screen.host, screen.port, nm)
+                    if (id != null) PhotoSender.setActiveAlbum(screen.host, screen.port, id)
+                    refresh()
+                }
+            },
+            onDismiss = { showNew = false },
+        )
+    }
+    addTarget?.let { photo ->
+        AddToAlbumSheet(
+            albums = albums,
+            onPick = { id -> addTarget = null; scope.launch { PhotoSender.addToAlbum(screen.host, screen.port, id, photo); refresh() } },
+            onNew = { addTarget = null; showNew = true },
+            onDismiss = { addTarget = null },
+        )
+    }
+}
+
+@Composable
+private fun AlbumChip(label: String, active: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.height(36.dp).clip(RoundedCornerShape(50))
+            .then(if (active) Modifier.background(AccentGradient) else Modifier.border(1.dp, ElecBorder, RoundedCornerShape(50)))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (active) Color(0xFF07121F) else TextPrimary)
+    }
+}
+
+@Composable
+private fun NewAlbumChip(onClick: () -> Unit) {
+    Row(
+        Modifier.height(36.dp).clip(RoundedCornerShape(50)).border(1.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(50))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(Icons.Outlined.CreateNewFolder, null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+        Text(stringResource(R.string.album_new), style = MaterialTheme.typography.labelMedium, color = NeonCyan)
+    }
+}
+
+@Composable
+private fun NewAlbumDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = com.meylon.salongallery.ui.theme.ElecSurface,
+        title = { Text(stringResource(R.string.album_new), color = TextPrimary) },
+        text = {
+            OutlinedTextField(
+                value = name, onValueChange = { name = it }, singleLine = true,
+                placeholder = { Text(stringResource(R.string.album_name_hint), color = TextTertiary) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+                    focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary,
+                    cursorColor = NeonCyan,
+                ),
+            )
+        },
+        confirmButton = { TextButton(onClick = { if (name.isNotBlank()) onCreate(name.trim()) }) { Text(stringResource(R.string.album_create), color = NeonCyan) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel), color = TextSecondary) } },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddToAlbumSheet(albums: List<AlbumInfo>, onPick: (String) -> Unit, onNew: () -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().padding(24.dp)) {
+            Text(stringResource(R.string.album_add_to), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(14.dp))
+            if (albums.isEmpty()) {
+                Text(stringResource(R.string.album_none_yet), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                Spacer(Modifier.height(12.dp))
+            }
+            albums.forEach { al ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, ElecBorder, RoundedCornerShape(14.dp))
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onPick(al.id) }
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Outlined.Folder, null, tint = NeonTeal, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.size(12.dp))
+                    Text("${al.name} · ${al.count}", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onNew() }
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.CreateNewFolder, null, tint = NeonCyan, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.size(12.dp))
+                Text(stringResource(R.string.album_new), style = MaterialTheme.typography.titleMedium, color = NeonCyan)
+            }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
