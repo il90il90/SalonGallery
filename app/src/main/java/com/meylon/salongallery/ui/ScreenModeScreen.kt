@@ -4,9 +4,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.net.Uri
 import android.os.Build
 import android.view.WindowManager
-import android.widget.VideoView
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -26,14 +25,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tv
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +48,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.meylon.salongallery.R
@@ -97,10 +99,24 @@ fun ScreenModeScreen(actions: AppActions) {
     val running by session.running.collectAsStateWithLifecycle()
 
     var showSettings by remember { mutableStateOf(false) }
-    var showControls by remember { mutableStateOf(false) }
-    val chromeVisible = showControls || mode == DisplayMode.WAITING
 
-    // Apply brightness to the window.
+    // A single ExoPlayer, reused for whatever video is set.
+    val exo = remember {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_ALL
+            playWhenReady = true
+        }
+    }
+    DisposableEffect(Unit) { onDispose { exo.release() } }
+    LaunchedEffect(videoVersion, mode) {
+        if (mode == DisplayMode.VIDEO && session.videoFile.exists()) {
+            exo.setMediaItem(MediaItem.fromUri(Uri.fromFile(session.videoFile)))
+            exo.prepare(); exo.play()
+        } else {
+            exo.pause()
+        }
+    }
+
     LaunchedEffect(brightness) {
         activity?.window?.let { w ->
             val lp = w.attributes
@@ -109,7 +125,6 @@ fun ScreenModeScreen(actions: AppActions) {
             w.attributes = lp
         }
     }
-    // Apply orientation.
     LaunchedEffect(orientation) {
         activity?.requestedOrientation = when (orientation) {
             ScreenOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -117,11 +132,14 @@ fun ScreenModeScreen(actions: AppActions) {
             ScreenOrientation.AUTO -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
-    // Immersive: hide system bars unless controls are showing.
-    DisposableEffect(chromeVisible) {
+    // Pure fullscreen: hide the system bars entirely; only reveal them while the
+    // settings sheet is open so it is comfortable to use.
+    DisposableEffect(showSettings) {
         activity?.window?.let { w ->
             val c = WindowCompat.getInsetsController(w, view)
-            if (chromeVisible) c.show(WindowInsetsCompat.Type.systemBars())
+            c.systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (showSettings) c.show(WindowInsetsCompat.Type.systemBars())
             else c.hide(WindowInsetsCompat.Type.systemBars())
         }
         onDispose {}
@@ -136,20 +154,22 @@ fun ScreenModeScreen(actions: AppActions) {
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-            ) { showControls = !showControls },
+            ) { showSettings = true },
     ) {
         when {
             mode == DisplayMode.VIDEO && session.videoFile.exists() ->
                 FramedContent(frameId, Modifier.fillMaxSize()) {
-                    key(videoVersion) {
-                        AndroidView(
-                            factory = { ctx ->
-                                VideoView(ctx).apply { setOnPreparedListener { mp -> mp.isLooping = true; start() } }
-                            },
-                            update = { vv -> vv.setVideoPath(session.videoFile.absolutePath); vv.start() },
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
+                    AndroidView(
+                        factory = { ctx ->
+                            PlayerView(ctx).apply {
+                                player = exo
+                                useController = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                setBackgroundColor(android.graphics.Color.BLACK)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
 
             mode == DisplayMode.SLIDESHOW && files.isNotEmpty() ->
@@ -159,37 +179,12 @@ fun ScreenModeScreen(actions: AppActions) {
 
             else -> WaitingToPair(deviceName = deviceName, running = running)
         }
-
-        // Top gear, visible only when chrome is showing.
-        if (chromeVisible) {
-            Box(Modifier.fillMaxWidth().safeDrawingPadding().padding(16.dp)) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(Color(0x66000000))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { showSettings = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Outlined.Tv, contentDescription = "Settings",
-                        tint = Color.White, modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-        }
     }
 
     if (showSettings) {
         val w = remember { context.resources.displayMetrics.widthPixels }
         val h = remember { context.resources.displayMetrics.heightPixels }
-        val stat = remember {
-            runCatching { android.os.StatFs(context.filesDir.path) }.getOrNull()
-        }
+        val stat = remember { runCatching { android.os.StatFs(context.filesDir.path) }.getOrNull() }
         SettingsSheet(
             actions = actions,
             onDismiss = { showSettings = false },
@@ -270,6 +265,12 @@ private fun WaitingToPair(deviceName: String, running: Boolean) {
                     style = MaterialTheme.typography.labelMedium, color = TextSecondary,
                 )
             }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                stringResource(R.string.screen_tap_hint),
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary, textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.weight(1f))
         }
     }

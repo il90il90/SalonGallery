@@ -27,6 +27,7 @@
     <string name="screen_ready_hint">On your phone, open Salon Gallery as a Remote and pick this screen to send photos.</string>
     <string name="screen_advertising">Visible on your Wi-Fi</string>
     <string name="screen_starting">Starting…</string>
+    <string name="screen_tap_hint">Tap anywhere to open settings</string>
 
     <!-- Remote mode -->
     <string name="remote_overline">Remote</string>

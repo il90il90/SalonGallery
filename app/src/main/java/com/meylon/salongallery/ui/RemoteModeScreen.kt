@@ -394,7 +394,8 @@ private fun FrameSheet(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Uni
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.size(30.dp).clip(RoundedCornerShape(7.dp)).background(f.matColor).border(1.dp, ElecBorder, RoundedCornerShape(7.dp)))
+                    val swatch = f.moldingColors.firstOrNull() ?: f.matColor ?: Color.Black
+                    Box(Modifier.size(30.dp).clip(RoundedCornerShape(7.dp)).background(swatch).border(1.dp, ElecBorder, RoundedCornerShape(7.dp)))
                     Spacer(Modifier.size(12.dp))
                     Text(f.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                 }
