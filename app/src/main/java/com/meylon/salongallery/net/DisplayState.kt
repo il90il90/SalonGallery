@@ -15,6 +15,13 @@ enum class SlideEffect { NONE, FADE, SLIDE, ZOOM, KENBURNS;
     }
 }
 
+/** How a photo is scaled to the screen. */
+enum class PhotoFit { FILL, FIT, BLUR;
+    companion object {
+        fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: FILL
+    }
+}
+
 /**
  * A growing, ORDERED library of photos on the Display device. The order is kept in
  * `order.txt` so the Remote can reorder, delete and jump between photos.

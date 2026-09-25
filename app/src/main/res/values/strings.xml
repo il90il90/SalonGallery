@@ -52,6 +52,7 @@
     <string name="slideshow_interval">Change every</string>
     <string name="slideshow_orientation">Screen orientation</string>
     <string name="slideshow_effect">Transition</string>
+    <string name="slideshow_fit">Photo fit</string>
     <string name="library_manage">Photo library</string>
     <string name="library_title">Library</string>
     <string name="library_empty">No photos yet — tap + to add some.</string>

@@ -102,6 +102,9 @@ object PhotoSender {
     suspend fun setEffect(host: String, port: Int, effect: String) =
         get(host, port, "/effect?e=$effect")
 
+    suspend fun setFit(host: String, port: Int, fit: String) =
+        get(host, port, "/fit?f=$fit")
+
     suspend fun setOrientation(host: String, port: Int, o: String) =
         get(host, port, "/orientation?o=$o")
 

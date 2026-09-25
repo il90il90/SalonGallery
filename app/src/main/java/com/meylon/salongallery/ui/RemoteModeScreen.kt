@@ -207,6 +207,7 @@ private fun ControlPanel(
     var intervalMs by remember { mutableStateOf(8000L) }
     var orientation by remember { mutableStateOf("auto") }
     var effect by remember { mutableStateOf("fade") }
+    var fit by remember { mutableStateOf("fill") }
     var showFrames by remember { mutableStateOf(false) }
     var showSlideshow by remember { mutableStateOf(false) }
     var showLibrary by remember { mutableStateOf(false) }
@@ -314,11 +315,12 @@ private fun ControlPanel(
     }
     if (showSlideshow) {
         SlideshowSheet(
-            shuffle = shuffle, intervalMs = intervalMs, orientation = orientation, effect = effect,
+            shuffle = shuffle, intervalMs = intervalMs, orientation = orientation, effect = effect, fit = fit,
             onShuffle = { shuffle = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, intervalMs, it) } },
             onInterval = { intervalMs = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, it, shuffle) } },
             onOrientation = { orientation = it; scope.launch { PhotoSender.setOrientation(screen.host, screen.port, it) } },
             onEffect = { effect = it; scope.launch { PhotoSender.setEffect(screen.host, screen.port, it) } },
+            onFit = { fit = it; scope.launch { PhotoSender.setFit(screen.host, screen.port, it) } },
             onDismiss = { showSlideshow = false },
         )
     }
@@ -654,15 +656,21 @@ private fun FrameSheet(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Uni
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SlideshowSheet(
-    shuffle: Boolean, intervalMs: Long, orientation: String, effect: String,
+    shuffle: Boolean, intervalMs: Long, orientation: String, effect: String, fit: String,
     onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
-    onEffect: (String) -> Unit, onDismiss: () -> Unit,
+    onEffect: (String) -> Unit, onFit: (String) -> Unit, onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text(stringResource(R.string.tile_slideshow), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
 
             Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.slideshow_fit), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            val fits = listOf("fill", "fit", "blur")
+            SegRow(listOf("Fill", "Fit", "Blur"), fits.indexOf(fit).coerceAtLeast(0)) { onFit(fits[it]) }
+
+            Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_order), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
             SegRow(listOf("Sequential", "Shuffle"), if (shuffle) 1 else 0) { onShuffle(it == 1) }

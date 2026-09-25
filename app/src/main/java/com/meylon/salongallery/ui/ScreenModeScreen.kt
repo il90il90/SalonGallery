@@ -46,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -67,6 +68,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.meylon.salongallery.R
 import com.meylon.salongallery.net.DisplayMode
+import com.meylon.salongallery.net.PhotoFit
 import com.meylon.salongallery.net.ScreenOrientation
 import com.meylon.salongallery.net.SlideEffect
 import com.meylon.salongallery.net.ScreenSessionHolder
@@ -103,6 +105,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val intervalMs by session.intervalMs.collectAsStateWithLifecycle()
     val shuffle by session.shuffle.collectAsStateWithLifecycle()
     val effect by session.effect.collectAsStateWithLifecycle()
+    val photoFit by session.photoFit.collectAsStateWithLifecycle()
     val orientation by session.orientation.collectAsStateWithLifecycle()
     val brightness by session.brightness.collectAsStateWithLifecycle()
     val running by session.running.collectAsStateWithLifecycle()
@@ -196,6 +199,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         intervalMs = intervalMs,
                         shuffle = shuffle,
                         effect = effect,
+                        fit = photoFit,
                         onNext = { session.currentIndex.value = it },
                     )
                 }
@@ -231,6 +235,7 @@ private fun Slideshow(
     intervalMs: Long,
     shuffle: Boolean,
     effect: SlideEffect,
+    fit: PhotoFit,
     onNext: (Int) -> Unit,
 ) {
     if (files.isEmpty()) return
@@ -259,17 +264,36 @@ private fun Slideshow(
         label = "slide",
     ) { i ->
         val file = files[i.coerceIn(0, files.size - 1)]
-        if (effect == SlideEffect.KENBURNS) {
+        val scaleMod = if (effect == SlideEffect.KENBURNS) {
             val scale = remember(i) { Animatable(1f) }
             LaunchedEffect(i) { scale.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
+            Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+        } else Modifier
+        PhotoContent(file, fit, scaleMod)
+    }
+}
+
+@Composable
+private fun PhotoContent(file: File, fit: PhotoFit, scaleMod: Modifier) {
+    when (fit) {
+        PhotoFit.FILL -> AsyncImage(
+            model = file, contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().then(scaleMod),
+        )
+        PhotoFit.FIT -> AsyncImage(
+            model = file, contentDescription = null, contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize().then(scaleMod),
+        )
+        PhotoFit.BLUR -> Box(Modifier.fillMaxSize()) {
+            // Blurred, zoomed copy fills the background so there are no black bars…
             AsyncImage(
                 model = file, contentDescription = null, contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = scale.value; scaleY = scale.value },
+                modifier = Modifier.fillMaxSize().blur(28.dp).graphicsLayer { scaleX = 1.1f; scaleY = 1.1f },
             )
-        } else {
+            // …with the whole photo shown, in focus, on top.
             AsyncImage(
-                model = file, contentDescription = null, contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                model = file, contentDescription = null, contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().then(scaleMod),
             )
         }
     }

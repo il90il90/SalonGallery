@@ -38,6 +38,7 @@ class ScreenSession(
     val intervalMs = MutableStateFlow(8000L)
     val shuffle = MutableStateFlow(false)
     val effect = MutableStateFlow(SlideEffect.FADE)
+    val photoFit = MutableStateFlow(PhotoFit.FILL)
     val orientation = MutableStateFlow(ScreenOrientation.AUTO)
     val brightness = MutableStateFlow(-1f)
     val running = MutableStateFlow(false)
@@ -132,6 +133,10 @@ class ScreenSession(
 
     override fun onEffect(effect: String) {
         this.effect.value = SlideEffect.from(effect)
+    }
+
+    override fun onFit(fit: String) {
+        this.photoFit.value = PhotoFit.from(fit)
     }
 
     override fun onOrientation(o: String) {

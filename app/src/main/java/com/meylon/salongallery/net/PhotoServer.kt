@@ -12,6 +12,7 @@ interface ScreenCommands {
     fun onFrame(id: Int)
     fun onSlideshow(intervalMs: Long, shuffle: Boolean)
     fun onEffect(effect: String)
+    fun onFit(fit: String)
     fun onOrientation(o: String)
     fun onClear()
     // Library management
@@ -63,6 +64,9 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/effect" -> {
                 session.parameters["e"]?.firstOrNull()?.let { commands.onEffect(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/fit" -> {
+                session.parameters["f"]?.firstOrNull()?.let { commands.onFit(it) }; ok()
             }
             session.method == Method.GET && uri == "/orientation" -> {
                 session.parameters["o"]?.firstOrNull()?.let { commands.onOrientation(it) }; ok()
