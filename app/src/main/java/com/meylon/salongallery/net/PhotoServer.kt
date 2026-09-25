@@ -5,6 +5,7 @@ import fi.iki.elonen.NanoHTTPD
 /** Commands the Display device reacts to when the server receives a request. */
 interface ScreenCommands {
     fun onPhoto(bytes: ByteArray)          // append to the library
+    fun onPhotoUrl(url: String)            // download an image and append to the library
     fun onVideo(bytes: ByteArray)          // play this video
     fun onMusic(bytes: ByteArray, title: String) // add to the music library
     // Music library
@@ -59,6 +60,9 @@ class PhotoServer(
 
             session.method == Method.POST && uri == "/photo" -> {
                 readBody(session)?.let { commands.onPhoto(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/photo/download" -> {
+                session.parameters["url"]?.firstOrNull()?.let { commands.onPhotoUrl(it) }; ok()
             }
             session.method == Method.POST && uri == "/video" -> {
                 readBody(session)?.let { commands.onVideo(it) }; ok()

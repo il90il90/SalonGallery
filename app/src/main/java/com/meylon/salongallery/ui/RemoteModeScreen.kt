@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -44,6 +47,9 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Collections
@@ -109,6 +115,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.meylon.salongallery.R
 import com.meylon.salongallery.net.AlbumInfo
+import com.meylon.salongallery.net.ArtGallery
+import com.meylon.salongallery.net.ArtPiece
 import com.meylon.salongallery.net.DiscoveredScreen
 import com.meylon.salongallery.net.FreeTrack
 import com.meylon.salongallery.net.MusicState
@@ -247,6 +255,7 @@ private fun ControlPanel(
     var showLibrary by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
     var showMusic by remember { mutableStateOf(false) }
+    var showArt by remember { mutableStateOf(false) }
 
     suspend fun readBytes(uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
         runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
@@ -317,6 +326,9 @@ private fun ControlPanel(
 
         Spacer(Modifier.height(12.dp))
         LibraryButton(onClick = { showLibrary = true })
+
+        Spacer(Modifier.height(10.dp))
+        WideButton(Icons.Outlined.Palette, stringResource(R.string.tile_art), NeonTeal) { showArt = true }
 
         Spacer(Modifier.height(10.dp))
         WideButton(Icons.Outlined.Slideshow, stringResource(R.string.tile_slideshow), NeonBlue) { showSlideshow = true }
@@ -403,6 +415,9 @@ private fun ControlPanel(
             onAddFromPhone = { musicPicker.launch("audio/*") },
             onDismiss = { showMusic = false },
         )
+    }
+    if (showArt) {
+        ArtSheet(screen = screen, onDismiss = { showArt = false; onInfoRefresh(scope) })
     }
 }
 
@@ -1234,6 +1249,123 @@ private fun FreeMusicSheet(onDownload: (FreeTrack) -> Unit, onDismiss: () -> Uni
                 }
             }
             Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf("") }
+    var activeCat by remember { mutableStateOf(ArtGallery.categories.first()) }
+    var results by remember { mutableStateOf<List<ArtPiece>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    val added = remember { mutableStateListOf<String>() }
+
+    // Coil needs a browser User-Agent + Referer to fetch the museum's IIIF images.
+    val loader = remember {
+        coil.ImageLoader.Builder(context).okHttpClient {
+            okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+                chain.proceed(
+                    chain.request().newBuilder()
+                        .header("User-Agent", ArtGallery.BROWSE_UA)
+                        .header("Referer", ArtGallery.REFERER)
+                        .build()
+                )
+            }.build()
+        }.build()
+    }
+
+    suspend fun run(q: String) { loading = true; results = ArtGallery.search(q); loading = false }
+    LaunchedEffect(activeCat) { run(activeCat) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
+            Text(stringResource(R.string.art_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text(stringResource(R.string.art_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = query, onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text(stringResource(R.string.art_search), color = TextTertiary) },
+                trailingIcon = {
+                    SmallBtn(Icons.Outlined.Search, NeonCyan) {
+                        if (query.isNotBlank()) scope.launch { run(query) }
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+                    focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+                ),
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ArtGallery.categories.forEach { cat ->
+                    val sel = cat == activeCat && query.isBlank()
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50))
+                            .then(if (sel) Modifier.background(AccentGradient) else Modifier.border(1.dp, ElecBorder, RoundedCornerShape(50)))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                query = ""; activeCat = cat
+                            }
+                            .padding(horizontal = 16.dp, vertical = 9.dp),
+                    ) {
+                        Text(cat, style = MaterialTheme.typography.labelMedium, color = if (sel) Color(0xFF07121F) else TextPrimary)
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            when {
+                loading -> Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = NeonCyan, strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
+                }
+                results.isEmpty() -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
+                    Text(stringResource(R.string.art_empty), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                }
+                else -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(results, key = { it.fullUrl }) { piece ->
+                        val isAdded = added.contains(piece.fullUrl)
+                        Box(
+                            Modifier.aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(ElecSurface)
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                    if (!isAdded) {
+                                        added.add(piece.fullUrl)
+                                        scope.launch { PhotoSender.downloadPhoto(screen.host, screen.port, piece.fullUrl) }
+                                    }
+                                },
+                        ) {
+                            AsyncImage(
+                                model = coil.request.ImageRequest.Builder(context).data(piece.thumbUrl).crossfade(true).build(),
+                                imageLoader = loader,
+                                contentDescription = piece.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            if (isAdded) {
+                                Box(Modifier.fillMaxSize().background(Color(0xE6000000).copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(Modifier.size(40.dp).clip(RoundedCornerShape(50)).background(AccentGradient), contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Outlined.Check, null, tint = Color(0xFF07121F), modifier = Modifier.size(24.dp))
+                                        }
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(stringResource(R.string.art_added), style = MaterialTheme.typography.labelSmall, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

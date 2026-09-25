@@ -106,6 +106,23 @@ class ScreenSession(
         }
     }
 
+    override fun onPhotoUrl(url: String) {
+        Thread {
+            runCatching {
+                val u = java.net.URL(url)
+                val referer = "${u.protocol}://${u.host}/"
+                val conn = (u.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 15000; readTimeout = 30000; instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+                    setRequestProperty("Referer", referer)
+                }
+                val bytes = conn.inputStream.use { it.readBytes() }
+                conn.disconnect()
+                if (bytes.isNotEmpty()) onPhoto(bytes)
+            }
+        }.start()
+    }
+
     override fun onVideo(bytes: ByteArray) {
         runCatching {
             videoFile.writeBytes(bytes)

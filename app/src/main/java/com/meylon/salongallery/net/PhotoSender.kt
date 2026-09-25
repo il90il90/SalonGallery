@@ -153,6 +153,10 @@ object PhotoSender {
     suspend fun sendPhoto(host: String, port: Int, bytes: ByteArray) =
         sendMedia(host, port, "/photo", bytes, "image/jpeg")
 
+    /** Tells the Display to download an image (e.g. a gallery artwork) into its library. */
+    suspend fun downloadPhoto(host: String, port: Int, url: String) =
+        get(host, port, "/photo/download?url=${enc(url)}")
+
     /** POSTs a video. Returns null on success, or a short error string. */
     suspend fun sendVideo(host: String, port: Int, bytes: ByteArray) =
         sendMedia(host, port, "/video", bytes, "video/mp4")
