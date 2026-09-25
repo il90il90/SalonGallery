@@ -7,8 +7,17 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
 import android.view.WindowManager
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -39,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -58,7 +68,8 @@ import coil.compose.AsyncImage
 import com.meylon.salongallery.R
 import com.meylon.salongallery.net.DisplayMode
 import com.meylon.salongallery.net.ScreenOrientation
-import com.meylon.salongallery.net.ScreenSession
+import com.meylon.salongallery.net.SlideEffect
+import com.meylon.salongallery.net.ScreenSessionHolder
 import com.meylon.salongallery.ui.components.LogoChip
 import com.meylon.salongallery.ui.components.SalonBackground
 import com.meylon.salongallery.ui.components.SectionLabel
@@ -80,13 +91,10 @@ fun ScreenModeScreen(actions: AppActions) {
     val context = LocalContext.current
     val view = LocalView.current
     val deviceName = remember { Build.MODEL ?: "Salon Screen" }
-    val session = remember { ScreenSession(context, deviceName, actions.version) }
+    // The session lives in a process-wide holder so it survives backgrounding; the
+    // foreground service (started from MainActivity) keeps the process alive.
+    val session = remember { ScreenSessionHolder.getOrCreate(context, deviceName, actions.version) }
     val activity = remember(context) { context.findActivity() }
-
-    DisposableEffect(Unit) {
-        session.start()
-        onDispose { session.stop() }
-    }
 
     val mode by session.mode.collectAsStateWithLifecycle()
     val libraryVersion by session.libraryVersion.collectAsStateWithLifecycle()
@@ -94,11 +102,19 @@ fun ScreenModeScreen(actions: AppActions) {
     val frameId by session.frameId.collectAsStateWithLifecycle()
     val intervalMs by session.intervalMs.collectAsStateWithLifecycle()
     val shuffle by session.shuffle.collectAsStateWithLifecycle()
+    val effect by session.effect.collectAsStateWithLifecycle()
     val orientation by session.orientation.collectAsStateWithLifecycle()
     val brightness by session.brightness.collectAsStateWithLifecycle()
     val running by session.running.collectAsStateWithLifecycle()
+    val currentIndex by session.currentIndex.collectAsStateWithLifecycle()
 
     var showSettings by remember { mutableStateOf(false) }
+
+    // Keep the display awake permanently.
+    DisposableEffect(Unit) {
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
 
     // A single ExoPlayer, reused for whatever video is set.
     val exo = remember {
@@ -174,7 +190,14 @@ fun ScreenModeScreen(actions: AppActions) {
 
             mode == DisplayMode.SLIDESHOW && files.isNotEmpty() ->
                 FramedContent(frameId, Modifier.fillMaxSize()) {
-                    Slideshow(files = files, version = libraryVersion, intervalMs = intervalMs, shuffle = shuffle)
+                    Slideshow(
+                        files = files,
+                        currentIndex = currentIndex,
+                        intervalMs = intervalMs,
+                        shuffle = shuffle,
+                        effect = effect,
+                        onNext = { session.currentIndex.value = it },
+                    )
                 }
 
             else -> WaitingToPair(deviceName = deviceName, running = running)
@@ -202,27 +225,53 @@ fun ScreenModeScreen(actions: AppActions) {
 }
 
 @Composable
-private fun Slideshow(files: List<File>, version: Long, intervalMs: Long, shuffle: Boolean) {
+private fun Slideshow(
+    files: List<File>,
+    currentIndex: Int,
+    intervalMs: Long,
+    shuffle: Boolean,
+    effect: SlideEffect,
+    onNext: (Int) -> Unit,
+) {
     if (files.isEmpty()) return
-    var idx by remember(version, shuffle) { mutableIntStateOf(0) }
-    val order = remember(version, shuffle, files.size) {
-        if (shuffle) files.indices.shuffled() else files.indices.toList()
-    }
-    LaunchedEffect(version, shuffle, intervalMs, files.size) {
+    val idx = currentIndex.coerceIn(0, files.size - 1)
+    LaunchedEffect(idx, shuffle, intervalMs, files.size) {
         if (files.size <= 1) return@LaunchedEffect
-        while (true) {
-            delay(intervalMs)
-            idx = (idx + 1) % order.size
-        }
+        delay(intervalMs)
+        val next = if (shuffle) (files.indices - idx).randomOrNull() ?: idx
+        else (idx + 1) % files.size
+        onNext(next)
     }
-    val file = files[order[idx % order.size]]
-    Crossfade(targetState = file, animationSpec = tween(700), label = "slide") { f ->
-        AsyncImage(
-            model = f,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
+    AnimatedContent(
+        targetState = idx,
+        transitionSpec = {
+            when (effect) {
+                SlideEffect.NONE -> fadeIn(tween(1)) togetherWith fadeOut(tween(1))
+                SlideEffect.SLIDE ->
+                    (slideInHorizontally(tween(600)) { it } + fadeIn(tween(600))) togetherWith
+                        (slideOutHorizontally(tween(600)) { -it } + fadeOut(tween(600)))
+                SlideEffect.ZOOM ->
+                    (scaleIn(tween(800), initialScale = 0.9f) + fadeIn(tween(800))) togetherWith
+                        (scaleOut(tween(800), targetScale = 1.05f) + fadeOut(tween(800)))
+                else -> fadeIn(tween(800)) togetherWith fadeOut(tween(800))
+            }
+        },
+        label = "slide",
+    ) { i ->
+        val file = files[i.coerceIn(0, files.size - 1)]
+        if (effect == SlideEffect.KENBURNS) {
+            val scale = remember(i) { Animatable(1f) }
+            LaunchedEffect(i) { scale.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
+            AsyncImage(
+                model = file, contentDescription = null, contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = scale.value; scaleY = scale.value },
+            )
+        } else {
+            AsyncImage(
+                model = file, contentDescription = null, contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 

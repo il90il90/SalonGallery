@@ -51,6 +51,14 @@
     <string name="slideshow_order">Order</string>
     <string name="slideshow_interval">Change every</string>
     <string name="slideshow_orientation">Screen orientation</string>
+    <string name="slideshow_effect">Transition</string>
+    <string name="library_manage">Photo library</string>
+    <string name="library_title">Library</string>
+    <string name="library_empty">No photos yet — send some with the tiles.</string>
+    <string name="badge_now">NOW</string>
+    <string name="badge_next">NEXT</string>
+    <string name="clear_library">Clear all photos</string>
+    <string name="service_running">Displaying your gallery</string>
     <string name="storage_warning">Screen storage almost full — free some space</string>
 
     <!-- Updates -->

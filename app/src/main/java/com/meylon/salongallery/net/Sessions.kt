@@ -1,6 +1,8 @@
 package com.meylon.salongallery.net
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.StatFs
@@ -8,6 +10,7 @@ import android.util.Log
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 /** Runs on the Display device: HTTP server, NSD advertisement, photo library, playback & controls. */
@@ -34,9 +37,12 @@ class ScreenSession(
     val frameId = MutableStateFlow(0)
     val intervalMs = MutableStateFlow(8000L)
     val shuffle = MutableStateFlow(false)
+    val effect = MutableStateFlow(SlideEffect.FADE)
     val orientation = MutableStateFlow(ScreenOrientation.AUTO)
     val brightness = MutableStateFlow(-1f)
     val running = MutableStateFlow(false)
+    /** Index into the ordered library that the slideshow is currently showing. */
+    val currentIndex = MutableStateFlow(0)
 
     private val screenW = app.resources.displayMetrics.widthPixels
     private val screenH = app.resources.displayMetrics.heightPixels
@@ -124,6 +130,10 @@ class ScreenSession(
         this.shuffle.value = shuffle
     }
 
+    override fun onEffect(effect: String) {
+        this.effect.value = SlideEffect.from(effect)
+    }
+
     override fun onOrientation(o: String) {
         orientation.value = when (o.lowercase()) {
             "portrait" -> ScreenOrientation.PORTRAIT
@@ -136,8 +146,83 @@ class ScreenSession(
         runCatching {
             library.clear()
             if (mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
+            currentIndex.value = 0
             libraryVersion.value = System.currentTimeMillis()
         }
+    }
+
+    override fun listJson(): String {
+        val names = library.names()
+        val cur = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)
+        val items = names.joinToString(",") { "\"${esc(it)}\"" }
+        return """{"current":$cur,"mode":"${mode.value.name}","items":[$items]}"""
+    }
+
+    override fun thumbnail(name: String): ByteArray? {
+        val f = library.fileFor(name) ?: return null
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(f.path, bounds)
+            var sample = 1
+            val target = 400
+            while (bounds.outWidth / sample > target || bounds.outHeight / sample > target) sample *= 2
+            val bmp = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
+                ?: return null
+            val bos = ByteArrayOutputStream()
+            bmp.compress(Bitmap.CompressFormat.JPEG, 80, bos)
+            bmp.recycle()
+            bos.toByteArray()
+        }.getOrNull()
+    }
+
+    override fun deletePhoto(name: String) {
+        runCatching {
+            library.delete(name)
+            val names = library.names()
+            if (names.isEmpty() && mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
+            currentIndex.value = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)
+            libraryVersion.value = System.currentTimeMillis()
+        }
+    }
+
+    override fun showNow(name: String) {
+        runCatching {
+            val idx = library.names().indexOf(name)
+            if (idx >= 0) {
+                if (mode.value != DisplayMode.SLIDESHOW) mode.value = DisplayMode.SLIDESHOW
+                currentIndex.value = idx
+            }
+        }
+    }
+
+    override fun reorder(names: List<String>) {
+        runCatching {
+            library.reorder(names)
+            currentIndex.value = currentIndex.value.coerceIn(0, maxOf(0, library.count() - 1))
+            libraryVersion.value = System.currentTimeMillis()
+        }
+    }
+}
+
+/**
+ * Process-wide holder for the single Display session, so it survives the activity
+ * being backgrounded/recreated and keeps serving while a foreground service is up.
+ */
+object ScreenSessionHolder {
+    @Volatile
+    var session: ScreenSession? = null
+        private set
+
+    @Synchronized
+    fun getOrCreate(context: Context, name: String, version: String): ScreenSession =
+        session ?: ScreenSession(context.applicationContext, name, version).also {
+            it.start(); session = it
+        }
+
+    @Synchronized
+    fun stopAll() {
+        session?.stop()
+        session = null
     }
 }
 

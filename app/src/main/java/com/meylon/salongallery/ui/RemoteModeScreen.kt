@@ -20,13 +20,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.BrightnessMedium
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.FilterFrames
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -61,7 +70,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.meylon.salongallery.R
 import com.meylon.salongallery.net.DiscoveredScreen
 import com.meylon.salongallery.net.PhotoSender
@@ -88,6 +100,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun RemoteModeScreen(actions: AppActions) {
     val context = LocalContext.current
+    val remoteScope = rememberCoroutineScope()
     val session = remember { RemoteSession(context) }
 
     DisposableEffect(Unit) {
@@ -152,6 +165,19 @@ fun RemoteModeScreen(actions: AppActions) {
                     Spacer(Modifier.height(16.dp))
                     ScreenInfoContent(it.widthPx, it.heightPx, it.freeBytes, it.totalBytes, it.photoCount)
                 }
+                selected?.let { s ->
+                    Spacer(Modifier.height(12.dp))
+                    OutlineButton(
+                        text = stringResource(R.string.clear_library),
+                        leading = Icons.Outlined.DeleteSweep,
+                        onClick = {
+                            remoteScope.launch {
+                                PhotoSender.clearLibrary(s.host, s.port)
+                                info = PhotoSender.getInfo(s.host, s.port)
+                            }
+                        },
+                    )
+                }
             },
         )
     }
@@ -173,8 +199,10 @@ private fun ControlPanel(
     var shuffle by remember { mutableStateOf(false) }
     var intervalMs by remember { mutableStateOf(8000L) }
     var orientation by remember { mutableStateOf("auto") }
+    var effect by remember { mutableStateOf("fade") }
     var showFrames by remember { mutableStateOf(false) }
     var showSlideshow by remember { mutableStateOf(false) }
+    var showLibrary by remember { mutableStateOf(false) }
 
     suspend fun readBytes(uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
         runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
@@ -219,7 +247,23 @@ private fun ControlPanel(
     Column(Modifier.fillMaxWidth()) {
         ConnectedHeader(screen.name)
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CompactSlider(Modifier.weight(1f), Icons.Outlined.BrightnessMedium, NeonTeal) { v ->
+                scope.launch { PhotoSender.setBrightness(screen.host, screen.port, v) }
+            }
+            CompactSlider(Modifier.weight(1f), Icons.AutoMirrored.Outlined.VolumeUp, NeonCyan) { v ->
+                scope.launch { PhotoSender.setVolume(screen.host, screen.port, v) }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        LibraryButton(onClick = { showLibrary = true })
+
+        Spacer(Modifier.height(10.dp))
+        WideButton(Icons.Outlined.Slideshow, stringResource(R.string.tile_slideshow), NeonBlue) { showSlideshow = true }
+
+        Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             ActionTile(Modifier.weight(1f), Icons.Outlined.PhotoLibrary, stringResource(R.string.tile_photos), NeonCyan, !busy) {
                 photosPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -235,24 +279,6 @@ private fun ControlPanel(
             }
             ActionTile(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.tile_music), NeonVioletLight, !busy) {
                 musicPicker.launch("audio/*")
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActionTile(Modifier.weight(1f), Icons.Outlined.Slideshow, stringResource(R.string.tile_slideshow), NeonBlue, !busy) {
-                showSlideshow = true
-            }
-            ActionTile(Modifier.weight(1f), Icons.Outlined.DeleteSweep, stringResource(R.string.tile_clear), Color(0xFFF87171), !busy) {
-                scope.launch { PhotoSender.clearLibrary(screen.host, screen.port); status = "Library cleared"; onInfoRefresh(scope) }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SliderTile(Modifier.weight(1f), Icons.Outlined.BrightnessMedium, stringResource(R.string.tile_brightness), NeonTeal) { v ->
-                scope.launch { PhotoSender.setBrightness(screen.host, screen.port, v) }
-            }
-            SliderTile(Modifier.weight(1f), Icons.Outlined.VolumeUp, stringResource(R.string.tile_volume), NeonCyan) { v ->
-                scope.launch { PhotoSender.setVolume(screen.host, screen.port, v) }
             }
         }
 
@@ -281,13 +307,164 @@ private fun ControlPanel(
     }
     if (showSlideshow) {
         SlideshowSheet(
-            shuffle = shuffle, intervalMs = intervalMs, orientation = orientation,
+            shuffle = shuffle, intervalMs = intervalMs, orientation = orientation, effect = effect,
             onShuffle = { shuffle = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, intervalMs, it) } },
             onInterval = { intervalMs = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, it, shuffle) } },
             onOrientation = { orientation = it; scope.launch { PhotoSender.setOrientation(screen.host, screen.port, it) } },
+            onEffect = { effect = it; scope.launch { PhotoSender.setEffect(screen.host, screen.port, it) } },
             onDismiss = { showSlideshow = false },
         )
     }
+    if (showLibrary) {
+        LibraryManager(screen = screen, onClose = { showLibrary = false; onInfoRefresh(scope) })
+    }
+}
+
+@Composable
+private fun LibraryButton(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .border(1.dp, NeonCyan.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
+            .background(ElecSurface)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(NeonCyan.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Outlined.Collections, null, tint = NeonCyan, modifier = Modifier.size(22.dp)) }
+        Spacer(Modifier.size(14.dp))
+        Text(stringResource(R.string.library_manage), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+        Icon(Icons.Outlined.ChevronRight, null, tint = TextSecondary, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var items by remember { mutableStateOf<List<String>>(emptyList()) }
+    var current by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
+
+    fun refresh() {
+        scope.launch {
+            val l = PhotoSender.getList(screen.host, screen.port)
+            if (l != null) { items = l.items; current = l.current }
+            loading = false
+        }
+    }
+    LaunchedEffect(Unit) { refresh() }
+
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(com.meylon.salongallery.ui.theme.ElecBg)) {
+            SalonBackground {
+                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 20.dp, vertical = 16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(42.dp).clip(RoundedCornerShape(50)).border(1.dp, ElecBorder, RoundedCornerShape(50))
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClose() },
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = TextPrimary, modifier = Modifier.size(22.dp)) }
+                        Spacer(Modifier.size(14.dp))
+                        Text("${stringResource(R.string.library_title)} · ${items.size}", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    when {
+                        loading -> Box(Modifier.fillMaxWidth().padding(40.dp), Alignment.Center) { CircularProgressIndicator(color = NeonCyan) }
+                        items.isEmpty() -> Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        else -> LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            itemsIndexed(items, key = { _, n -> n }) { i, name ->
+                                LibraryRow(
+                                    thumbUrl = PhotoSender.thumbUrl(screen.host, screen.port, name),
+                                    index = i,
+                                    isNow = i == current,
+                                    isNext = items.size > 1 && i == (current + 1) % items.size,
+                                    onShow = { scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refresh() } },
+                                    onUp = if (i > 0) ({
+                                        items = items.toMutableList().apply { add(i - 1, removeAt(i)) }
+                                        scope.launch { PhotoSender.reorder(screen.host, screen.port, items) }
+                                    }) else null,
+                                    onDown = if (i < items.size - 1) ({
+                                        items = items.toMutableList().apply { add(i + 1, removeAt(i)) }
+                                        scope.launch { PhotoSender.reorder(screen.host, screen.port, items) }
+                                    }) else null,
+                                    onDelete = {
+                                        items = items.filterIndexed { j, _ -> j != i }
+                                        scope.launch { PhotoSender.deletePhoto(screen.host, screen.port, name); refresh() }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryRow(
+    thumbUrl: String,
+    index: Int,
+    isNow: Boolean,
+    isNext: Boolean,
+    onShow: () -> Unit,
+    onUp: (() -> Unit)?,
+    onDown: (() -> Unit)?,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .border(if (isNow) 1.5.dp else 1.dp, if (isNow) NeonCyan else ElecBorder, RoundedCornerShape(16.dp))
+            .background(ElecSurface)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = thumbUrl,
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier
+                .size(58.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onShow() },
+        )
+        Spacer(Modifier.size(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("#${index + 1}", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            if (isNow) Badge(stringResource(R.string.badge_now), NeonCyan)
+            else if (isNext) Badge(stringResource(R.string.badge_next), NeonViolet)
+        }
+        SmallBtn(Icons.Outlined.KeyboardArrowUp, if (onUp != null) TextPrimary else ElecBorder) { onUp?.invoke() }
+        SmallBtn(Icons.Outlined.KeyboardArrowDown, if (onDown != null) TextPrimary else ElecBorder) { onDown?.invoke() }
+        SmallBtn(Icons.Outlined.Close, Color(0xFFF87171)) { onDelete() }
+    }
+}
+
+@Composable
+private fun Badge(text: String, color: Color) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+        modifier = Modifier.padding(top = 3.dp)
+            .clip(RoundedCornerShape(50)).border(1.dp, color.copy(alpha = 0.5f), RoundedCornerShape(50))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
+@Composable
+private fun SmallBtn(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, onClick: () -> Unit) {
+    Box(
+        Modifier.size(38.dp).clip(RoundedCornerShape(10.dp))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp)) }
 }
 
 @Composable
@@ -350,6 +527,48 @@ private fun ActionTile(
 }
 
 @Composable
+private fun CompactSlider(modifier: Modifier, icon: ImageVector, accent: Color, onCommit: (Float) -> Unit) {
+    var value by remember { mutableFloatStateOf(0.5f) }
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(ElecSurface)
+            .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
+            .padding(start = 12.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = accent, modifier = Modifier.size(20.dp))
+        Slider(
+            value = value, onValueChange = { value = it }, onValueChangeFinished = { onCommit(value) },
+            modifier = Modifier.weight(1f).padding(start = 8.dp),
+            colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent, inactiveTrackColor = ElecBorder),
+        )
+    }
+}
+
+@Composable
+private fun WideButton(icon: ImageVector, label: String, accent: Color, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
+            .background(ElecSurface)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, null, tint = accent, modifier = Modifier.size(22.dp)) }
+        Spacer(Modifier.size(14.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+        Icon(Icons.Outlined.ChevronRight, null, tint = TextSecondary, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
 private fun SliderTile(modifier: Modifier, icon: ImageVector, label: String, accent: Color, onCommit: (Float) -> Unit) {
     var value by remember { mutableFloatStateOf(0.5f) }
     Column(
@@ -408,35 +627,36 @@ private fun FrameSheet(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Uni
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SlideshowSheet(
-    shuffle: Boolean, intervalMs: Long, orientation: String,
-    onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit, onDismiss: () -> Unit,
+    shuffle: Boolean, intervalMs: Long, orientation: String, effect: String,
+    onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
+    onEffect: (String) -> Unit, onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
-        Column(Modifier.fillMaxWidth().padding(24.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text(stringResource(R.string.tile_slideshow), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
 
             Spacer(Modifier.height(16.dp))
             Text(stringResource(R.string.slideshow_order), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
-            SegRow(listOf("Sequential" to false, "Shuffle" to true).map { it.first }, if (shuffle) 1 else 0) {
-                onShuffle(it == 1)
-            }
+            SegRow(listOf("Sequential", "Shuffle"), if (shuffle) 1 else 0) { onShuffle(it == 1) }
 
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_interval), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
             val intervals = listOf(5000L, 10000L, 30000L, 60000L)
-            SegRow(listOf("5s", "10s", "30s", "1m"), intervals.indexOf(intervalMs).coerceAtLeast(0)) {
-                onInterval(intervals[it])
-            }
+            SegRow(listOf("5s", "10s", "30s", "1m"), intervals.indexOf(intervalMs).coerceAtLeast(0)) { onInterval(intervals[it]) }
+
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.slideshow_effect), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            val effects = listOf("fade", "slide", "zoom", "kenburns", "none")
+            SegRow(listOf("Fade", "Slide", "Zoom", "Ken", "Off"), effects.indexOf(effect).coerceAtLeast(0)) { onEffect(effects[it]) }
 
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_orientation), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
             val orients = listOf("auto", "portrait", "landscape")
-            SegRow(listOf("Auto", "Portrait", "Landscape"), orients.indexOf(orientation).coerceAtLeast(0)) {
-                onOrientation(orients[it])
-            }
+            SegRow(listOf("Auto", "Portrait", "Landscape"), orients.indexOf(orientation).coerceAtLeast(0)) { onOrientation(orients[it]) }
             Spacer(Modifier.height(20.dp))
         }
     }

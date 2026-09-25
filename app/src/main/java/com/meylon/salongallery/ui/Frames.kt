@@ -59,6 +59,36 @@ val FRAMES = listOf(
         moldingFrac = 0.045f, bevelOuter = Color(0xFFEBD6AE), bevelInner = Color(0xFF6A5230),
         matColor = Color(0xFFF2EDE2), matFrac = 0.025f, lipColor = Color(0xFF8C6D42),
     ),
+    FrameStyle(
+        6, "Silver",
+        moldingColors = listOf(Color(0xFFF0F1F3), Color(0xFFBFC3C9), Color(0xFF8A9099), Color(0xFFCED2D8)),
+        moldingFrac = 0.04f, bevelOuter = Color(0xFFFFFFFF), bevelInner = Color(0xFF6A7078),
+        matColor = Color(0xFFF7F8FA), matFrac = 0.03f, lipColor = Color(0xFF9AA0A8),
+    ),
+    FrameStyle(
+        7, "Rose Gold",
+        moldingColors = listOf(Color(0xFFF6D7C4), Color(0xFFE0A183), Color(0xFFB4735A), Color(0xFFE7B79E)),
+        moldingFrac = 0.042f, bevelOuter = Color(0xFFFBE7DB), bevelInner = Color(0xFF7E4A38),
+        matColor = Color(0xFFF6ECE6), matFrac = 0.028f, lipColor = Color(0xFFB4735A),
+    ),
+    FrameStyle(
+        8, "Vintage",
+        moldingColors = listOf(Color(0xFF9A7B4F), Color(0xFF6E5433), Color(0xFF3E2E18)),
+        moldingFrac = 0.055f, bevelOuter = Color(0xFFB89968), bevelInner = Color(0xFF2A1E0E),
+        matColor = Color(0xFFEAE0C8), matFrac = 0.035f, lipColor = Color(0xFF6E5433),
+    ),
+    FrameStyle(
+        9, "Ebony",
+        moldingColors = listOf(Color(0xFF2C2C30), Color(0xFF141416), Color(0xFF050506)),
+        moldingFrac = 0.05f, bevelOuter = Color(0xFF3C3C42), bevelInner = Color(0xFF000000),
+        matColor = Color(0xFF101012), matFrac = 0.03f, lipColor = Color(0xFF34343A),
+    ),
+    FrameStyle(
+        10, "Cherry",
+        moldingColors = listOf(Color(0xFF9B4A34), Color(0xFF6E2E1E), Color(0xFF441810)),
+        moldingFrac = 0.048f, bevelOuter = Color(0xFFB86A50), bevelInner = Color(0xFF2E0F08),
+        matColor = Color(0xFFF1E7DE), matFrac = 0.03f, lipColor = Color(0xFF6E2E1E),
+    ),
 )
 
 fun frameById(id: Int): FrameStyle = FRAMES.getOrElse(id) { FRAMES[0] }

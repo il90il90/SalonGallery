@@ -54,6 +54,18 @@ private fun AppRoot(prefs: RolePreferences) {
     val scope = rememberCoroutineScope()
     val role by prefs.role.collectAsStateWithLifecycle(initialValue = DeviceRole.UNSET)
 
+    // Keep a foreground service alive while this device is a Display, so the gallery
+    // keeps running (and stays discoverable) when the app is minimized.
+    LaunchedEffect(role) {
+        val intent = android.content.Intent(context, DisplayService::class.java)
+        if (role == DeviceRole.SCREEN) {
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+        } else {
+            context.stopService(intent)
+            com.meylon.salongallery.net.ScreenSessionHolder.stopAll()
+        }
+    }
+
     var isChecking by remember { mutableStateOf(false) }
     var availableVersion by remember { mutableStateOf<String?>(null) }
     var apkUrl by remember { mutableStateOf<String?>(null) }

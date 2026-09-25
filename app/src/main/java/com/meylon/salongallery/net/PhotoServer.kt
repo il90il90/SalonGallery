@@ -11,8 +11,15 @@ interface ScreenCommands {
     fun onVolume(value: Float)
     fun onFrame(id: Int)
     fun onSlideshow(intervalMs: Long, shuffle: Boolean)
+    fun onEffect(effect: String)
     fun onOrientation(o: String)
     fun onClear()
+    // Library management
+    fun listJson(): String                 // {"current":i,"items":[name,...]}
+    fun thumbnail(name: String): ByteArray? // small JPEG of one photo
+    fun deletePhoto(name: String)
+    fun showNow(name: String)
+    fun reorder(names: List<String>)
 }
 
 /**
@@ -54,10 +61,34 @@ class PhotoServer(
                 val shuffle = session.parameters["shuffle"]?.firstOrNull() == "1"
                 commands.onSlideshow(interval, shuffle); ok()
             }
+            session.method == Method.GET && uri == "/effect" -> {
+                session.parameters["e"]?.firstOrNull()?.let { commands.onEffect(it) }; ok()
+            }
             session.method == Method.GET && uri == "/orientation" -> {
                 session.parameters["o"]?.firstOrNull()?.let { commands.onOrientation(it) }; ok()
             }
             session.method == Method.GET && uri == "/clear" -> { commands.onClear(); ok() }
+
+            session.method == Method.GET && uri == "/list" -> json(commands.listJson())
+            session.method == Method.GET && uri == "/thumb" -> {
+                val name = session.parameters["id"]?.firstOrNull()
+                val bytes = name?.let { commands.thumbnail(it) }
+                if (bytes == null) newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "no thumb")
+                else newFixedLengthResponse(
+                    Response.Status.OK, "image/jpeg",
+                    java.io.ByteArrayInputStream(bytes), bytes.size.toLong(),
+                )
+            }
+            session.method == Method.GET && uri == "/delete" -> {
+                session.parameters["id"]?.firstOrNull()?.let { commands.deletePhoto(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/shownow" -> {
+                session.parameters["id"]?.firstOrNull()?.let { commands.showNow(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/reorder" -> {
+                val names = session.parameters["names"]?.firstOrNull()?.split(",")?.filter { it.isNotBlank() }
+                if (names != null) commands.reorder(names); ok()
+            }
 
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "not found")
         }

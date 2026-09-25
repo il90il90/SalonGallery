@@ -16,10 +16,33 @@ data class ScreenInfo(
     val photoCount: Int,
 )
 
+/** The Display's current library, as seen by the Remote. */
+data class LibraryList(val current: Int, val mode: String, val items: List<String>)
+
 /** HTTP client used by the Remote to talk to a Display device. */
 object PhotoSender {
 
     private const val TIMEOUT = 8_000
+
+    fun thumbUrl(host: String, port: Int, name: String) = "http://$host:$port/thumb?id=$name"
+
+    suspend fun getList(host: String, port: Int): LibraryList? = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/list", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val o = JSONObject(body)
+            val arr = o.optJSONArray("items")
+            val items = buildList { if (arr != null) for (i in 0 until arr.length()) add(arr.optString(i)) }
+            LibraryList(o.optInt("current", 0), o.optString("mode", ""), items)
+        } catch (e: Exception) { null }
+    }
+
+    suspend fun deletePhoto(host: String, port: Int, name: String) = get(host, port, "/delete?id=$name")
+    suspend fun showNow(host: String, port: Int, name: String) = get(host, port, "/shownow?id=$name")
+    suspend fun reorder(host: String, port: Int, names: List<String>) =
+        get(host, port, "/reorder?names=${names.joinToString(",")}")
 
     /** Fetches resolution + storage from the screen, or null if unreachable. */
     suspend fun getInfo(host: String, port: Int): ScreenInfo? = withContext(Dispatchers.IO) {
@@ -75,6 +98,9 @@ object PhotoSender {
 
     suspend fun setSlideshow(host: String, port: Int, intervalMs: Long, shuffle: Boolean) =
         get(host, port, "/slideshow?interval=$intervalMs&shuffle=${if (shuffle) 1 else 0}")
+
+    suspend fun setEffect(host: String, port: Int, effect: String) =
+        get(host, port, "/effect?e=$effect")
 
     suspend fun setOrientation(host: String, port: Int, o: String) =
         get(host, port, "/orientation?o=$o")
