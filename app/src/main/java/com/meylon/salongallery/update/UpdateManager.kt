@@ -7,7 +7,6 @@ import androidx.core.content.FileProvider
 import com.meylon.salongallery.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -36,27 +35,40 @@ object UpdateManager {
 
     val currentVersion: String get() = BuildConfig.VERSION_NAME
 
-    private val latestReleaseUrl: String
-        get() = "https://api.github.com/repos/${BuildConfig.GITHUB_OWNER}/" +
-            "${BuildConfig.GITHUB_REPO}/releases/latest"
+    private val owner get() = BuildConfig.GITHUB_OWNER
+    private val repo get() = BuildConfig.GITHUB_REPO
 
-    suspend fun checkForUpdate(): UpdateStatus = withContext(Dispatchers.IO) {
+    // github.com Atom feed — served without the api.github.com hourly rate limit.
+    private val atomUrl: String get() = "https://github.com/$owner/$repo/releases.atom"
+
+    @Volatile private var lastCheckMs = 0L
+
+    /**
+     * Checks for a newer release via the rate-limit-free Atom feed. When [force] is
+     * false, a network call is skipped if we checked within the last 10 minutes.
+     */
+    suspend fun checkForUpdate(force: Boolean = true): UpdateStatus = withContext(Dispatchers.IO) {
+        if (!force && System.currentTimeMillis() - lastCheckMs < 10 * 60_000L) {
+            return@withContext UpdateStatus.UpToDate(currentVersion)
+        }
         try {
-            val json = httpGet(latestReleaseUrl) ?: return@withContext UpdateStatus.Error("no response")
-            val obj = JSONObject(json)
-            val tag = obj.optString("tag_name").trim()
-            val notes = obj.optString("body").trim()
-            if (tag.isEmpty()) return@withContext UpdateStatus.UpToDate(currentVersion)
-
-            val apkUrl = findApkAsset(obj)
+            val xml = httpGet(atomUrl) ?: return@withContext UpdateStatus.Error("no response")
+            lastCheckMs = System.currentTimeMillis()
+            // First <entry> is the newest release; grab its tag from the release URL.
+            val tag = Regex("/releases/tag/([^\"<]+)").find(xml)?.groupValues?.get(1)?.trim()
+                ?: return@withContext UpdateStatus.UpToDate(currentVersion)
+            val notes = Regex("<title>([^<]+)</title>").findAll(xml).drop(1).firstOrNull()
+                ?.groupValues?.get(1)?.trim().orEmpty()
             val latest = normalizeVersion(tag)
-            if (apkUrl != null && isNewer(latest, currentVersion)) {
+            // Asset name follows a fixed convention we control.
+            val apkUrl = "https://github.com/$owner/$repo/releases/download/$tag/SalonGallery-$latest.apk"
+            if (isNewer(latest, currentVersion)) {
                 UpdateStatus.Available(currentVersion, latest, apkUrl, notes)
             } else {
                 UpdateStatus.UpToDate(currentVersion)
             }
         } catch (e: Exception) {
-            UpdateStatus.Error(e.message ?: "unknown error")
+            UpdateStatus.Error("${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
@@ -92,30 +104,27 @@ object UpdateManager {
             }
         }
 
-    private fun findApkAsset(release: JSONObject): String? {
-        val assets = release.optJSONArray("assets") ?: return null
-        for (i in 0 until assets.length()) {
-            val asset = assets.optJSONObject(i) ?: continue
-            val name = asset.optString("name")
-            if (name.endsWith(".apk", ignoreCase = true)) {
-                return asset.optString("browser_download_url").ifEmpty { null }
-            }
-        }
-        return null
-    }
-
     private fun httpGet(urlStr: String): String? {
         val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
+            instanceFollowRedirects = true
             connectTimeout = TIMEOUT_MS
             readTimeout = TIMEOUT_MS
             setRequestProperty("Accept", "application/vnd.github+json")
             setRequestProperty("User-Agent", "SalonGallery-Updater")
         }
         return try {
-            if (conn.responseCode in 200..299) {
+            val code = conn.responseCode
+            if (code in 200..299) {
                 conn.inputStream.bufferedReader().use { it.readText() }
-            } else null
+            } else {
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() }
+                android.util.Log.w("SalonUpdate", "HTTP $code from $urlStr: ${err?.take(200)}")
+                null
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("SalonUpdate", "httpGet failed: ${e.javaClass.simpleName}: ${e.message}")
+            throw e
         } finally {
             conn.disconnect()
         }

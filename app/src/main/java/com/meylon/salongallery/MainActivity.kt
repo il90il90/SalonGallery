@@ -58,11 +58,11 @@ private fun AppRoot(prefs: RolePreferences) {
     var availableVersion by remember { mutableStateOf<String?>(null) }
     var apkUrl by remember { mutableStateOf<String?>(null) }
 
-    fun runCheck(showToast: Boolean) {
+    fun runCheck(showToast: Boolean, force: Boolean = true) {
         if (isChecking) return
         isChecking = true
         scope.launch {
-            when (val status = UpdateManager.checkForUpdate()) {
+            when (val status = UpdateManager.checkForUpdate(force = force)) {
                 is UpdateStatus.Available -> {
                     availableVersion = status.latest
                     apkUrl = status.apkUrl
@@ -89,8 +89,8 @@ private fun AppRoot(prefs: RolePreferences) {
                     if (showToast) {
                         Toast.makeText(
                             context,
-                            context.getString(R.string.update_check_failed),
-                            Toast.LENGTH_SHORT,
+                            context.getString(R.string.update_check_failed) + " (" + status.message + ")",
+                            Toast.LENGTH_LONG,
                         ).show()
                     }
                 }
@@ -108,15 +108,11 @@ private fun AppRoot(prefs: RolePreferences) {
         ).show()
     }
 
-    // Check for updates on open (ON_START) and on close (ON_STOP).
+    // Silent, throttled auto-check when the app comes to the foreground.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> runCheck(showToast = false)
-                Lifecycle.Event.ON_STOP -> runCheck(showToast = false)
-                else -> Unit
-            }
+            if (event == Lifecycle.Event.ON_START) runCheck(showToast = false, force = false)
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
