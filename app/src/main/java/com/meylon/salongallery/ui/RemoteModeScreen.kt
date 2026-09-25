@@ -19,8 +19,10 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,6 +36,14 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BrightnessMedium
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Collections
@@ -75,6 +85,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -99,6 +110,8 @@ import coil.compose.AsyncImage
 import com.meylon.salongallery.R
 import com.meylon.salongallery.net.AlbumInfo
 import com.meylon.salongallery.net.DiscoveredScreen
+import com.meylon.salongallery.net.FreeTrack
+import com.meylon.salongallery.net.MusicState
 import com.meylon.salongallery.net.PhotoSender
 import com.meylon.salongallery.net.RemoteSession
 import com.meylon.salongallery.net.ScreenInfo
@@ -121,6 +134,7 @@ import com.meylon.salongallery.ui.theme.TextTertiary
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -232,9 +246,20 @@ private fun ControlPanel(
     var showSlideshow by remember { mutableStateOf(false) }
     var showLibrary by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
+    var showMusic by remember { mutableStateOf(false) }
 
     suspend fun readBytes(uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
         runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+    }
+    fun displayName(uri: Uri): String {
+        var name = "Track"
+        runCatching {
+            context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && c.moveToFirst()) c.getString(idx)?.let { name = it }
+            }
+        }
+        return name.substringBeforeLast('.')
     }
 
     val photosPicker = rememberLauncherForActivityResult(
@@ -263,13 +288,17 @@ private fun ControlPanel(
             busy = false; status = if (err == null) "Video sent ✓" else "Couldn't send · $err"
         }
     }
-    val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        busy = true; status = null; progress = 0 to 0
+    val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        busy = true; status = null; progress = 0 to uris.size
         scope.launch {
-            val bytes = readBytes(uri)
-            val err = if (bytes != null) PhotoSender.sendMusic(screen.host, screen.port, bytes) else "read failed"
-            busy = false; status = if (err == null) "Music set ✓" else "Couldn't send · $err"
+            var ok = 0
+            uris.forEachIndexed { i, uri ->
+                val bytes = readBytes(uri)
+                if (bytes != null && PhotoSender.sendMusic(screen.host, screen.port, bytes, displayName(uri)) == null) ok++
+                progress = (i + 1) to uris.size
+            }
+            busy = false; status = "Added $ok / ${uris.size} tracks ✓"
         }
     }
 
@@ -310,7 +339,7 @@ private fun ControlPanel(
                 showFrames = true
             }
             ActionTile(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.tile_music), NeonVioletLight, !busy) {
-                musicPicker.launch("audio/*")
+                showMusic = true
             }
         }
 
@@ -366,6 +395,13 @@ private fun ControlPanel(
                 }
             },
             onDismiss = { showText = false },
+        )
+    }
+    if (showMusic) {
+        MusicSheet(
+            screen = screen,
+            onAddFromPhone = { musicPicker.launch("audio/*") },
+            onDismiss = { showMusic = false },
         )
     }
 }
@@ -1071,6 +1107,133 @@ private fun TextSheet(
             Spacer(Modifier.height(12.dp))
             OutlineButton(text = stringResource(R.string.text_clear), onClick = { content = ""; clock = false; onClear() })
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MusicSheet(
+    screen: DiscoveredScreen,
+    onAddFromPhone: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var state by remember { mutableStateOf<MusicState?>(null) }
+    var showFree by remember { mutableStateOf(false) }
+    var refresh by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(refresh) {
+        state = PhotoSender.getMusic(screen.host, screen.port)
+    }
+    fun bump() { refresh++ }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.music_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary, modifier = Modifier.weight(1f))
+                RoundIconBtn(Icons.Outlined.Add, accent = true) { onAddFromPhone() }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(stringResource(R.string.music_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+            Spacer(Modifier.height(18.dp))
+            // Transport controls
+            val playing = state?.playing == true
+            val shuffleOn = state?.shuffle == true
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                SmallBtn(Icons.Filled.Shuffle, if (shuffleOn) NeonCyan else TextSecondary) {
+                    scope.launch { PhotoSender.musicControl(screen.host, screen.port, "shuffle"); bump() }
+                }
+                SmallBtn(Icons.Filled.SkipPrevious, TextPrimary) {
+                    scope.launch { PhotoSender.musicControl(screen.host, screen.port, "prev"); bump() }
+                }
+                Box(
+                    Modifier.size(58.dp).clip(RoundedCornerShape(50)).background(AccentGradient)
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            scope.launch { PhotoSender.musicControl(screen.host, screen.port, "toggle"); bump() }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Color(0xFF07121F), modifier = Modifier.size(30.dp))
+                }
+                SmallBtn(Icons.Filled.SkipNext, TextPrimary) {
+                    scope.launch { PhotoSender.musicControl(screen.host, screen.port, "next"); bump() }
+                }
+                Spacer(Modifier.weight(1f))
+            }
+
+            Spacer(Modifier.height(18.dp))
+            val tracks = state?.tracks.orEmpty()
+            if (tracks.isEmpty()) {
+                Text(stringResource(R.string.music_empty), style = MaterialTheme.typography.bodyMedium, color = TextSecondary, modifier = Modifier.padding(vertical = 16.dp))
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    itemsIndexed(tracks, key = { _, t -> t.name }) { i, t ->
+                        val isNow = i == (state?.current ?: -1) && playing
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .background(if (isNow) NeonCyan.copy(alpha = 0.10f) else ElecSurface)
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(if (isNow) Icons.Filled.PlayArrow else Icons.Outlined.MusicNote, null, tint = if (isNow) NeonCyan else TextSecondary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text(t.title, style = MaterialTheme.typography.titleMedium, color = TextPrimary, maxLines = 1, modifier = Modifier.weight(1f))
+                            SmallBtn(Icons.Outlined.Delete, Color(0xFFF87171)) {
+                                scope.launch { PhotoSender.musicDelete(screen.host, screen.port, t.name); bump() }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            WideButton(Icons.Outlined.LibraryMusic, stringResource(R.string.music_free), NeonVioletLight) { showFree = true }
+            Spacer(Modifier.height(14.dp))
+        }
+    }
+
+    if (showFree) {
+        FreeMusicSheet(
+            onDownload = { t ->
+                scope.launch {
+                    PhotoSender.musicDownload(screen.host, screen.port, t.url, t.title)
+                    delay(1500); bump()
+                }
+            },
+            onDismiss = { showFree = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FreeMusicSheet(onDownload: (FreeTrack) -> Unit, onDismiss: () -> Unit) {
+    val added = remember { mutableStateListOf<String>() }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+            Text(stringResource(R.string.music_free), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text(stringResource(R.string.music_free_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            Spacer(Modifier.height(16.dp))
+            PhotoSender.freeMusic.forEach { t ->
+                val done = added.contains(t.title)
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(12.dp))
+                        .background(ElecSurface).padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(t.title, style = MaterialTheme.typography.titleMedium, color = TextPrimary, maxLines = 1)
+                        Text(t.artist, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1)
+                    }
+                    SmallBtn(Icons.Outlined.CloudDownload, if (done) GoodGreen else NeonCyan) {
+                        if (!done) { added.add(t.title); onDownload(t) }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
         }
     }
 }

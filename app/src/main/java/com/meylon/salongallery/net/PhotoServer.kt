@@ -6,7 +6,12 @@ import fi.iki.elonen.NanoHTTPD
 interface ScreenCommands {
     fun onPhoto(bytes: ByteArray)          // append to the library
     fun onVideo(bytes: ByteArray)          // play this video
-    fun onMusic(bytes: ByteArray)          // loop this as background music
+    fun onMusic(bytes: ByteArray, title: String) // add to the music library
+    // Music library
+    fun musicListJson(): String
+    fun musicDelete(name: String)
+    fun musicControl(action: String)       // play / pause / next / prev / shuffle
+    fun musicDownload(url: String, title: String)
     fun onBrightness(value: Float)
     fun onVolume(value: Float)
     fun onFrame(id: Int)
@@ -59,7 +64,20 @@ class PhotoServer(
                 readBody(session)?.let { commands.onVideo(it) }; ok()
             }
             session.method == Method.POST && uri == "/music" -> {
-                readBody(session)?.let { commands.onMusic(it) }; ok()
+                val title = session.parameters["name"]?.firstOrNull().orEmpty()
+                readBody(session)?.let { commands.onMusic(it, title) }; ok()
+            }
+            session.method == Method.GET && uri == "/music/list" -> json(commands.musicListJson())
+            session.method == Method.GET && uri == "/music/delete" -> {
+                session.parameters["id"]?.firstOrNull()?.let { commands.musicDelete(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/music/control" -> {
+                session.parameters["a"]?.firstOrNull()?.let { commands.musicControl(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/music/download" -> {
+                val url = session.parameters["url"]?.firstOrNull()
+                val title = session.parameters["name"]?.firstOrNull().orEmpty()
+                if (url != null) commands.musicDownload(url, title); ok()
             }
 
             session.method == Method.GET && uri == "/brightness" -> {

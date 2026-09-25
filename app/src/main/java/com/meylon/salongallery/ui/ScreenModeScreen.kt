@@ -121,6 +121,11 @@ fun ScreenModeScreen(actions: AppActions) {
     val brightness by session.brightness.collectAsStateWithLifecycle()
     val running by session.running.collectAsStateWithLifecycle()
     val currentIndex by session.currentIndex.collectAsStateWithLifecycle()
+    val musicVersion by session.musicVersion.collectAsStateWithLifecycle()
+    val musicPlaying by session.musicPlaying.collectAsStateWithLifecycle()
+    val musicShuffle by session.musicShuffle.collectAsStateWithLifecycle()
+    val musicNext by session.musicNextTrigger.collectAsStateWithLifecycle()
+    val musicPrev by session.musicPrevTrigger.collectAsStateWithLifecycle()
 
     var showSettings by remember { mutableStateOf(false) }
 
@@ -146,6 +151,36 @@ fun ScreenModeScreen(actions: AppActions) {
             exo.pause()
         }
     }
+
+    // A dedicated ExoPlayer for the background-music playlist, driven by the session.
+    val musicExo = remember {
+        ExoPlayer.Builder(context).build().apply { repeatMode = Player.REPEAT_MODE_ALL }
+    }
+    DisposableEffect(Unit) {
+        val l = object : Player.Listener {
+            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                session.musicIndex.value = musicExo.currentMediaItemIndex
+            }
+        }
+        musicExo.addListener(l)
+        onDispose { musicExo.removeListener(l); musicExo.release() }
+    }
+    LaunchedEffect(musicVersion) {
+        val tracks = session.music.list()
+        if (tracks.isEmpty()) {
+            musicExo.clearMediaItems()
+        } else {
+            val keepIndex = musicExo.currentMediaItemIndex.coerceIn(0, tracks.size - 1)
+            val wasEmpty = musicExo.mediaItemCount == 0
+            musicExo.setMediaItems(tracks.map { MediaItem.fromUri(Uri.fromFile(it)) })
+            musicExo.prepare()
+            if (!wasEmpty) musicExo.seekTo(keepIndex, 0)
+        }
+    }
+    LaunchedEffect(musicPlaying) { musicExo.playWhenReady = musicPlaying }
+    LaunchedEffect(musicShuffle) { musicExo.shuffleModeEnabled = musicShuffle }
+    LaunchedEffect(musicNext) { if (musicNext > 0 && musicExo.mediaItemCount > 0) musicExo.seekToNext() }
+    LaunchedEffect(musicPrev) { if (musicPrev > 0 && musicExo.mediaItemCount > 0) musicExo.seekToPrevious() }
 
     LaunchedEffect(brightness) {
         activity?.window?.let { w ->

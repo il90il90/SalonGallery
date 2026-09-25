@@ -83,6 +83,11 @@
     <string name="text_clock">Show clock &amp; date</string>
     <string name="text_apply">Apply</string>
     <string name="text_clear">Clear</string>
+    <string name="music_title">Music</string>
+    <string name="music_hint">Build a playlist — it loops on the screen. Tap + to add tracks from your phone.</string>
+    <string name="music_empty">No music yet — add tracks from your phone or the free library.</string>
+    <string name="music_free">Free music library</string>
+    <string name="music_free_hint">Royalty-free tracks — the screen downloads them over your Wi-Fi.</string>
     <string name="badge_now">NOW</string>
     <string name="badge_next">NEXT</string>
     <string name="clear_library">Clear all photos</string>

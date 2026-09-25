@@ -29,6 +29,12 @@ data class AlbumInfo(val id: String, val name: String, val count: Int)
 data class AlbumList(val activeId: String, val activeName: String, val albums: List<AlbumInfo>)
 data class RemoteTransform(val scale: Float, val x: Float, val y: Float)
 
+data class MusicTrack(val name: String, val title: String)
+data class MusicState(val playing: Boolean, val shuffle: Boolean, val current: Int, val tracks: List<MusicTrack>)
+
+/** A royalty-free track the Display can download directly over the network. */
+data class FreeTrack(val title: String, val artist: String, val url: String)
+
 /** HTTP client used by the Remote to talk to a Display device. */
 object PhotoSender {
 
@@ -151,9 +157,41 @@ object PhotoSender {
     suspend fun sendVideo(host: String, port: Int, bytes: ByteArray) =
         sendMedia(host, port, "/video", bytes, "video/mp4")
 
-    /** POSTs background music. Returns null on success, or a short error string. */
-    suspend fun sendMusic(host: String, port: Int, bytes: ByteArray) =
-        sendMedia(host, port, "/music", bytes, "audio/mp4")
+    /** POSTs a track to the music library. Returns null on success, or a short error string. */
+    suspend fun sendMusic(host: String, port: Int, bytes: ByteArray, title: String) =
+        sendMedia(host, port, "/music?name=${enc(title)}", bytes, "audio/mpeg")
+
+    suspend fun getMusic(host: String, port: Int): MusicState? = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/music/list", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val o = JSONObject(body)
+            val arr = o.optJSONArray("items")
+            val tracks = buildList {
+                if (arr != null) for (i in 0 until arr.length()) {
+                    val t = arr.getJSONObject(i)
+                    add(MusicTrack(t.optString("name"), t.optString("title")))
+                }
+            }
+            MusicState(o.optBoolean("playing"), o.optBoolean("shuffle"), o.optInt("current", 0), tracks)
+        } catch (e: Exception) { null }
+    }
+
+    suspend fun musicControl(host: String, port: Int, action: String) = get(host, port, "/music/control?a=$action")
+    suspend fun musicDelete(host: String, port: Int, name: String) = get(host, port, "/music/delete?id=$name")
+    suspend fun musicDownload(host: String, port: Int, url: String, title: String) =
+        get(host, port, "/music/download?url=${enc(url)}&name=${enc(title)}")
+
+    /** Curated royalty-free (CC0 / public-domain) tracks hosted on archive.org for direct download. */
+    val freeMusic: List<FreeTrack> = listOf(
+        FreeTrack("Moonlight Sonata", "Beethoven · Public Domain", "https://archive.org/download/MoonlightSonata_755/Beethoven-MoonlightSonata.mp3"),
+        FreeTrack("Prelude in C Major", "Bach · Public Domain", "https://archive.org/download/CMajorPreludeBachClassicalCalmSad/C_Major_Prelude-Bach%20Classical%20CalmSad.mp3"),
+        FreeTrack("Sugar and Coffee", "Lack of Color · Lo-fi", "https://archive.org/download/lofi-ambient-songs/Lack%20of%20Color%20-%20Sugar%20and%20coffee.mp3"),
+        FreeTrack("Iterative Ambient Gem", "Thomas Park · Ambient", "https://archive.org/download/IterativeAmbientGems/Gem_26.mp3"),
+        FreeTrack("Minimal Ambient Bounce", "Loyalty Freak Music · CC0", "https://archive.org/download/MINIMALAMBIENTBOUNCE/Loyalty%20Freak%20Music%20-%20MINIMAL%20AMBIENT%20BOUNCE%20-%2007%20No%20Cadillac.mp3"),
+    )
 
     suspend fun setFrame(host: String, port: Int, id: Int) =
         get(host, port, "/frame?id=$id")

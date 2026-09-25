@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.AudioManager
-import android.media.MediaPlayer
 import android.os.StatFs
 import android.util.Log
 import fi.iki.elonen.NanoHTTPD
@@ -24,13 +23,12 @@ class ScreenSession(
     private val nsd = NsdController(app)
     private val audio = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var server: PhotoServer? = null
-    private var musicPlayer: MediaPlayer? = null
 
     val library = LibraryStore(File(app.filesDir, "library"))
     val albums = AlbumStore(File(app.filesDir, "albums.json"), library)
     val transforms = TransformStore(File(app.filesDir, "transforms.json"))
+    val music = MusicStore(File(app.filesDir, "music"))
     val videoFile = File(app.filesDir, "display_current.mp4")
-    val musicFile = File(app.filesDir, "display_music.m4a")
 
     /** Files for the active album (or the whole library), in order. */
     fun activeFiles(): List<File> = albums.activePhotoNames().mapNotNull { library.fileFor(it) }
@@ -41,6 +39,13 @@ class ScreenSession(
     val libraryVersion = MutableStateFlow(0L)
     val videoVersion = MutableStateFlow(0L)
     val musicVersion = MutableStateFlow(0L)
+    // Resume background music automatically when the frame boots with a playlist.
+    val musicPlaying = MutableStateFlow(music.count() > 0)
+    val musicShuffle = MutableStateFlow(false)
+    val musicNextTrigger = MutableStateFlow(0L)
+    val musicPrevTrigger = MutableStateFlow(0L)
+    /** Index into the music library that is currently playing (updated by the player). */
+    val musicIndex = MutableStateFlow(0)
     val frameId = MutableStateFlow(0)
     val intervalMs = MutableStateFlow(8000L)
     val shuffle = MutableStateFlow(false)
@@ -76,8 +81,6 @@ class ScreenSession(
     fun stop() {
         runCatching { nsd.unregister() }
         runCatching { server?.stop() }
-        runCatching { musicPlayer?.release() }
-        musicPlayer = null
         server = null
         running.value = false
     }
@@ -111,18 +114,53 @@ class ScreenSession(
         }
     }
 
-    override fun onMusic(bytes: ByteArray) {
+    override fun onMusic(bytes: ByteArray, title: String) {
         runCatching {
-            musicFile.writeBytes(bytes)
-            musicPlayer?.release()
-            musicPlayer = MediaPlayer().apply {
-                setDataSource(musicFile.path)
-                isLooping = true
-                setOnPreparedListener { start() }
-                prepareAsync()
-            }
+            val wasEmpty = music.count() == 0
+            music.add(bytes, title)
+            if (wasEmpty) { musicIndex.value = 0; musicPlaying.value = true }
             musicVersion.value = System.currentTimeMillis()
         }
+    }
+
+    override fun musicListJson(): String {
+        val inner = music.listJson().removePrefix("{").removeSuffix("}")
+        return "{\"playing\":${musicPlaying.value},\"shuffle\":${musicShuffle.value}," +
+            "\"current\":${musicIndex.value},$inner}"
+    }
+
+    override fun musicDelete(name: String) {
+        runCatching {
+            music.delete(name)
+            if (music.count() == 0) musicPlaying.value = false
+            musicIndex.value = musicIndex.value.coerceIn(0, maxOf(0, music.count() - 1))
+            musicVersion.value = System.currentTimeMillis()
+        }
+    }
+
+    override fun musicControl(action: String) {
+        when (action.lowercase()) {
+            "play" -> if (music.count() > 0) musicPlaying.value = true
+            "pause" -> musicPlaying.value = false
+            "toggle" -> if (music.count() > 0) musicPlaying.value = !musicPlaying.value
+            "next" -> musicNextTrigger.value = System.currentTimeMillis()
+            "prev" -> musicPrevTrigger.value = System.currentTimeMillis()
+            "shuffle" -> musicShuffle.value = !musicShuffle.value
+        }
+    }
+
+    override fun musicDownload(url: String, title: String) {
+        Thread {
+            runCatching {
+                val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 15000; readTimeout = 30000; instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Android) SalonGallery")
+                }
+                val bytes = conn.inputStream.use { it.readBytes() }
+                conn.disconnect()
+                if (bytes.isNotEmpty()) onMusic(bytes, title)
+            }
+        }.start()
     }
 
     override fun onBrightness(value: Float) { brightness.value = value.coerceIn(0f, 1f) }
