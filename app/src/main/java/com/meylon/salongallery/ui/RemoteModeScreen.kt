@@ -1,5 +1,6 @@
 package com.meylon.salongallery.ui
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,25 +20,34 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BrightnessMedium
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.FilterFrames
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,9 +74,11 @@ import com.meylon.salongallery.ui.components.SectionLabel
 import com.meylon.salongallery.ui.theme.ElecBorder
 import com.meylon.salongallery.ui.theme.ElecSurface
 import com.meylon.salongallery.ui.theme.GoodGreen
+import com.meylon.salongallery.ui.theme.NeonBlue
 import com.meylon.salongallery.ui.theme.NeonCyan
 import com.meylon.salongallery.ui.theme.NeonTeal
 import com.meylon.salongallery.ui.theme.NeonViolet
+import com.meylon.salongallery.ui.theme.NeonVioletLight
 import com.meylon.salongallery.ui.theme.TextPrimary
 import com.meylon.salongallery.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
@@ -87,161 +98,172 @@ fun RemoteModeScreen(actions: AppActions) {
     val screens by session.screens.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<DiscoveredScreen?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var info by remember { mutableStateOf<ScreenInfo?>(null) }
+
+    LaunchedEffect(selected?.host, selected?.port) {
+        val s = selected
+        info = if (s != null) PhotoSender.getInfo(s.host, s.port) else null
+    }
 
     SalonBackground {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(horizontal = 20.dp, vertical = 18.dp)
-                .widthIn(max = 560.dp)
-        ) {
-            TopBar(onSettings = { showSettings = true })
-            Spacer(Modifier.height(28.dp))
-
-            val target = selected
-            if (target == null) {
-                SectionLabel(stringResource(R.string.remote_overline))
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    stringResource(R.string.remote_screens_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = TextPrimary,
-                )
+        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+            Column(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                TopBar(onSettings = { showSettings = true })
                 Spacer(Modifier.height(24.dp))
-                if (screens.isEmpty()) {
-                    Searching()
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        screens.forEach { s ->
-                            ScreenRow(screen = s, onClick = { selected = s })
-                        }
+
+                val target = selected
+                if (target == null) {
+                    SectionLabel(stringResource(R.string.remote_overline))
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        stringResource(R.string.remote_screens_title),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = TextPrimary,
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    if (screens.isEmpty()) Searching()
+                    else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        screens.forEach { s -> ScreenRow(s) { selected = s } }
                     }
+                } else {
+                    ControlPanel(
+                        screen = target,
+                        onBack = { selected = null; info = null },
+                        onInfoRefresh = { scope -> scope.launch { info = PhotoSender.getInfo(target.host, target.port) } },
+                    )
                 }
-            } else {
-                ControlPanel(screen = target, onBack = { selected = null })
             }
         }
     }
 
     if (showSettings) {
-        SettingsSheet(actions = actions, onDismiss = { showSettings = false })
+        SettingsSheet(
+            actions = actions,
+            onDismiss = { showSettings = false },
+            extra = {
+                info?.let {
+                    Spacer(Modifier.height(16.dp))
+                    ScreenInfoContent(it.widthPx, it.heightPx, it.freeBytes, it.totalBytes, it.photoCount)
+                }
+            },
+        )
     }
 }
 
 @Composable
-private fun ControlPanel(screen: DiscoveredScreen, onBack: () -> Unit) {
+private fun ControlPanel(
+    screen: DiscoveredScreen,
+    onBack: () -> Unit,
+    onInfoRefresh: (kotlinx.coroutines.CoroutineScope) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var info by remember { mutableStateOf<com.meylon.salongallery.net.ScreenInfo?>(null) }
+    var progress by remember { mutableStateOf(0 to 0) } // done to total
 
-    LaunchedEffect(screen.host, screen.port) {
-        info = PhotoSender.getInfo(screen.host, screen.port)
+    var frameId by remember { mutableIntStateOf(0) }
+    var shuffle by remember { mutableStateOf(false) }
+    var intervalMs by remember { mutableStateOf(8000L) }
+    var orientation by remember { mutableStateOf("auto") }
+    var showFrames by remember { mutableStateOf(false) }
+    var showSlideshow by remember { mutableStateOf(false) }
+
+    suspend fun readBytes(uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
     }
 
-    fun sendMedia(uri: android.net.Uri?, video: Boolean) {
-        if (uri == null) return
-        busy = true; status = null
+    val photosPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        busy = true; status = null; progress = 0 to uris.size
         scope.launch {
-            val bytes = withContext(Dispatchers.IO) {
-                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            var ok = 0
+            uris.forEachIndexed { i, uri ->
+                val bytes = readBytes(uri)
+                if (bytes != null && PhotoSender.sendPhoto(screen.host, screen.port, bytes) == null) ok++
+                progress = (i + 1) to uris.size
             }
-            val err = if (bytes == null) "read failed"
-            else if (video) PhotoSender.sendVideo(screen.host, screen.port, bytes)
-            else PhotoSender.sendPhoto(screen.host, screen.port, bytes)
             busy = false
-            status = if (err == null) (if (video) "Video sent ✓" else "Photo sent ✓") else "Couldn't send · $err"
+            status = "Sent $ok / ${uris.size} photos ✓"
+            onInfoRefresh(scope)
         }
     }
-
-    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {
-        sendMedia(it, video = false)
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        busy = true; status = null; progress = 0 to 0
+        scope.launch {
+            val bytes = readBytes(uri)
+            val err = if (bytes != null) PhotoSender.sendVideo(screen.host, screen.port, bytes) else "read failed"
+            busy = false; status = if (err == null) "Video sent ✓" else "Couldn't send · $err"
+        }
     }
-    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {
-        sendMedia(it, video = true)
+    val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        busy = true; status = null; progress = 0 to 0
+        scope.launch {
+            val bytes = readBytes(uri)
+            val err = if (bytes != null) PhotoSender.sendMusic(screen.host, screen.port, bytes) else "read failed"
+            busy = false; status = if (err == null) "Music set ✓" else "Couldn't send · $err"
+        }
     }
 
     Column(Modifier.fillMaxWidth()) {
-        // Connected header (gradient border)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(AccentGradient)
-                .padding(1.5.dp)
-                .clip(RoundedCornerShape(17.dp))
-                .background(ElecSurface)
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(AccentGradient),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Outlined.Tv, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
-            Spacer(Modifier.size(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(screen.name, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
-                Text(stringResource(R.string.remote_connected), style = MaterialTheme.typography.bodyMedium, color = GoodGreen)
-            }
-        }
-
-        info?.let {
-            Spacer(Modifier.height(12.dp))
-            ScreenInfoStrip(it)
-        }
+        ConnectedHeader(screen.name)
 
         Spacer(Modifier.height(16.dp))
-        // 2x2 tile grid
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActionTile(
-                modifier = Modifier.weight(1f),
-                icon = Icons.Outlined.PhotoLibrary,
-                label = stringResource(R.string.tile_photo),
-                accent = NeonCyan,
-                enabled = !busy,
-                onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-            )
-            ActionTile(
-                modifier = Modifier.weight(1f),
-                icon = Icons.Outlined.Movie,
-                label = stringResource(R.string.tile_video),
-                accent = NeonViolet,
-                enabled = !busy,
-                onClick = { videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
-            )
+            ActionTile(Modifier.weight(1f), Icons.Outlined.PhotoLibrary, stringResource(R.string.tile_photos), NeonCyan, !busy) {
+                photosPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+            ActionTile(Modifier.weight(1f), Icons.Outlined.Movie, stringResource(R.string.tile_video), NeonViolet, !busy) {
+                videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+            }
         }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SliderTile(
-                modifier = Modifier.weight(1f),
-                icon = Icons.Outlined.BrightnessMedium,
-                label = stringResource(R.string.tile_brightness),
-                accent = NeonTeal,
-                onCommit = { v -> scope.launch { PhotoSender.setBrightness(screen.host, screen.port, v) } },
-            )
-            SliderTile(
-                modifier = Modifier.weight(1f),
-                icon = Icons.Outlined.VolumeUp,
-                label = stringResource(R.string.tile_volume),
-                accent = NeonCyan,
-                onCommit = { v -> scope.launch { PhotoSender.setVolume(screen.host, screen.port, v) } },
-            )
+            ActionTile(Modifier.weight(1f), Icons.Outlined.FilterFrames, stringResource(R.string.tile_frame), NeonTeal, !busy) {
+                showFrames = true
+            }
+            ActionTile(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.tile_music), NeonVioletLight, !busy) {
+                musicPicker.launch("audio/*")
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActionTile(Modifier.weight(1f), Icons.Outlined.Slideshow, stringResource(R.string.tile_slideshow), NeonBlue, !busy) {
+                showSlideshow = true
+            }
+            ActionTile(Modifier.weight(1f), Icons.Outlined.DeleteSweep, stringResource(R.string.tile_clear), Color(0xFFF87171), !busy) {
+                scope.launch { PhotoSender.clearLibrary(screen.host, screen.port); status = "Library cleared"; onInfoRefresh(scope) }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SliderTile(Modifier.weight(1f), Icons.Outlined.BrightnessMedium, stringResource(R.string.tile_brightness), NeonTeal) { v ->
+                scope.launch { PhotoSender.setBrightness(screen.host, screen.port, v) }
+            }
+            SliderTile(Modifier.weight(1f), Icons.Outlined.VolumeUp, stringResource(R.string.tile_volume), NeonCyan) { v ->
+                scope.launch { PhotoSender.setVolume(screen.host, screen.port, v) }
+            }
         }
 
         Spacer(Modifier.height(16.dp))
-        Box(Modifier.fillMaxWidth().height(22.dp), contentAlignment = Alignment.Center) {
-            if (busy) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                    Text(stringResource(R.string.remote_sending), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                }
-            } else if (status != null) {
-                Text(
-                    status!!,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (status!!.contains("✓")) GoodGreen else Color(0xFFF87171),
+        Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+            when {
+                busy && progress.second > 1 -> ProgressRow("Sending ${progress.first}/${progress.second}…")
+                busy -> ProgressRow(stringResource(R.string.remote_sending))
+                status != null -> Text(
+                    status!!, style = MaterialTheme.typography.labelMedium,
+                    color = if (status!!.contains("✓") || status!!.contains("cleared")) GoodGreen else Color(0xFFF87171),
                     textAlign = TextAlign.Center,
                 )
             }
@@ -249,70 +271,65 @@ private fun ControlPanel(screen: DiscoveredScreen, onBack: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
         OutlineButton(text = stringResource(R.string.remote_disconnect), onClick = onBack)
+        Spacer(Modifier.height(20.dp))
+    }
+
+    if (showFrames) {
+        FrameSheet(current = frameId, onPick = { id ->
+            frameId = id; scope.launch { PhotoSender.setFrame(screen.host, screen.port, id) }
+        }, onDismiss = { showFrames = false })
+    }
+    if (showSlideshow) {
+        SlideshowSheet(
+            shuffle = shuffle, intervalMs = intervalMs, orientation = orientation,
+            onShuffle = { shuffle = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, intervalMs, it) } },
+            onInterval = { intervalMs = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, it, shuffle) } },
+            onOrientation = { orientation = it; scope.launch { PhotoSender.setOrientation(screen.host, screen.port, it) } },
+            onDismiss = { showSlideshow = false },
+        )
     }
 }
 
 @Composable
-private fun ScreenInfoStrip(info: ScreenInfo) {
-    val usedFrac = if (info.totalBytes > 0)
-        (1f - info.freeBytes.toFloat() / info.totalBytes).coerceIn(0f, 1f) else 0f
-    val warn = usedFrac >= 0.9f
-    val warnColor = Color(0xFFF87171)
-    Column(Modifier.fillMaxWidth()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (info.widthPx > 0) InfoPill("${info.widthPx} × ${info.heightPx}")
-            if (info.totalBytes > 0) InfoPill("${fmtBytes(info.freeBytes)} free of ${fmtBytes(info.totalBytes)}")
-        }
-        if (info.totalBytes > 0) {
-            Spacer(Modifier.height(10.dp))
-            LinearProgressIndicator(
-                progress = { usedFrac },
-                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(50)),
-                color = if (warn) warnColor else NeonCyan,
-                trackColor = ElecBorder,
-            )
-            if (warn) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    stringResource(R.string.storage_warning),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = warnColor,
-                )
-            }
-        }
+private fun ProgressRow(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+        Text(text, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
     }
 }
 
 @Composable
-private fun InfoPill(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        color = TextSecondary,
+private fun ConnectedHeader(name: String) {
+    Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .border(1.dp, ElecBorder, RoundedCornerShape(50))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    )
-}
-
-private fun fmtBytes(b: Long): String {
-    val gb = b / 1_000_000_000.0
-    return if (gb >= 1) String.format("%.1f GB", gb) else String.format("%.0f MB", b / 1_000_000.0)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(AccentGradient)
+            .padding(1.5.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(ElecSurface)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(AccentGradient),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Outlined.Tv, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
+        Spacer(Modifier.size(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+            Text(stringResource(R.string.remote_connected), style = MaterialTheme.typography.bodyMedium, color = GoodGreen)
+        }
+    }
 }
 
 @Composable
 private fun ActionTile(
-    modifier: Modifier,
-    icon: ImageVector,
-    label: String,
-    accent: Color,
-    enabled: Boolean,
-    onClick: () -> Unit,
+    modifier: Modifier, icon: ImageVector, label: String, accent: Color, enabled: Boolean, onClick: () -> Unit,
 ) {
     Column(
         modifier = modifier
-            .aspectRatio(1f)
+            .height(116.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(ElecSurface)
             .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(20.dp))
@@ -321,72 +338,137 @@ private fun ActionTile(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { onClick() }
-            .padding(18.dp),
+            .padding(16.dp),
     ) {
         Box(
-            Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(accent.copy(alpha = 0.14f)),
+            Modifier.size(44.dp).clip(RoundedCornerShape(13.dp)).background(accent.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, null, tint = accent, modifier = Modifier.size(26.dp)) }
+        ) { Icon(icon, null, tint = accent, modifier = Modifier.size(24.dp)) }
         Spacer(Modifier.weight(1f))
-        Text(label, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+        Text(label, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
     }
 }
 
 @Composable
-private fun SliderTile(
-    modifier: Modifier,
-    icon: ImageVector,
-    label: String,
-    accent: Color,
-    onCommit: (Float) -> Unit,
-) {
+private fun SliderTile(modifier: Modifier, icon: ImageVector, label: String, accent: Color, onCommit: (Float) -> Unit) {
     var value by remember { mutableFloatStateOf(0.5f) }
     Column(
         modifier = modifier
-            .aspectRatio(1f)
+            .height(116.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(ElecSurface)
             .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(20.dp))
-            .padding(18.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(alpha = 0.14f)),
+                Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(accent.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center,
-            ) { Icon(icon, null, tint = accent, modifier = Modifier.size(22.dp)) }
+            ) { Icon(icon, null, tint = accent, modifier = Modifier.size(20.dp)) }
             Spacer(Modifier.weight(1f))
             Text("${(value * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
         }
         Spacer(Modifier.weight(1f))
-        Text(label, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+        Text(label, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
         Slider(
-            value = value,
-            onValueChange = { value = it },
-            onValueChangeFinished = { onCommit(value) },
-            colors = SliderDefaults.colors(
-                thumbColor = accent,
-                activeTrackColor = accent,
-                inactiveTrackColor = ElecBorder,
-            ),
+            value = value, onValueChange = { value = it }, onValueChangeFinished = { onCommit(value) },
+            colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent, inactiveTrackColor = ElecBorder),
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FrameSheet(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().padding(24.dp)) {
+            Text(stringResource(R.string.tile_frame), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(16.dp))
+            FRAMES.forEach { f ->
+                val sel = f.id == current
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(if (sel) 1.5.dp else 1.dp, if (sel) NeonCyan else ElecBorder, RoundedCornerShape(14.dp))
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onPick(f.id) }
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(30.dp).clip(RoundedCornerShape(7.dp)).background(f.matColor).border(1.dp, ElecBorder, RoundedCornerShape(7.dp)))
+                    Spacer(Modifier.size(12.dp))
+                    Text(f.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SlideshowSheet(
+    shuffle: Boolean, intervalMs: Long, orientation: String,
+    onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit, onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().padding(24.dp)) {
+            Text(stringResource(R.string.tile_slideshow), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.slideshow_order), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            SegRow(listOf("Sequential" to false, "Shuffle" to true).map { it.first }, if (shuffle) 1 else 0) {
+                onShuffle(it == 1)
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.slideshow_interval), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            val intervals = listOf(5000L, 10000L, 30000L, 60000L)
+            SegRow(listOf("5s", "10s", "30s", "1m"), intervals.indexOf(intervalMs).coerceAtLeast(0)) {
+                onInterval(intervals[it])
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.slideshow_orientation), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            val orients = listOf("auto", "portrait", "landscape")
+            SegRow(listOf("Auto", "Portrait", "Landscape"), orients.indexOf(orientation).coerceAtLeast(0)) {
+                onOrientation(orients[it])
+            }
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun SegRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        labels.forEachIndexed { i, label ->
+            val sel = i == selected
+            Box(
+                Modifier.weight(1f).height(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .then(if (sel) Modifier.background(AccentGradient) else Modifier.border(1.dp, ElecBorder, RoundedCornerShape(12.dp)))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(i) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = if (sel) Color(0xFF07121F) else TextPrimary)
+            }
+        }
     }
 }
 
 @Composable
 private fun Searching() {
-    Column(
-        Modifier.fillMaxWidth().padding(top = 40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+    Column(Modifier.fillMaxWidth().padding(top = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         CircularProgressIndicator(color = NeonCyan, strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
         Spacer(Modifier.height(18.dp))
         Text(stringResource(R.string.remote_searching), style = MaterialTheme.typography.titleMedium, color = TextPrimary)
         Spacer(Modifier.height(6.dp))
         Text(
             stringResource(R.string.remote_searching_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary,
-            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyMedium, color = TextSecondary, textAlign = TextAlign.Center,
         )
     }
 }
@@ -399,10 +481,7 @@ private fun ScreenRow(screen: DiscoveredScreen, onClick: () -> Unit) {
             .clip(RoundedCornerShape(18.dp))
             .border(1.dp, ElecBorder, RoundedCornerShape(18.dp))
             .background(ElecSurface)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { onClick() }
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

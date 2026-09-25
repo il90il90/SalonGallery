@@ -13,6 +13,7 @@ data class ScreenInfo(
     val heightPx: Int,
     val freeBytes: Long,
     val totalBytes: Long,
+    val photoCount: Int,
 )
 
 /** HTTP client used by the Remote to talk to a Display device. */
@@ -34,6 +35,7 @@ object PhotoSender {
                 heightPx = o.optInt("h", 0),
                 freeBytes = o.optLong("free", 0L),
                 totalBytes = o.optLong("total", 0L),
+                photoCount = o.optInt("count", 0),
             )
         } catch (e: Exception) {
             null
@@ -63,6 +65,32 @@ object PhotoSender {
     /** POSTs a video. Returns null on success, or a short error string. */
     suspend fun sendVideo(host: String, port: Int, bytes: ByteArray) =
         sendMedia(host, port, "/video", bytes, "video/mp4")
+
+    /** POSTs background music. Returns null on success, or a short error string. */
+    suspend fun sendMusic(host: String, port: Int, bytes: ByteArray) =
+        sendMedia(host, port, "/music", bytes, "audio/mp4")
+
+    suspend fun setFrame(host: String, port: Int, id: Int) =
+        get(host, port, "/frame?id=$id")
+
+    suspend fun setSlideshow(host: String, port: Int, intervalMs: Long, shuffle: Boolean) =
+        get(host, port, "/slideshow?interval=$intervalMs&shuffle=${if (shuffle) 1 else 0}")
+
+    suspend fun setOrientation(host: String, port: Int, o: String) =
+        get(host, port, "/orientation?o=$o")
+
+    suspend fun clearLibrary(host: String, port: Int) =
+        get(host, port, "/clear")
+
+    private suspend fun get(host: String, port: Int, path: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val conn = open("http://$host:$port$path", "GET")
+                val ok = conn.responseCode in 200..299
+                conn.disconnect()
+                ok
+            } catch (e: Exception) { false }
+        }
 
     private suspend fun sendMedia(
         host: String, port: Int, path: String, bytes: ByteArray, contentType: String,

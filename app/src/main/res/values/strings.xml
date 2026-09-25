@@ -39,10 +39,17 @@
     <string name="remote_sent">Photo sent ✓</string>
     <string name="remote_send_failed">Couldn\'t send. Try again.</string>
     <string name="remote_disconnect">Choose another screen</string>
-    <string name="tile_photo">Send Photo</string>
+    <string name="tile_photos">Send Photos</string>
     <string name="tile_video">Send Video</string>
+    <string name="tile_frame">Frame</string>
+    <string name="tile_music">Music</string>
+    <string name="tile_slideshow">Slideshow</string>
+    <string name="tile_clear">Clear all</string>
     <string name="tile_brightness">Brightness</string>
     <string name="tile_volume">Volume</string>
+    <string name="slideshow_order">Order</string>
+    <string name="slideshow_interval">Change every</string>
+    <string name="slideshow_orientation">Screen orientation</string>
     <string name="storage_warning">Screen storage almost full — free some space</string>
 
     <!-- Updates -->

@@ -4,15 +4,21 @@ import fi.iki.elonen.NanoHTTPD
 
 /** Commands the Display device reacts to when the server receives a request. */
 interface ScreenCommands {
-    fun onMedia(bytes: ByteArray, isVideo: Boolean)
+    fun onPhoto(bytes: ByteArray)          // append to the library
+    fun onVideo(bytes: ByteArray)          // play this video
+    fun onMusic(bytes: ByteArray)          // loop this as background music
     fun onBrightness(value: Float)
     fun onVolume(value: Float)
+    fun onFrame(id: Int)
+    fun onSlideshow(intervalMs: Long, shuffle: Boolean)
+    fun onOrientation(o: String)
+    fun onClear()
 }
 
 /**
- * Tiny HTTP server that runs on the Display device. Answers /ping, accepts a raw
- * image on POST /photo or a video on POST /video, and simple GET control commands
- * (/brightness, /volume). Construct with port 0 to let the OS pick a free port.
+ * HTTP server on the Display device. POST /photo (append), /video, /music take raw
+ * bytes; GET commands (/brightness /volume /frame /slideshow /orientation /clear)
+ * carry parameters. /ping returns device + screen + storage info.
  */
 class PhotoServer(
     private val pingBody: () -> String,
@@ -25,24 +31,33 @@ class PhotoServer(
             session.method == Method.GET && uri == "/ping" -> json(pingBody())
 
             session.method == Method.POST && uri == "/photo" -> {
-                readBody(session)?.let { commands.onMedia(it, isVideo = false) }
-                json("""{"ok":true}""")
+                readBody(session)?.let { commands.onPhoto(it) }; ok()
             }
-
             session.method == Method.POST && uri == "/video" -> {
-                readBody(session)?.let { commands.onMedia(it, isVideo = true) }
-                json("""{"ok":true}""")
+                readBody(session)?.let { commands.onVideo(it) }; ok()
+            }
+            session.method == Method.POST && uri == "/music" -> {
+                readBody(session)?.let { commands.onMusic(it) }; ok()
             }
 
             session.method == Method.GET && uri == "/brightness" -> {
-                floatParam(session)?.let { commands.onBrightness(it) }
-                json("""{"ok":true}""")
+                floatParam(session)?.let { commands.onBrightness(it) }; ok()
             }
-
             session.method == Method.GET && uri == "/volume" -> {
-                floatParam(session)?.let { commands.onVolume(it) }
-                json("""{"ok":true}""")
+                floatParam(session)?.let { commands.onVolume(it) }; ok()
             }
+            session.method == Method.GET && uri == "/frame" -> {
+                intParam(session, "id")?.let { commands.onFrame(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/slideshow" -> {
+                val interval = session.parameters["interval"]?.firstOrNull()?.toLongOrNull() ?: 8000L
+                val shuffle = session.parameters["shuffle"]?.firstOrNull() == "1"
+                commands.onSlideshow(interval, shuffle); ok()
+            }
+            session.method == Method.GET && uri == "/orientation" -> {
+                session.parameters["o"]?.firstOrNull()?.let { commands.onOrientation(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/clear" -> { commands.onClear(); ok() }
 
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "not found")
         }
@@ -66,7 +81,9 @@ class PhotoServer(
     private fun floatParam(session: IHTTPSession): Float? =
         session.parameters["v"]?.firstOrNull()?.toFloatOrNull()?.coerceIn(0f, 1f)
 
-    private fun json(body: String) = newFixedLengthResponse(Response.Status.OK, "application/json", body)
+    private fun intParam(session: IHTTPSession, key: String): Int? =
+        session.parameters[key]?.firstOrNull()?.toIntOrNull()
 
-    private fun jsonStr(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    private fun ok() = json("""{"ok":true}""")
+    private fun json(body: String) = newFixedLengthResponse(Response.Status.OK, "application/json", body)
 }
