@@ -1,6 +1,11 @@
 package com.meylon.salongallery.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Build
+import android.view.WindowManager
+import android.widget.VideoView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -23,23 +28,28 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.meylon.salongallery.R
+import com.meylon.salongallery.net.MediaKind
 import com.meylon.salongallery.net.ScreenSession
 import com.meylon.salongallery.ui.components.LogoChip
 import com.meylon.salongallery.ui.components.SalonBackground
@@ -50,6 +60,15 @@ import com.meylon.salongallery.ui.theme.GoodGreen
 import com.meylon.salongallery.ui.theme.NeonCyan
 import com.meylon.salongallery.ui.theme.TextPrimary
 import com.meylon.salongallery.ui.theme.TextSecondary
+
+private fun Context.findActivity(): Activity? {
+    var c: Context? = this
+    while (c is ContextWrapper) {
+        if (c is Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
 
 @Composable
 fun ScreenModeScreen(actions: AppActions) {
@@ -62,10 +81,22 @@ fun ScreenModeScreen(actions: AppActions) {
         onDispose { session.stop() }
     }
 
-    val photoVersion by session.photoVersion.collectAsStateWithLifecycle()
+    val media by session.media.collectAsStateWithLifecycle()
     val running by session.running.collectAsStateWithLifecycle()
+    val brightness by session.brightness.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
-    val hasPhoto = photoVersion > 0 && session.photoFile.exists()
+
+    // Apply remote brightness to this window.
+    val activity = remember(context) { context.findActivity() }
+    LaunchedEffect(brightness) {
+        activity?.window?.let { w ->
+            val lp = w.attributes
+            lp.screenBrightness =
+                if (brightness < 0f) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                else brightness.coerceIn(0.02f, 1f)
+            w.attributes = lp
+        }
+    }
 
     SalonBackground {
         Column(
@@ -77,22 +108,14 @@ fun ScreenModeScreen(actions: AppActions) {
             TopBar(onSettings = { showSettings = true })
             Spacer(Modifier.height(14.dp))
 
-            if (hasPhoto) {
-                val request = ImageRequest.Builder(context)
-                    .data(session.photoFile)
-                    .memoryCachePolicy(CachePolicy.DISABLED)
-                    .diskCachePolicy(CachePolicy.DISABLED)
-                    .setParameter("v", photoVersion, memoryCacheKey = photoVersion.toString())
-                    .build()
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(androidx.compose.ui.graphics.Color.Black)
-                        .border(1.dp, ElecBorder, RoundedCornerShape(18.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
+            when (media.kind) {
+                MediaKind.PHOTO -> Frame {
+                    val request = ImageRequest.Builder(context)
+                        .data(session.photoFile)
+                        .memoryCachePolicy(CachePolicy.DISABLED)
+                        .diskCachePolicy(CachePolicy.DISABLED)
+                        .setParameter("v", media.version, memoryCacheKey = media.version.toString())
+                        .build()
                     AsyncImage(
                         model = request,
                         contentDescription = "Displayed photo",
@@ -100,8 +123,25 @@ fun ScreenModeScreen(actions: AppActions) {
                         modifier = Modifier.fillMaxSize().padding(6.dp),
                     )
                 }
-            } else {
-                WaitingToPair(deviceName = deviceName, running = running)
+
+                MediaKind.VIDEO -> Frame {
+                    key(media.version) {
+                        AndroidView(
+                            factory = { ctx ->
+                                VideoView(ctx).apply {
+                                    setOnPreparedListener { mp -> mp.isLooping = true; start() }
+                                }
+                            },
+                            update = { vv ->
+                                vv.setVideoPath(session.videoFile.absolutePath)
+                                vv.start()
+                            },
+                            modifier = Modifier.fillMaxSize().padding(6.dp),
+                        )
+                    }
+                }
+
+                MediaKind.NONE -> WaitingToPair(deviceName = deviceName, running = running)
             }
         }
     }
@@ -109,6 +149,19 @@ fun ScreenModeScreen(actions: AppActions) {
     if (showSettings) {
         SettingsSheet(actions = actions, onDismiss = { showSettings = false })
     }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.ColumnScope.Frame(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.Black)
+            .border(1.dp, ElecBorder, RoundedCornerShape(18.dp)),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
 
 @Composable
@@ -129,7 +182,6 @@ private fun WaitingToPair(deviceName: String, running: Boolean) {
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(12.dp))
-        // The screen's own name, so it's identifiable on the remote.
         Text(
             deviceName,
             style = MaterialTheme.typography.titleLarge,

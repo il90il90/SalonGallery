@@ -39,6 +39,11 @@
     <string name="remote_sent">Photo sent ✓</string>
     <string name="remote_send_failed">Couldn\'t send. Try again.</string>
     <string name="remote_disconnect">Choose another screen</string>
+    <string name="tile_photo">Send Photo</string>
+    <string name="tile_video">Send Video</string>
+    <string name="tile_brightness">Brightness</string>
+    <string name="tile_volume">Volume</string>
+    <string name="storage_warning">Screen storage almost full — free some space</string>
 
     <!-- Updates -->
     <string name="settings">Settings</string>
