@@ -30,6 +30,7 @@ class ScreenSession(
     val music = MusicStore(File(app.filesDir, "music"))
     val prefs = DisplayPrefs(app)
     val videoFile = File(app.filesDir, "display_current.mp4")
+    private val thumbDir = File(app.filesDir, "thumbs").apply { runCatching { mkdirs() } }
 
     /** The device's shown name: a user-set custom name, else the model name. */
     fun effectiveName(): String = prefs.customName.ifBlank { displayName }
@@ -235,6 +236,7 @@ class ScreenSession(
         runCatching {
             library.clear()
             albums.onPhotosCleared()
+            runCatching { thumbDir.listFiles()?.forEach { it.delete() } }
             if (mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
             currentIndex.value = 0
             libraryVersion.value = System.currentTimeMillis()
@@ -251,6 +253,10 @@ class ScreenSession(
 
     override fun thumbnail(name: String): ByteArray? {
         val f = library.fileFor(name) ?: return null
+        // Serve a cached thumbnail if we've generated one (photos are immutable once added),
+        // so a grid of thousands doesn't re-decode full images on every scroll.
+        val cached = File(thumbDir, "$name.jpg")
+        if (cached.exists()) runCatching { cached.readBytes() }.getOrNull()?.let { return it }
         return runCatching {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(f.path, bounds)
@@ -262,7 +268,9 @@ class ScreenSession(
             val bos = ByteArrayOutputStream()
             bmp.compress(Bitmap.CompressFormat.JPEG, 80, bos)
             bmp.recycle()
-            bos.toByteArray()
+            val bytes = bos.toByteArray()
+            runCatching { cached.writeBytes(bytes) }
+            bytes
         }.getOrNull()
     }
 
@@ -271,6 +279,7 @@ class ScreenSession(
             library.delete(name)
             albums.onPhotoDeleted(name)
             transforms.remove(name)
+            runCatching { File(thumbDir, "$name.jpg").delete() }
             val names = albums.activePhotoNames()
             if (names.isEmpty() && mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
             currentIndex.value = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)

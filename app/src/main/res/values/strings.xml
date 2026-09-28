@@ -89,6 +89,8 @@
     <string name="art_search">Search art…</string>
     <string name="art_empty">No results — try another search.</string>
     <string name="art_added">Sent to screen ✓</string>
+    <string name="art_error">Couldn\'t reach the art library. Check your connection.</string>
+    <string name="art_retry">Try again</string>
     <string name="music_title">Music</string>
     <string name="music_hint">Build a playlist — it loops on the screen. Tap + to add tracks from your phone.</string>
     <string name="music_empty">No music yet — add tracks from your phone or the free library.</string>

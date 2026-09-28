@@ -29,7 +29,8 @@ object ArtGallery {
     /** Curated starter categories shown as chips in the Remote. */
     val categories = listOf("Landscape", "Portrait", "Impressionism", "Nature", "Still life", "Cityscape", "Abstract", "Japanese")
 
-    suspend fun search(query: String, limit: Int = 40): List<ArtPiece> = withContext(Dispatchers.IO) {
+    /** Returns matching artworks, an empty list for no results, or null on a network error. */
+    suspend fun search(query: String, limit: Int = 40): List<ArtPiece>? = withContext(Dispatchers.IO) {
         val q = URLEncoder.encode(query.ifBlank { "landscape" }, "UTF-8")
         val url = "https://api.artic.edu/api/v1/artworks/search?q=$q" +
             "&query%5Bterm%5D%5Bis_public_domain%5D=true" +
@@ -40,10 +41,10 @@ object ArtGallery {
                 setRequestProperty("User-Agent", BROWSE_UA)
                 setRequestProperty("AIC-User-Agent", "SalonGallery (israel@m-eylon.com)")
             }
-            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext emptyList() }
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             conn.disconnect()
-            val data = JSONObject(body).optJSONArray("data") ?: return@withContext emptyList()
+            val data = JSONObject(body).optJSONArray("data") ?: return@withContext emptyList<ArtPiece>()
             buildList {
                 for (i in 0 until data.length()) {
                     val o = data.getJSONObject(i)
@@ -59,6 +60,6 @@ object ArtGallery {
                     )
                 }
             }
-        } catch (e: Exception) { emptyList() }
+        } catch (e: Exception) { null }
     }
 }

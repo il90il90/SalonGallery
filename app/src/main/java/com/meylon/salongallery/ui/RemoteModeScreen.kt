@@ -840,13 +840,13 @@ private fun AddToAlbumSheet(albums: List<AlbumInfo>, onPick: (String) -> Unit, o
 }
 
 @Composable
-private fun RoundIconBtn(icon: ImageVector, accent: Boolean = false, onClick: () -> Unit) {
+private fun RoundIconBtn(icon: ImageVector, accent: Boolean = false, desc: String? = null, onClick: () -> Unit) {
     Box(
         Modifier.size(42.dp).clip(RoundedCornerShape(50))
             .border(1.dp, if (accent) NeonCyan.copy(alpha = 0.5f) else ElecBorder, RoundedCornerShape(50))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = if (accent) NeonCyan else TextPrimary, modifier = Modifier.size(22.dp)) }
+    ) { Icon(icon, desc, tint = if (accent) NeonCyan else TextPrimary, modifier = Modifier.size(22.dp)) }
 }
 
 @Composable
@@ -862,12 +862,12 @@ private fun Badge(text: String, color: Color) {
 }
 
 @Composable
-private fun SmallBtn(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, onClick: () -> Unit) {
+private fun SmallBtn(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, desc: String? = null, onClick: () -> Unit) {
     Box(
         Modifier.size(38.dp).clip(RoundedCornerShape(10.dp))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp)) }
+    ) { Icon(icon, desc, tint = tint, modifier = Modifier.size(22.dp)) }
 }
 
 @Composable
@@ -1147,7 +1147,7 @@ private fun MusicSheet(
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.music_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary, modifier = Modifier.weight(1f))
-                RoundIconBtn(Icons.Outlined.Add, accent = true) { onAddFromPhone() }
+                RoundIconBtn(Icons.Outlined.Add, accent = true, desc = "Add music from phone") { onAddFromPhone() }
             }
             Spacer(Modifier.height(4.dp))
             Text(stringResource(R.string.music_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
@@ -1157,10 +1157,10 @@ private fun MusicSheet(
             val playing = state?.playing == true
             val shuffleOn = state?.shuffle == true
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                SmallBtn(Icons.Filled.Shuffle, if (shuffleOn) NeonCyan else TextSecondary) {
+                SmallBtn(Icons.Filled.Shuffle, if (shuffleOn) NeonCyan else TextSecondary, desc = "Shuffle") {
                     scope.launch { PhotoSender.musicControl(screen.host, screen.port, "shuffle"); bump() }
                 }
-                SmallBtn(Icons.Filled.SkipPrevious, TextPrimary) {
+                SmallBtn(Icons.Filled.SkipPrevious, TextPrimary, desc = "Previous track") {
                     scope.launch { PhotoSender.musicControl(screen.host, screen.port, "prev"); bump() }
                 }
                 Box(
@@ -1172,7 +1172,7 @@ private fun MusicSheet(
                 ) {
                     Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Color(0xFF07121F), modifier = Modifier.size(30.dp))
                 }
-                SmallBtn(Icons.Filled.SkipNext, TextPrimary) {
+                SmallBtn(Icons.Filled.SkipNext, TextPrimary, desc = "Next track") {
                     scope.launch { PhotoSender.musicControl(screen.host, screen.port, "next"); bump() }
                 }
                 Spacer(Modifier.weight(1f))
@@ -1195,7 +1195,7 @@ private fun MusicSheet(
                             Icon(if (isNow) Icons.Filled.PlayArrow else Icons.Outlined.MusicNote, null, tint = if (isNow) NeonCyan else TextSecondary, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(12.dp))
                             Text(t.title, style = MaterialTheme.typography.titleMedium, color = TextPrimary, maxLines = 1, modifier = Modifier.weight(1f))
-                            SmallBtn(Icons.Outlined.Delete, Color(0xFFF87171)) {
+                            SmallBtn(Icons.Outlined.Delete, Color(0xFFF87171), desc = "Delete ${t.title}") {
                                 scope.launch { PhotoSender.musicDelete(screen.host, screen.port, t.name); bump() }
                             }
                         }
@@ -1243,7 +1243,7 @@ private fun FreeMusicSheet(onDownload: (FreeTrack) -> Unit, onDismiss: () -> Uni
                         Text(t.title, style = MaterialTheme.typography.titleMedium, color = TextPrimary, maxLines = 1)
                         Text(t.artist, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1)
                     }
-                    SmallBtn(Icons.Outlined.CloudDownload, if (done) GoodGreen else NeonCyan) {
+                    SmallBtn(Icons.Outlined.CloudDownload, if (done) GoodGreen else NeonCyan, desc = "Download ${t.title}") {
                         if (!done) { added.add(t.title); onDownload(t) }
                     }
                 }
@@ -1262,6 +1262,7 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     var activeCat by remember { mutableStateOf(ArtGallery.categories.first()) }
     var results by remember { mutableStateOf<List<ArtPiece>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf(false) }
     val added = remember { mutableStateListOf<String>() }
 
     // Coil needs a browser User-Agent + Referer to fetch the museum's IIIF images.
@@ -1278,7 +1279,12 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
         }.build()
     }
 
-    suspend fun run(q: String) { loading = true; results = ArtGallery.search(q); loading = false }
+    suspend fun run(q: String) {
+        loading = true; error = false
+        val r = ArtGallery.search(q)
+        if (r == null) error = true else results = r
+        loading = false
+    }
     LaunchedEffect(activeCat) { run(activeCat) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
@@ -1293,7 +1299,7 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
                 singleLine = true,
                 placeholder = { Text(stringResource(R.string.art_search), color = TextTertiary) },
                 trailingIcon = {
-                    SmallBtn(Icons.Outlined.Search, NeonCyan) {
+                    SmallBtn(Icons.Outlined.Search, NeonCyan, desc = "Search art") {
                         if (query.isNotBlank()) scope.launch { run(query) }
                     }
                 },
@@ -1322,6 +1328,15 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
             when {
                 loading -> Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = NeonCyan, strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
+                }
+                error -> Column(
+                    Modifier.fillMaxWidth().height(180.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text(stringResource(R.string.art_error), style = MaterialTheme.typography.bodyMedium, color = TextSecondary, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(12.dp))
+                    OutlineButton(text = stringResource(R.string.art_retry), onClick = { scope.launch { run(if (query.isBlank()) activeCat else query) } })
                 }
                 results.isEmpty() -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
                     Text(stringResource(R.string.art_empty), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)

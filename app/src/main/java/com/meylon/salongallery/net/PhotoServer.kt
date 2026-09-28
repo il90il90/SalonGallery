@@ -125,10 +125,10 @@ class PhotoServer(
                 val name = session.parameters["id"]?.firstOrNull()
                 val bytes = name?.let { commands.thumbnail(it) }
                 if (bytes == null) newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "no thumb")
-                else newFixedLengthResponse(
+                else cached(newFixedLengthResponse(
                     Response.Status.OK, "image/jpeg",
                     java.io.ByteArrayInputStream(bytes), bytes.size.toLong(),
-                )
+                ))
             }
             session.method == Method.GET && uri == "/delete" -> {
                 session.parameters["id"]?.firstOrNull()?.let { commands.deletePhoto(it) }; ok()
@@ -172,10 +172,10 @@ class PhotoServer(
                 val name = session.parameters["id"]?.firstOrNull()
                 val bytes = name?.let { commands.fullPhoto(it) }
                 if (bytes == null) newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "no photo")
-                else newFixedLengthResponse(
+                else cached(newFixedLengthResponse(
                     Response.Status.OK, "image/jpeg",
                     java.io.ByteArrayInputStream(bytes), bytes.size.toLong(),
-                )
+                ))
             }
             session.method == Method.GET && uri == "/transform" -> {
                 val photo = session.parameters["photo"]?.firstOrNull()
@@ -217,4 +217,10 @@ class PhotoServer(
 
     private fun ok() = json("""{"ok":true}""")
     private fun json(body: String) = newFixedLengthResponse(Response.Status.OK, "application/json", body)
+
+    /** Marks an image response as immutable so clients (Coil) cache it aggressively. */
+    private fun cached(r: Response): Response {
+        r.addHeader("Cache-Control", "public, max-age=31536000, immutable")
+        return r
+    }
 }
