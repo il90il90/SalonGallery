@@ -19,6 +19,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +37,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.window.Dialog
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -81,13 +95,20 @@ import com.meylon.salongallery.net.SlideEffect
 import com.meylon.salongallery.net.ScreenSessionHolder
 import com.meylon.salongallery.net.TextOverlay
 import com.meylon.salongallery.net.TextPos
+import com.meylon.salongallery.ui.components.GradientButton
 import com.meylon.salongallery.ui.components.LogoChip
+import com.meylon.salongallery.ui.components.OutlineButton
 import com.meylon.salongallery.ui.components.SalonBackground
 import com.meylon.salongallery.ui.components.SectionLabel
+import com.meylon.salongallery.net.ScreenSession
+import com.meylon.salongallery.net.DisplayPrefs
 import com.meylon.salongallery.ui.theme.ElecBorder
+import com.meylon.salongallery.ui.theme.ElecBg
+import com.meylon.salongallery.ui.theme.ElecSurface
 import com.meylon.salongallery.ui.theme.NeonCyan
 import com.meylon.salongallery.ui.theme.TextPrimary
 import com.meylon.salongallery.ui.theme.TextSecondary
+import com.meylon.salongallery.ui.theme.TextTertiary
 import kotlinx.coroutines.delay
 import java.io.File
 
@@ -128,6 +149,15 @@ fun ScreenModeScreen(actions: AppActions) {
     val musicPrev by session.musicPrevTrigger.collectAsStateWithLifecycle()
 
     var showSettings by remember { mutableStateOf(false) }
+    var showPinPrompt by remember { mutableStateOf(false) }
+
+    // Auto-sleep schedule: re-evaluate every 30s.
+    var sleeping by remember { mutableStateOf(session.prefs.isSleepingNow()) }
+    LaunchedEffect(Unit) {
+        while (true) { sleeping = session.prefs.isSleepingNow(); delay(30_000) }
+    }
+
+    fun openSettings() { if (session.prefs.hasPin) showPinPrompt = true else showSettings = true }
 
     // Keep the display awake permanently.
     DisposableEffect(Unit) {
@@ -177,7 +207,7 @@ fun ScreenModeScreen(actions: AppActions) {
             if (!wasEmpty) musicExo.seekTo(keepIndex, 0)
         }
     }
-    LaunchedEffect(musicPlaying) { musicExo.playWhenReady = musicPlaying }
+    LaunchedEffect(musicPlaying, sleeping) { musicExo.playWhenReady = musicPlaying && !sleeping }
     LaunchedEffect(musicShuffle) { musicExo.shuffleModeEnabled = musicShuffle }
     LaunchedEffect(musicNext) { if (musicNext > 0 && musicExo.mediaItemCount > 0) musicExo.seekToNext() }
     LaunchedEffect(musicPrev) { if (musicPrev > 0 && musicExo.mediaItemCount > 0) musicExo.seekToPrevious() }
@@ -219,7 +249,7 @@ fun ScreenModeScreen(actions: AppActions) {
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-            ) { showSettings = true },
+            ) { if (sleeping) sleeping = false else openSettings() },
     ) {
         when {
             mode == DisplayMode.VIDEO && session.videoFile.exists() ->
@@ -255,6 +285,27 @@ fun ScreenModeScreen(actions: AppActions) {
         }
 
         if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clockOn)
+
+        // Auto-sleep: cover everything in near-black with a faint clock; tap wakes it.
+        if (sleeping) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black).clickable(
+                    interactionSource = remember { MutableInteractionSource() }, indication = null,
+                ) { sleeping = false },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.graphicsLayer { alpha = 0.28f }) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        ClockText(Modifier)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            stringResource(R.string.sleep_tap_wake),
+                            style = TextStyle(fontSize = 14.sp, color = Color.White),
+                        )
+                    }
+                }
+            }
+        }
     }
 
     if (showSettings) {
@@ -266,6 +317,8 @@ fun ScreenModeScreen(actions: AppActions) {
             onDismiss = { showSettings = false },
             extra = {
                 Spacer(Modifier.height(16.dp))
+                ScreenAdminContent(session)
+                Spacer(Modifier.height(20.dp))
                 ScreenInfoContent(
                     widthPx = w, heightPx = h,
                     freeBytes = stat?.availableBytes ?: 0L,
@@ -273,6 +326,14 @@ fun ScreenModeScreen(actions: AppActions) {
                     photoCount = files.size,
                 )
             },
+        )
+    }
+
+    if (showPinPrompt) {
+        PinPromptDialog(
+            correctPin = session.prefs.pin,
+            onSuccess = { showPinPrompt = false; showSettings = true },
+            onDismiss = { showPinPrompt = false },
         )
     }
 }
@@ -393,6 +454,143 @@ private fun overlayColor(c: String) = when (c.lowercase()) {
     "cyan" -> Color(0xFF22D3EE)
     "violet" -> Color(0xFFA78BFA)
     else -> Color.White
+}
+
+@Composable
+private fun ScreenAdminContent(session: ScreenSession) {
+    var name by remember { mutableStateOf(session.prefs.customName) }
+    var savedName by remember { mutableStateOf(false) }
+    var pin by remember { mutableStateOf("") }
+    var hasPin by remember { mutableStateOf(session.prefs.hasPin) }
+    var pinMsg by remember { mutableStateOf<String?>(null) }
+    var schedOn by remember { mutableStateOf(session.prefs.scheduleEnabled) }
+    var startMin by remember { mutableIntStateOf(session.prefs.sleepStartMin) }
+    var endMin by remember { mutableIntStateOf(session.prefs.sleepEndMin) }
+
+    val tfColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+        focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+    )
+
+    Column(Modifier.fillMaxWidth()) {
+        SectionLabel(stringResource(R.string.admin_section))
+        Spacer(Modifier.height(16.dp))
+
+        Text(stringResource(R.string.admin_name), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = name, onValueChange = { name = it; savedName = false },
+            modifier = Modifier.fillMaxWidth(), singleLine = true,
+            placeholder = { Text(stringResource(R.string.admin_name_hint), color = TextTertiary) },
+            colors = tfColors,
+        )
+        Spacer(Modifier.height(10.dp))
+        GradientButton(
+            text = if (savedName) stringResource(R.string.admin_saved) else stringResource(R.string.admin_save_name),
+            onClick = { session.renameDevice(name); savedName = true },
+        )
+
+        Spacer(Modifier.height(22.dp))
+        Text(stringResource(R.string.admin_pin), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            stringResource(if (hasPin) R.string.admin_pin_on else R.string.admin_pin_off),
+            style = MaterialTheme.typography.bodySmall, color = TextSecondary,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6); pinMsg = null },
+            modifier = Modifier.fillMaxWidth(), singleLine = true,
+            placeholder = { Text(stringResource(R.string.admin_pin_hint), color = TextTertiary) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            visualTransformation = PasswordVisualTransformation(),
+            colors = tfColors,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) {
+                GradientButton(
+                    text = stringResource(R.string.admin_save_pin),
+                    onClick = {
+                        if (pin.length >= 4) { session.prefs.pin = pin; hasPin = true; pin = ""; pinMsg = "PIN saved ✓" }
+                        else pinMsg = "Use at least 4 digits"
+                    },
+                )
+            }
+            if (hasPin) Box(Modifier.weight(1f)) {
+                OutlineButton(
+                    text = stringResource(R.string.admin_remove_pin),
+                    onClick = { session.prefs.pin = ""; hasPin = false; pin = ""; pinMsg = "PIN removed" },
+                )
+            }
+        }
+        pinMsg?.let { Spacer(Modifier.height(8.dp)); Text(it, style = MaterialTheme.typography.labelMedium, color = NeonCyan) }
+
+        Spacer(Modifier.height(22.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.admin_schedule), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+            Switch(checked = schedOn, onCheckedChange = { schedOn = it; session.prefs.scheduleEnabled = it })
+        }
+        if (schedOn) {
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.admin_schedule_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            Spacer(Modifier.height(12.dp))
+            TimeStepper(stringResource(R.string.admin_sleep_at), startMin) { startMin = it; session.prefs.sleepStartMin = it }
+            Spacer(Modifier.height(10.dp))
+            TimeStepper(stringResource(R.string.admin_wake_at), endMin) { endMin = it; session.prefs.sleepEndMin = it }
+        }
+    }
+}
+
+@Composable
+private fun TimeStepper(label: String, minutes: Int, onChange: (Int) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ElecSurface).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+        IconButton(onClick = { onChange((minutes - 30 + 1440) % 1440) }) {
+            Icon(Icons.Outlined.Remove, contentDescription = "earlier", tint = NeonCyan)
+        }
+        Text(
+            DisplayPrefs.fmt(minutes),
+            style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary),
+            modifier = Modifier.width(74.dp), textAlign = TextAlign.Center,
+        )
+        IconButton(onClick = { onChange((minutes + 30) % 1440) }) {
+            Icon(Icons.Outlined.Add, contentDescription = "later", tint = NeonCyan)
+        }
+    }
+}
+
+@Composable
+private fun PinPromptDialog(correctPin: String, onSuccess: () -> Unit, onDismiss: () -> Unit) {
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf(false) }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.clip(RoundedCornerShape(24.dp)).background(ElecBg).border(1.dp, ElecBorder, RoundedCornerShape(24.dp)).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(stringResource(R.string.admin_enter_pin), style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6); error = false },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                visualTransformation = PasswordVisualTransformation(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+                    focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+                ),
+            )
+            if (error) { Spacer(Modifier.height(8.dp)); Text(stringResource(R.string.admin_pin_wrong), style = MaterialTheme.typography.labelMedium, color = Color(0xFFF87171)) }
+            Spacer(Modifier.height(16.dp))
+            GradientButton(text = stringResource(R.string.admin_unlock), onClick = { if (pin == correctPin) onSuccess() else { error = true; pin = "" } })
+            Spacer(Modifier.height(10.dp))
+            OutlineButton(text = stringResource(R.string.cancel), onClick = { onDismiss() })
+        }
+    }
 }
 
 @Composable

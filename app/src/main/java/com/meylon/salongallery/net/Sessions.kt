@@ -28,7 +28,11 @@ class ScreenSession(
     val albums = AlbumStore(File(app.filesDir, "albums.json"), library)
     val transforms = TransformStore(File(app.filesDir, "transforms.json"))
     val music = MusicStore(File(app.filesDir, "music"))
+    val prefs = DisplayPrefs(app)
     val videoFile = File(app.filesDir, "display_current.mp4")
+
+    /** The device's shown name: a user-set custom name, else the model name. */
+    fun effectiveName(): String = prefs.customName.ifBlank { displayName }
 
     /** Files for the active album (or the whole library), in order. */
     fun activeFiles(): List<File> = albums.activePhotoNames().mapNotNull { library.fileFor(it) }
@@ -72,8 +76,8 @@ class ScreenSession(
             s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             server = s
             port = s.listeningPort
-            Log.i("SalonScreen", "PhotoServer on port $port as '$displayName'")
-            nsd.register(displayName, port)
+            Log.i("SalonScreen", "PhotoServer on port $port as '${effectiveName()}'")
+            nsd.register(effectiveName(), port)
             running.value = true
         }
     }
@@ -85,13 +89,22 @@ class ScreenSession(
         running.value = false
     }
 
+    /** Renames the device: persists it and re-advertises on the network. */
+    fun renameDevice(name: String) {
+        prefs.customName = name
+        runCatching {
+            nsd.unregister()
+            if (port > 0) nsd.register(effectiveName(), port)
+        }
+    }
+
     private fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
 
     private fun pingBody(): String {
         val stat = runCatching { StatFs(app.filesDir.path) }.getOrNull()
         val free = stat?.availableBytes ?: 0L
         val total = stat?.totalBytes ?: 0L
-        return """{"name":"${esc(displayName)}","version":"${esc(versionName)}",""" +
+        return """{"name":"${esc(effectiveName())}","version":"${esc(versionName)}",""" +
             """"w":$screenW,"h":$screenH,"free":$free,"total":$total,"count":${library.count()}}"""
     }
 

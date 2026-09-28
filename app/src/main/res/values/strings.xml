@@ -97,6 +97,25 @@
     <string name="badge_now">NOW</string>
     <string name="badge_next">NEXT</string>
     <string name="clear_library">Clear all photos</string>
+    <string name="admin_section">Screen settings</string>
+    <string name="admin_name">Device name</string>
+    <string name="admin_name_hint">This screen</string>
+    <string name="admin_save_name">Save name</string>
+    <string name="admin_saved">Saved ✓</string>
+    <string name="admin_pin">Screen PIN</string>
+    <string name="admin_pin_on">A PIN is set — it\'s required to open settings.</string>
+    <string name="admin_pin_off">No PIN — anyone can open settings by tapping the screen.</string>
+    <string name="admin_pin_hint">4–6 digits</string>
+    <string name="admin_save_pin">Save PIN</string>
+    <string name="admin_remove_pin">Remove PIN</string>
+    <string name="admin_schedule">Auto-sleep schedule</string>
+    <string name="admin_schedule_hint">The screen dims to a quiet clock during these hours, and wakes on its own.</string>
+    <string name="admin_sleep_at">Sleep at</string>
+    <string name="admin_wake_at">Wake at</string>
+    <string name="admin_enter_pin">Enter screen PIN</string>
+    <string name="admin_unlock">Unlock</string>
+    <string name="admin_pin_wrong">Incorrect PIN</string>
+    <string name="sleep_tap_wake">Tap to wake</string>
     <string name="service_running">Displaying your gallery</string>
     <string name="storage_warning">Screen storage almost full — free some space</string>
 
