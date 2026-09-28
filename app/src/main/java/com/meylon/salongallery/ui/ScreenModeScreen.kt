@@ -81,6 +81,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -118,6 +119,7 @@ private fun Context.findActivity(): Activity? {
     return null
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun ScreenModeScreen(actions: AppActions) {
     val context = LocalContext.current
