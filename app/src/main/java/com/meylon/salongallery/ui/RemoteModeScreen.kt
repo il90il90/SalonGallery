@@ -12,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -106,6 +110,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -151,6 +156,9 @@ fun RemoteModeScreen(actions: AppActions) {
     val context = LocalContext.current
     val remoteScope = rememberCoroutineScope()
     val session = remember { RemoteSession(context) }
+    // Capture the real navigation-bar inset here (edge-to-edge main window); full-screen
+    // Dialogs don't reliably receive insets, so we thread this down to pad their bottoms.
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     DisposableEffect(Unit) {
         session.start()
@@ -199,6 +207,7 @@ fun RemoteModeScreen(actions: AppActions) {
                         screen = target,
                         onBack = { selected = null; info = null },
                         onInfoRefresh = { scope -> scope.launch { info = PhotoSender.getInfo(target.host, target.port) } },
+                        bottomInset = navBottom,
                     )
                 }
             }
@@ -237,6 +246,7 @@ private fun ControlPanel(
     screen: DiscoveredScreen,
     onBack: () -> Unit,
     onInfoRefresh: (kotlinx.coroutines.CoroutineScope) -> Unit,
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -390,7 +400,7 @@ private fun ControlPanel(
         )
     }
     if (showLibrary) {
-        LibraryManager(screen = screen, onClose = { showLibrary = false; onInfoRefresh(scope) })
+        LibraryManager(screen = screen, bottomInset = bottomInset, onClose = { showLibrary = false; onInfoRefresh(scope) })
     }
     if (showText) {
         TextSheet(
@@ -445,7 +455,7 @@ private fun LibraryButton(onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
+private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compose.ui.unit.Dp = 0.dp, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var items by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -489,10 +499,10 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
     }
     val isAll = activeId == "all"
 
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(com.meylon.salongallery.ui.theme.ElecBg)) {
             SalonBackground {
-                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 20.dp, vertical = 16.dp)) {
+                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 16.dp + bottomInset)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RoundIconBtn(Icons.AutoMirrored.Outlined.ArrowBack) { onClose() }
                         Spacer(Modifier.size(14.dp))
@@ -635,6 +645,7 @@ private fun LibraryManager(screen: DiscoveredScreen, onClose: () -> Unit) {
         StudioDialog(
             screen = screen,
             photo = photo,
+            bottomInset = bottomInset,
             onShowNow = { scope.launch { PhotoSender.showNow(screen.host, screen.port, photo); refresh() } },
             onClose = { studioPhoto = null; refresh() },
         )
@@ -667,7 +678,7 @@ private fun RowOverflow(isAll: Boolean, onEdit: () -> Unit, onAddAlbum: () -> Un
 }
 
 @Composable
-private fun StudioDialog(screen: DiscoveredScreen, photo: String, onShowNow: () -> Unit, onClose: () -> Unit) {
+private fun StudioDialog(screen: DiscoveredScreen, photo: String, bottomInset: androidx.compose.ui.unit.Dp = 0.dp, onShowNow: () -> Unit, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     var scale by remember { mutableFloatStateOf(1f) }
     var offX by remember { mutableFloatStateOf(0f) }
@@ -681,10 +692,10 @@ private fun StudioDialog(screen: DiscoveredScreen, photo: String, onShowNow: () 
         PhotoSender.getTransform(screen.host, screen.port, photo)?.let { scale = it.scale; offX = it.x; offY = it.y }
     }
 
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(com.meylon.salongallery.ui.theme.ElecBg)) {
             SalonBackground {
-                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
+                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 36.dp + bottomInset)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RoundIconBtn(Icons.AutoMirrored.Outlined.ArrowBack) { onClose() }
                         Spacer(Modifier.size(14.dp))
@@ -693,33 +704,50 @@ private fun StudioDialog(screen: DiscoveredScreen, photo: String, onShowNow: () 
                     Spacer(Modifier.height(6.dp))
                     Text(stringResource(R.string.studio_hint), style = MaterialTheme.typography.labelMedium, color = TextTertiary)
 
-                    Spacer(Modifier.weight(1f))
-                    // Preview box in the exact screen aspect ratio.
+                    // Preview box in the exact screen aspect ratio, fitted within the
+                    // available height so the action buttons always stay on screen
+                    // (a portrait screen aspect would otherwise be taller than the phone).
                     Box(
-                        Modifier.fillMaxWidth().aspectRatio(aspect)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color.Black)
-                            .border(1.dp, ElecBorder, RoundedCornerShape(14.dp))
-                            .onSizeChanged { boxW = it.width; boxH = it.height }
-                            .pointerInput(Unit) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    scale = (scale * zoom).coerceIn(1f, 5f)
-                                    if (boxW > 0) offX = (offX + pan.x / boxW).coerceIn(-0.5f, 0.5f)
-                                    if (boxH > 0) offY = (offY + pan.y / boxH).coerceIn(-0.5f, 0.5f)
-                                }
-                            },
+                        Modifier.weight(1f).fillMaxWidth().padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        AsyncImage(
-                            model = PhotoSender.fullUrl(screen.host, screen.port, photo),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().graphicsLayer {
-                                scaleX = scale; scaleY = scale
-                                translationX = offX * size.width; translationY = offY * size.height
-                            },
-                        )
+                        BoxWithConstraints {
+                            val maxWpx = constraints.maxWidth.toFloat()
+                            val maxHpx = constraints.maxHeight.toFloat()
+                            val fitByWidthH = if (aspect > 0f) maxWpx / aspect else maxHpx
+                            val useW: Float
+                            val useH: Float
+                            if (fitByWidthH <= maxHpx) { useW = maxWpx; useH = fitByWidthH }
+                            else { useH = maxHpx; useW = maxHpx * aspect }
+                            val density = LocalDensity.current
+                            Box(
+                                Modifier
+                                    .width(with(density) { useW.toDp() })
+                                    .height(with(density) { useH.toDp() })
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color.Black)
+                                    .border(1.dp, ElecBorder, RoundedCornerShape(14.dp))
+                                    .onSizeChanged { boxW = it.width; boxH = it.height }
+                                    .pointerInput(Unit) {
+                                        detectTransformGestures { _, pan, zoom, _ ->
+                                            scale = (scale * zoom).coerceIn(1f, 5f)
+                                            if (boxW > 0) offX = (offX + pan.x / boxW).coerceIn(-0.5f, 0.5f)
+                                            if (boxH > 0) offY = (offY + pan.y / boxH).coerceIn(-0.5f, 0.5f)
+                                        }
+                                    },
+                            ) {
+                                AsyncImage(
+                                    model = PhotoSender.fullUrl(screen.host, screen.port, photo),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                                        scaleX = scale; scaleY = scale
+                                        translationX = offX * size.width; translationY = offY * size.height
+                                    },
+                                )
+                            }
+                        }
                     }
-                    Spacer(Modifier.weight(1f))
 
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlineButton(
