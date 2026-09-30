@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Warm clay tile: light amber (top-left) into deep terracotta (bottom-right). -->
+    <path android:pathData="M0,0 h108 v108 h-108 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="6" android:startY="6"
+                android:endX="102" android:endY="102">
+                <item android:offset="0.0" android:color="#FFE59C5C" />
+                <item android:offset="0.52" android:color="#FFC1673A" />
+                <item android:offset="1.0" android:color="#FF9E4428" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

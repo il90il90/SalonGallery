@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="salon_bg">#0B0B14</color>
-    <color name="salon_surface">#14141F</color>
-    <color name="ic_launcher_background">#0B0B14</color>
+    <!-- Warm Dark Gallery — matches the Compose theme so launch is seamless. -->
+    <color name="salon_bg">#191410</color>
+    <color name="salon_surface">#241D16</color>
+    <color name="ic_launcher_background">#9E4428</color>
 </resources>

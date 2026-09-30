@@ -467,10 +467,11 @@ private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenNam
     Column(Modifier.fillMaxWidth()) {
         Box(
             Modifier.fillMaxWidth()
-                .shadow(18.dp, RoundedCornerShape(24.dp), spotColor = Color(0x40654127), ambientColor = Color(0x24654127))
+                .shadow(20.dp, RoundedCornerShape(24.dp), spotColor = Color(0xCC000000), ambientColor = Color(0x66000000))
                 .clip(RoundedCornerShape(24.dp))
-                .background(Color.White)
-                .padding(7.dp),
+                .background(ElecSurface)
+                .border(1.dp, ElecBorder, RoundedCornerShape(24.dp))
+                .padding(6.dp),
         ) {
             Box(Modifier.fillMaxWidth().height(224.dp).clip(RoundedCornerShape(17.dp)).background(ElecSurfaceElevated)) {
                 if (current != null) {
@@ -564,28 +565,6 @@ private fun HomeAction(modifier: Modifier, icon: ImageVector, label: String, tin
         }
         Spacer(Modifier.height(8.dp))
         Text(label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = TextPrimary, maxLines = 1)
-    }
-}
-
-@Composable
-private fun LibraryButton(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .border(1.dp, NeonCyan.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
-            .background(ElecSurface)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(NeonCyan.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Outlined.Collections, null, tint = NeonCyan, modifier = Modifier.size(22.dp)) }
-        Spacer(Modifier.size(14.dp))
-        Text(stringResource(R.string.library_manage), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
-        Icon(Icons.Outlined.ChevronRight, null, tint = TextSecondary, modifier = Modifier.size(22.dp))
     }
 }
 
@@ -1042,57 +1021,6 @@ private fun ProgressRow(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
         Text(text, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-    }
-}
-
-@Composable
-private fun ConnectedHeader(name: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(AccentGradient)
-            .padding(1.5.dp)
-            .clip(RoundedCornerShape(17.dp))
-            .background(ElecSurface)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(AccentGradient),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Outlined.Tv, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
-        Spacer(Modifier.size(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(name, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
-            Text(stringResource(R.string.remote_connected), style = MaterialTheme.typography.bodyMedium, color = GoodGreen)
-        }
-    }
-}
-
-@Composable
-private fun ActionTile(
-    modifier: Modifier, icon: ImageVector, label: String, accent: Color, enabled: Boolean, onClick: () -> Unit,
-) {
-    Column(
-        modifier = modifier
-            .height(116.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(ElecSurface)
-            .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(20.dp))
-            .clickable(
-                enabled = enabled,
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { onClick() }
-            .padding(16.dp),
-    ) {
-        Box(
-            Modifier.size(44.dp).clip(RoundedCornerShape(13.dp)).background(accent.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) { Icon(icon, null, tint = accent, modifier = Modifier.size(24.dp)) }
-        Spacer(Modifier.weight(1f))
-        Text(label, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
     }
 }
 

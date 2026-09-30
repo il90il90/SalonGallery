@@ -1,16 +1,16 @@
 package com.meylon.salongallery.ui.theme
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
-private val GalleryColors = lightColorScheme(
+private val GalleryColors = darkColorScheme(
     primary = NeonCyan,          // clay
     onPrimary = OnAccent,        // white
     secondary = NeonViolet,      // plum
     onSecondary = OnAccent,
-    background = ElecBg,          // paper
-    onBackground = TextPrimary,  // ink
+    background = ElecBg,          // espresso ground
+    onBackground = TextPrimary,  // warm off-white
     surface = ElecSurface,       // card
     onSurface = TextPrimary,
     surfaceVariant = ElecSurfaceElevated,

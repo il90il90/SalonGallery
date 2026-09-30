@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -47,6 +48,12 @@ import com.meylon.salongallery.ui.theme.TextTertiary
 
 /** Warm terracotta accent used for logo & selected borders. */
 val AccentGradient = Brush.linearGradient(listOf(Color(0xFFCB7A42), Color(0xFFB04E2C)))
+
+/** Logo tile gradient — light amber (top-left) into deep clay for depth. */
+val LogoGradient = Brush.linearGradient(
+    colors = listOf(Color(0xFFE39A5A), Color(0xFFC1673A), Color(0xFFA5482A)),
+    start = Offset(0f, 0f), end = Offset(140f, 140f),
+)
 
 /** Clay CTA gradient (white text stays legible on it). */
 val CtaGradient = Brush.horizontalGradient(listOf(Color(0xFFBC5A34), Color(0xFFA5482A)))
@@ -78,17 +85,29 @@ fun SalonBackground(content: @Composable () -> Unit) {
     }
 }
 
-/** Gradient logo chip holding a framed-picture glyph. */
+/**
+ * Brand mark: a warm clay tile with an elegant cream serif "S" monogram —
+ * an editorial gallery signature rather than a clip-art icon.
+ */
 @Composable
 fun LogoChip(size: Int = 40, icon: ImageVector = Icons.Outlined.Image) {
+    val shape = RoundedCornerShape((size * 0.32f).dp)
     Box(
         modifier = Modifier
             .size(size.dp)
-            .clip(RoundedCornerShape((size * 0.3f).dp))
-            .background(AccentGradient),
+            .shadow(6.dp, shape, spotColor = Color(0x55A5482A), ambientColor = Color(0x22A5482A))
+            .clip(shape)
+            .background(LogoGradient),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size((size * 0.55f).dp))
+        Text(
+            text = "S",
+            fontFamily = com.meylon.salongallery.ui.theme.Display,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+            fontSize = (size * 0.64f).sp,
+            color = Color(0xFFF8EFDE),
+            modifier = Modifier.padding(bottom = (size * 0.03f).dp),
+        )
     }
 }
 
