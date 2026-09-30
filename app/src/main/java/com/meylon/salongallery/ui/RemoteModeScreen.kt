@@ -695,7 +695,10 @@ private fun StudioDialog(screen: DiscoveredScreen, photo: String, bottomInset: a
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(com.meylon.salongallery.ui.theme.ElecBg)) {
             SalonBackground {
-                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 36.dp + bottomInset)) {
+                // Full-screen dialogs don't reliably get the navigation-bar inset, so use a
+                // fixed bottom that always clears it (a gesture pill or a 3-button bar) — the
+                // Save button must never sit under the system bar.
+                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 56.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RoundIconBtn(Icons.AutoMirrored.Outlined.ArrowBack) { onClose() }
                         Spacer(Modifier.size(14.dp))

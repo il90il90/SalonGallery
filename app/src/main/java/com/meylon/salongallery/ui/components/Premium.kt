@@ -22,13 +22,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.meylon.salongallery.ui.theme.ElecBg
 import com.meylon.salongallery.ui.theme.ElecBorder
 import com.meylon.salongallery.ui.theme.ElecSurface
@@ -44,6 +50,17 @@ val AccentGradient = Brush.linearGradient(listOf(NeonCyan, NeonViolet))
 
 /** Cyan → blue → violet CTA gradient. */
 val CtaGradient = Brush.horizontalGradient(listOf(NeonCyan, NeonBlue, NeonViolet))
+
+/**
+ * Draws a neon focus ring when this focusable/clickable element has D-pad focus,
+ * so the UI is navigable and legible on Android TV (place before .clickable/.focusable).
+ */
+fun Modifier.focusRing(shape: Shape = RoundedCornerShape(16.dp)): Modifier = composed {
+    var focused by remember { mutableStateOf(false) }
+    this
+        .onFocusChanged { focused = it.isFocused }
+        .then(if (focused) Modifier.border(2.5.dp, NeonCyan, shape) else Modifier)
+}
 
 /** Deep-space background with cyan (top) and violet (bottom) neon glows. */
 @Composable
@@ -128,6 +145,7 @@ fun GradientButton(
             .clip(shape)
             .background(if (enabled) CtaGradient else Brush.horizontalGradient(listOf(ElecSurface, ElecSurface)))
             .then(if (!enabled) Modifier.border(1.dp, ElecBorder, shape) else Modifier)
+            .focusRing(shape)
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },
@@ -160,6 +178,7 @@ fun OutlineButton(
             .height(52.dp)
             .clip(shape)
             .border(1.dp, ElecBorder, shape)
+            .focusRing(shape)
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },

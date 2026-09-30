@@ -21,6 +21,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,8 +47,17 @@ import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.TextFieldColors
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.window.Dialog
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Add
@@ -142,6 +154,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val clockOn by session.clockOn.collectAsStateWithLifecycle()
     val orientation by session.orientation.collectAsStateWithLifecycle()
     val brightness by session.brightness.collectAsStateWithLifecycle()
+    val volume by session.volume.collectAsStateWithLifecycle()
     val running by session.running.collectAsStateWithLifecycle()
     val currentIndex by session.currentIndex.collectAsStateWithLifecycle()
     val musicVersion by session.musicVersion.collectAsStateWithLifecycle()
@@ -152,6 +165,11 @@ fun ScreenModeScreen(actions: AppActions) {
 
     var showSettings by remember { mutableStateOf(false) }
     var showPinPrompt by remember { mutableStateOf(false) }
+    // Android TV: keep D-pad focus on the display so the remote's OK button opens settings.
+    val rootFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(showSettings, showPinPrompt) {
+        if (!showSettings && !showPinPrompt) runCatching { rootFocus.requestFocus() }
+    }
 
     // Auto-sleep schedule: re-evaluate every 30s.
     var sleeping by remember { mutableStateOf(session.prefs.isSleepingNow()) }
@@ -210,18 +228,14 @@ fun ScreenModeScreen(actions: AppActions) {
         }
     }
     LaunchedEffect(musicPlaying, sleeping) { musicExo.playWhenReady = musicPlaying && !sleeping }
+    // Volume from the remote → apply straight to the players (reliable on Android TV).
+    LaunchedEffect(volume) { musicExo.volume = volume; exo.volume = volume }
     LaunchedEffect(musicShuffle) { musicExo.shuffleModeEnabled = musicShuffle }
     LaunchedEffect(musicNext) { if (musicNext > 0 && musicExo.mediaItemCount > 0) musicExo.seekToNext() }
     LaunchedEffect(musicPrev) { if (musicPrev > 0 && musicExo.mediaItemCount > 0) musicExo.seekToPrevious() }
 
-    LaunchedEffect(brightness) {
-        activity?.window?.let { w ->
-            val lp = w.attributes
-            lp.screenBrightness = if (brightness < 0f) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-            else brightness.coerceIn(0.02f, 1f)
-            w.attributes = lp
-        }
-    }
+    // Brightness is applied as a software dimming scrim (see below) so it works like real
+    // picture brightness on every device, including Android TV where window brightness is ignored.
     LaunchedEffect(orientation) {
         activity?.requestedOrientation = when (orientation) {
             ScreenOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -248,6 +262,8 @@ fun ScreenModeScreen(actions: AppActions) {
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .focusRequester(rootFocus)
+            .focusable()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -287,6 +303,12 @@ fun ScreenModeScreen(actions: AppActions) {
         }
 
         if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clockOn)
+
+        // Brightness as real "picture" dimming — a software scrim that works on every
+        // device (including Android TV, where window brightness is ignored).
+        if (brightness in 0f..0.999f) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (1f - brightness) * 0.82f)))
+        }
 
         // Auto-sleep: cover everything in near-black with a faint clock; tap wakes it.
         if (sleeping) {
@@ -458,8 +480,48 @@ private fun overlayColor(c: String) = when (c.lowercase()) {
     else -> Color.White
 }
 
+/**
+ * A text field tuned for Android TV: focusing it with the D-pad only highlights it (no
+ * keyboard); pressing OK opens the keyboard to edit. This lets the D-pad flow through the
+ * settings without a keyboard popping up on every field.
+ */
+@Composable
+private fun TvTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    colors: TextFieldColors,
+    modifier: Modifier = Modifier,
+    password: Boolean = false,
+) {
+    var editing by remember { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        readOnly = !editing,
+        singleLine = true,
+        placeholder = { Text(placeholder, color = TextTertiary) },
+        keyboardOptions = if (password) KeyboardOptions(keyboardType = KeyboardType.NumberPassword) else KeyboardOptions.Default,
+        visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+        keyboardActions = KeyboardActions(onDone = { editing = false; keyboard?.hide() }),
+        colors = colors,
+        modifier = modifier
+            .onFocusChanged { if (!it.isFocused) editing = false }
+            .onPreviewKeyEvent { e ->
+                if (!editing && e.type == KeyEventType.KeyUp &&
+                    (e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter)) {
+                    editing = true; keyboard?.show(); true
+                } else false
+            },
+    )
+}
+
 @Composable
 private fun ScreenAdminContent(session: ScreenSession) {
+    // Android TV: focus the first control when the settings open so the D-pad can drive it.
+    val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
     var name by remember { mutableStateOf(session.prefs.customName) }
     var savedName by remember { mutableStateOf(false) }
     var pin by remember { mutableStateOf("") }
@@ -480,15 +542,16 @@ private fun ScreenAdminContent(session: ScreenSession) {
 
         Text(stringResource(R.string.admin_name), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
+        TvTextField(
             value = name, onValueChange = { name = it; savedName = false },
-            modifier = Modifier.fillMaxWidth(), singleLine = true,
-            placeholder = { Text(stringResource(R.string.admin_name_hint), color = TextTertiary) },
+            placeholder = stringResource(R.string.admin_name_hint),
             colors = tfColors,
+            modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(10.dp))
         GradientButton(
             text = if (savedName) stringResource(R.string.admin_saved) else stringResource(R.string.admin_save_name),
+            modifier = Modifier.focusRequester(firstFocus),
             onClick = { session.renameDevice(name); savedName = true },
         )
 
@@ -500,13 +563,12 @@ private fun ScreenAdminContent(session: ScreenSession) {
             style = MaterialTheme.typography.bodySmall, color = TextSecondary,
         )
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
+        TvTextField(
             value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6); pinMsg = null },
-            modifier = Modifier.fillMaxWidth(), singleLine = true,
-            placeholder = { Text(stringResource(R.string.admin_pin_hint), color = TextTertiary) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            visualTransformation = PasswordVisualTransformation(),
+            placeholder = stringResource(R.string.admin_pin_hint),
             colors = tfColors,
+            modifier = Modifier.fillMaxWidth(),
+            password = true,
         )
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -576,15 +638,14 @@ private fun PinPromptDialog(correctPin: String, onSuccess: () -> Unit, onDismiss
         ) {
             Text(stringResource(R.string.admin_enter_pin), style = MaterialTheme.typography.titleLarge, color = TextPrimary)
             Spacer(Modifier.height(16.dp))
-            OutlinedTextField(
+            TvTextField(
                 value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6); error = false },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                visualTransformation = PasswordVisualTransformation(),
+                placeholder = stringResource(R.string.admin_pin_hint),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
                     focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
                 ),
+                password = true,
             )
             if (error) { Spacer(Modifier.height(8.dp)); Text(stringResource(R.string.admin_pin_wrong), style = MaterialTheme.typography.labelMedium, color = Color(0xFFF87171)) }
             Spacer(Modifier.height(16.dp))

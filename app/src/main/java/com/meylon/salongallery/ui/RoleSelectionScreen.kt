@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -44,6 +47,7 @@ import com.meylon.salongallery.data.DeviceRole
 import com.meylon.salongallery.ui.components.AccentGradient
 import com.meylon.salongallery.ui.components.BrandRow
 import com.meylon.salongallery.ui.components.GradientButton
+import com.meylon.salongallery.ui.components.focusRing
 import com.meylon.salongallery.ui.components.SalonBackground
 import com.meylon.salongallery.ui.components.SectionLabel
 import com.meylon.salongallery.ui.theme.ElecBorder
@@ -61,6 +65,9 @@ fun RoleSelectionScreen(
     modifier: Modifier = Modifier,
 ) {
     var selected by remember { mutableStateOf<DeviceRole?>(null) }
+    // Android TV: give the first card D-pad focus so the remote can drive the screen.
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
 
     SalonBackground {
         Column(
@@ -93,6 +100,7 @@ fun RoleSelectionScreen(
                 title = stringResource(R.string.role_screen_title),
                 desc = stringResource(R.string.role_screen_desc),
                 selected = selected == DeviceRole.SCREEN,
+                modifier = Modifier.focusRequester(firstFocus),
                 onClick = { selected = DeviceRole.SCREEN },
             )
             Spacer(Modifier.height(14.dp))
@@ -122,13 +130,14 @@ private fun RoleCard(
     desc: String,
     selected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val outerShape = RoundedCornerShape(20.dp)
     val innerShape = RoundedCornerShape(18.dp)
     val elev by animateDpAsState(if (selected) 18.dp else 0.dp, label = "elev")
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(
                 if (selected) Modifier.shadow(elev, outerShape, spotColor = NeonBlue, ambientColor = NeonViolet)
@@ -142,6 +151,7 @@ private fun RoleCard(
             .padding(if (selected) 1.5.dp else 1.dp)
             .clip(innerShape)
             .background(ElecSurface)
+            .focusRing(innerShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

@@ -60,6 +60,8 @@ class ScreenSession(
     val clockOn = MutableStateFlow(false)
     val orientation = MutableStateFlow(ScreenOrientation.AUTO)
     val brightness = MutableStateFlow(-1f)
+    /** App-level playback volume 0..1, applied directly to the players (reliable on TV). */
+    val volume = MutableStateFlow(1f)
     val running = MutableStateFlow(false)
     /** Index into the ordered library that the slideshow is currently showing. */
     val currentIndex = MutableStateFlow(0)
@@ -197,9 +199,11 @@ class ScreenSession(
     override fun onBrightness(value: Float) { brightness.value = value.coerceIn(0f, 1f) }
 
     override fun onVolume(value: Float) {
+        val v = value.coerceIn(0f, 1f)
+        volume.value = v  // applied to the ExoPlayers by the display (works on TV)
         runCatching {
             val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            audio.setStreamVolume(AudioManager.STREAM_MUSIC, (value.coerceIn(0f, 1f) * max).toInt(), 0)
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, (v * max).toInt(), 0)
         }
     }
 
