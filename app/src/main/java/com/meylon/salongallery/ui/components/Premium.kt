@@ -45,11 +45,11 @@ import com.meylon.salongallery.ui.theme.OnAccent
 import com.meylon.salongallery.ui.theme.TextPrimary
 import com.meylon.salongallery.ui.theme.TextTertiary
 
-/** Cyan → violet accent used for logo & selected borders. */
-val AccentGradient = Brush.linearGradient(listOf(NeonCyan, NeonViolet))
+/** Warm terracotta accent used for logo & selected borders. */
+val AccentGradient = Brush.linearGradient(listOf(Color(0xFFCB7A42), Color(0xFFB04E2C)))
 
-/** Cyan → blue → violet CTA gradient. */
-val CtaGradient = Brush.horizontalGradient(listOf(NeonCyan, NeonBlue, NeonViolet))
+/** Clay CTA gradient (white text stays legible on it). */
+val CtaGradient = Brush.horizontalGradient(listOf(Color(0xFFBC5A34), Color(0xFFA5482A)))
 
 /**
  * Draws a neon focus ring when this focusable/clickable element has D-pad focus,
@@ -62,23 +62,15 @@ fun Modifier.focusRing(shape: Shape = RoundedCornerShape(16.dp)): Modifier = com
         .then(if (focused) Modifier.border(2.5.dp, NeonCyan, shape) else Modifier)
 }
 
-/** Deep-space background with cyan (top) and violet (bottom) neon glows. */
+/** Warm paper ground with a whisper of light at the top. */
 @Composable
 fun SalonBackground(content: @Composable () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().background(ElecBg)) {
         Box(
             Modifier.fillMaxSize().background(
                 Brush.radialGradient(
-                    colors = listOf(NeonCyan.copy(alpha = 0.14f), Color.Transparent),
-                    center = Offset(150f, 120f), radius = 720f,
-                )
-            )
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.radialGradient(
-                    colors = listOf(NeonViolet.copy(alpha = 0.16f), Color.Transparent),
-                    center = Offset(950f, 2000f), radius = 900f,
+                    colors = listOf(Color(0x1FCB8A52), Color.Transparent),
+                    center = Offset(160f, 80f), radius = 1000f,
                 )
             )
         )
@@ -139,7 +131,7 @@ fun GradientButton(
             .fillMaxWidth()
             .height(56.dp)
             .then(
-                if (enabled) Modifier.shadow(20.dp, shape, spotColor = NeonBlue, ambientColor = NeonViolet)
+                if (enabled) Modifier.shadow(14.dp, shape, spotColor = Color(0x66B0502E), ambientColor = Color(0x33B0502E))
                 else Modifier
             )
             .clip(shape)

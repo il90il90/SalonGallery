@@ -2,21 +2,28 @@ package com.meylon.salongallery.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// "Electric Dark" — deep space background with neon cyan→blue→violet energy.
-val ElecBg = Color(0xFF0B0B14)
-val ElecSurface = Color(0xFF14141F)
-val ElecSurfaceElevated = Color(0xFF1B1B29)
-val ElecBorder = Color(0xFF23233A)
+// "Light Gallery" — warm ivory paper, editorial serif, clay accent. Photos are the hero.
+// (Names kept from the old theme so the whole app re-skins at once.)
+val ElecBg = Color(0xFFF4EEE3)            // warm paper ground
+val ElecSurface = Color(0xFFFFFCF6)       // card / surface
+val ElecSurfaceElevated = Color(0xFFFBF7EE)
+val ElecBorder = Color(0xFFE6DECE)        // warm hairline border
 
-val NeonCyan = Color(0xFF22D3EE)
-val NeonBlue = Color(0xFF3B82F6)
-val NeonViolet = Color(0xFF8B5CF6)
-val NeonTeal = Color(0xFF5EEAD4)
-val NeonVioletLight = Color(0xFFA78BFA)
+val NeonCyan = Color(0xFFBF5E38)          // clay — primary accent
+val NeonBlue = Color(0xFF3E6E8E)          // muted museum blue
+val NeonViolet = Color(0xFF7A4E6E)        // dusty plum
+val NeonTeal = Color(0xFF5E7A4E)          // sage
+val NeonVioletLight = Color(0xFF9A6E8E)   // soft plum
 
-val TextPrimary = Color(0xFFF4F5FF)
-val TextSecondary = Color(0xFF9A9AB0)
-val TextTertiary = Color(0xFF5E5E74)
+val TextPrimary = Color(0xFF211E1A)       // warm ink
+val TextSecondary = Color(0xFF5E574E)     // muted ink
+val TextTertiary = Color(0xFF9A8F7E)      // caption / overline
 
-val OnAccent = Color(0xFF07121F)   // dark ink on bright gradient
-val GoodGreen = Color(0xFF34D399)
+val OnAccent = Color(0xFFFFFFFF)          // white on clay/dark fills
+val GoodGreen = Color(0xFF5E8C6A)         // sage green — "connected"
+
+// Soft accent tints for icon chips.
+val TintClay = Color(0xFFF3E4DA)
+val TintSage = Color(0xFFE7EBE1)
+val TintBlue = Color(0xFFE4E7EC)
+val TintPlum = Color(0xFFEFE3EC)

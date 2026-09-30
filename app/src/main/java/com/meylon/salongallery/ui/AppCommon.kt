@@ -36,18 +36,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.window.Dialog
+import androidx.compose.material.icons.outlined.SystemUpdate
 import com.meylon.salongallery.R
 import com.meylon.salongallery.ui.components.BrandRow
 import com.meylon.salongallery.ui.components.GradientButton
 import com.meylon.salongallery.ui.components.OutlineButton
 import com.meylon.salongallery.ui.theme.ElecBg
 import com.meylon.salongallery.ui.theme.ElecBorder
+import com.meylon.salongallery.ui.theme.ElecSurface
 import com.meylon.salongallery.ui.theme.GoodGreen
 import com.meylon.salongallery.ui.theme.NeonCyan
 import com.meylon.salongallery.ui.theme.TextPrimary
 import com.meylon.salongallery.ui.theme.TextSecondary
+import com.meylon.salongallery.ui.theme.TintClay
 
 /** App-wide actions (updates + role) surfaced from the settings sheet. */
 data class AppActions(
@@ -122,6 +127,37 @@ fun SettingsSheet(
                 leading = Icons.Outlined.SwapHoriz,
                 onClick = actions.onChangeRole,
             )
+        }
+    }
+}
+
+/** Startup prompt shown when a newer release is available — update in one tap. */
+@Composable
+fun UpdateDialog(version: String, onUpdate: () -> Unit, onLater: () -> Unit) {
+    Dialog(onDismissRequest = onLater) {
+        Column(
+            Modifier
+                .clip(RoundedCornerShape(26.dp))
+                .background(ElecSurface)
+                .border(1.dp, ElecBorder, RoundedCornerShape(26.dp))
+                .padding(26.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                Modifier.size(58.dp).clip(RoundedCornerShape(17.dp)).background(TintClay),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Outlined.SystemUpdate, null, tint = NeonCyan, modifier = Modifier.size(29.dp)) }
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.update_ready_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.update_ready_desc, version),
+                style = MaterialTheme.typography.bodyMedium, color = TextSecondary, textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(22.dp))
+            GradientButton(text = stringResource(R.string.update_now), leading = Icons.Outlined.SystemUpdateAlt, onClick = onUpdate)
+            Spacer(Modifier.height(10.dp))
+            OutlineButton(text = stringResource(R.string.update_later), onClick = onLater)
         }
     }
 }

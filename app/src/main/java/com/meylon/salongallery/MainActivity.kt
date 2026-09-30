@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meylon.salongallery.data.DeviceRole
 import com.meylon.salongallery.data.RolePreferences
 import com.meylon.salongallery.ui.AppActions
+import com.meylon.salongallery.ui.UpdateDialog
 import com.meylon.salongallery.ui.RemoteModeScreen
 import com.meylon.salongallery.ui.RoleSelectionScreen
 import com.meylon.salongallery.ui.ScreenModeScreen
@@ -69,6 +70,7 @@ private fun AppRoot(prefs: RolePreferences) {
     var isChecking by remember { mutableStateOf(false) }
     var availableVersion by remember { mutableStateOf<String?>(null) }
     var apkUrl by remember { mutableStateOf<String?>(null) }
+    var updateDismissed by remember { mutableStateOf(false) }
 
     fun runCheck(showToast: Boolean, force: Boolean = true) {
         if (isChecking) return
@@ -158,5 +160,20 @@ private fun AppRoot(prefs: RolePreferences) {
                 RemoteModeScreen(actions)
             }
         }
+    }
+
+    // On launch, if a newer version is available, offer to update right away.
+    if (availableVersion != null && !updateDismissed) {
+        UpdateDialog(
+            version = availableVersion!!,
+            onUpdate = {
+                updateDismissed = true
+                apkUrl?.let { url ->
+                    Toast.makeText(context, context.getString(R.string.downloading_update), Toast.LENGTH_SHORT).show()
+                    scope.launch { UpdateManager.downloadAndInstall(context, url) }
+                }
+            },
+            onLater = { updateDismissed = true },
+        )
     }
 }

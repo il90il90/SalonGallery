@@ -103,7 +103,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -124,6 +128,7 @@ import com.meylon.salongallery.net.ArtGallery
 import com.meylon.salongallery.net.ArtPiece
 import com.meylon.salongallery.net.DiscoveredScreen
 import com.meylon.salongallery.net.FreeTrack
+import com.meylon.salongallery.net.LibraryList
 import com.meylon.salongallery.net.MusicState
 import com.meylon.salongallery.net.PhotoSender
 import com.meylon.salongallery.net.RemoteSession
@@ -135,12 +140,17 @@ import com.meylon.salongallery.ui.components.SalonBackground
 import com.meylon.salongallery.ui.components.SectionLabel
 import com.meylon.salongallery.ui.theme.ElecBorder
 import com.meylon.salongallery.ui.theme.ElecSurface
+import com.meylon.salongallery.ui.theme.ElecSurfaceElevated
 import com.meylon.salongallery.ui.theme.GoodGreen
 import com.meylon.salongallery.ui.theme.NeonBlue
 import com.meylon.salongallery.ui.theme.NeonCyan
 import com.meylon.salongallery.ui.theme.NeonTeal
 import com.meylon.salongallery.ui.theme.NeonViolet
 import com.meylon.salongallery.ui.theme.NeonVioletLight
+import com.meylon.salongallery.ui.theme.TintBlue
+import com.meylon.salongallery.ui.theme.TintClay
+import com.meylon.salongallery.ui.theme.TintPlum
+import com.meylon.salongallery.ui.theme.TintSage
 import com.meylon.salongallery.ui.theme.TextPrimary
 import com.meylon.salongallery.ui.theme.TextSecondary
 import com.meylon.salongallery.ui.theme.TextTertiary
@@ -266,6 +276,10 @@ private fun ControlPanel(
     var showText by remember { mutableStateOf(false) }
     var showMusic by remember { mutableStateOf(false) }
     var showArt by remember { mutableStateOf(false) }
+    var lib by remember { mutableStateOf<LibraryList?>(null) }
+
+    fun refreshLib() { scope.launch { PhotoSender.getList(screen.host, screen.port)?.let { lib = it } } }
+    LaunchedEffect(screen.host, screen.port) { refreshLib() }
 
     suspend fun readBytes(uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
         runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
@@ -295,7 +309,7 @@ private fun ControlPanel(
             }
             busy = false
             status = "Sent $ok / ${uris.size} photos ✓"
-            onInfoRefresh(scope)
+            onInfoRefresh(scope); refreshLib()
         }
     }
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -322,65 +336,81 @@ private fun ControlPanel(
     }
 
     Column(Modifier.fillMaxWidth()) {
-        ConnectedHeader(screen.name)
+        NowShowingHero(
+            screen = screen,
+            current = lib?.let { it.items.getOrNull(it.current) },
+            screenName = screen.name,
+        )
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CompactSlider(Modifier.weight(1f), Icons.Outlined.BrightnessMedium, NeonTeal) { v ->
+            CompactSlider(Modifier.weight(1f), Icons.Outlined.BrightnessMedium, NeonCyan) { v ->
                 scope.launch { PhotoSender.setBrightness(screen.host, screen.port, v) }
             }
-            CompactSlider(Modifier.weight(1f), Icons.AutoMirrored.Outlined.VolumeUp, NeonCyan) { v ->
+            CompactSlider(Modifier.weight(1f), Icons.AutoMirrored.Outlined.VolumeUp, NeonBlue) { v ->
                 scope.launch { PhotoSender.setVolume(screen.host, screen.port, v) }
             }
         }
 
+        Spacer(Modifier.height(24.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(stringResource(R.string.library_title), style = MaterialTheme.typography.titleLarge, color = TextPrimary, modifier = Modifier.weight(1f))
+            Text(
+                stringResource(R.string.home_see_all),
+                style = MaterialTheme.typography.labelLarge, color = NeonCyan,
+                modifier = Modifier.clip(RoundedCornerShape(50))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { showLibrary = true }
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+            )
+        }
         Spacer(Modifier.height(12.dp))
-        LibraryButton(onClick = { showLibrary = true })
+        LibraryStrip(
+            screen = screen,
+            items = lib?.items ?: emptyList(),
+            current = lib?.current ?: -1,
+            onShow = { name -> scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refreshLib() } },
+            onOpen = { showLibrary = true },
+        )
 
-        Spacer(Modifier.height(10.dp))
-        WideButton(Icons.Outlined.Palette, stringResource(R.string.tile_art), NeonTeal) { showArt = true }
-
-        Spacer(Modifier.height(10.dp))
-        WideButton(Icons.Outlined.Slideshow, stringResource(R.string.tile_slideshow), NeonBlue) { showSlideshow = true }
-
-        Spacer(Modifier.height(10.dp))
-        WideButton(Icons.Outlined.TextFields, stringResource(R.string.tile_text), NeonVioletLight) { showText = true }
-
+        Spacer(Modifier.height(24.dp))
+        SectionLabel(stringResource(R.string.home_add))
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActionTile(Modifier.weight(1f), Icons.Outlined.PhotoLibrary, stringResource(R.string.tile_photos), NeonCyan, !busy) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            HomeAction(Modifier.weight(1f), Icons.Outlined.PhotoLibrary, stringResource(R.string.home_photos), NeonCyan, TintClay, !busy) {
                 photosPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             }
-            ActionTile(Modifier.weight(1f), Icons.Outlined.Movie, stringResource(R.string.tile_video), NeonViolet, !busy) {
+            HomeAction(Modifier.weight(1f), Icons.Outlined.Palette, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
+            HomeAction(Modifier.weight(1f), Icons.Outlined.Movie, stringResource(R.string.home_video), NeonBlue, TintBlue, !busy) {
                 videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
             }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActionTile(Modifier.weight(1f), Icons.Outlined.FilterFrames, stringResource(R.string.tile_frame), NeonTeal, !busy) {
-                showFrames = true
-            }
-            ActionTile(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.tile_music), NeonVioletLight, !busy) {
-                showMusic = true
-            }
+            HomeAction(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.home_music), NeonViolet, TintPlum, !busy) { showMusic = true }
         }
 
-        Spacer(Modifier.height(16.dp))
-        Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+        Spacer(Modifier.height(20.dp))
+        SectionLabel(stringResource(R.string.home_style))
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            HomeAction(Modifier.weight(1f), Icons.Outlined.FilterFrames, stringResource(R.string.tile_frame), NeonCyan, TintClay, true) { showFrames = true }
+            HomeAction(Modifier.weight(1f), Icons.Outlined.Slideshow, stringResource(R.string.tile_slideshow), NeonBlue, TintBlue, true) { showSlideshow = true }
+            HomeAction(Modifier.weight(1f), Icons.Outlined.TextFields, stringResource(R.string.home_text), NeonViolet, TintPlum, true) { showText = true }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        Box(Modifier.fillMaxWidth().height(22.dp), contentAlignment = Alignment.Center) {
             when {
                 busy && progress.second > 1 -> ProgressRow("Sending ${progress.first}/${progress.second}…")
                 busy -> ProgressRow(stringResource(R.string.remote_sending))
                 status != null -> Text(
                     status!!, style = MaterialTheme.typography.labelMedium,
-                    color = if (status!!.contains("✓") || status!!.contains("cleared")) GoodGreen else Color(0xFFF87171),
+                    color = if (status!!.contains("✓") || status!!.contains("cleared")) GoodGreen else Color(0xFFC0503A),
                     textAlign = TextAlign.Center,
                 )
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         OutlineButton(text = stringResource(R.string.remote_disconnect), onClick = onBack)
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
     }
 
     if (showFrames) {
@@ -400,7 +430,7 @@ private fun ControlPanel(
         )
     }
     if (showLibrary) {
-        LibraryManager(screen = screen, bottomInset = bottomInset, onClose = { showLibrary = false; onInfoRefresh(scope) })
+        LibraryManager(screen = screen, bottomInset = bottomInset, onClose = { showLibrary = false; onInfoRefresh(scope); refreshLib() })
     }
     if (showText) {
         TextSheet(
@@ -427,7 +457,113 @@ private fun ControlPanel(
         )
     }
     if (showArt) {
-        ArtSheet(screen = screen, onDismiss = { showArt = false; onInfoRefresh(scope) })
+        ArtSheet(screen = screen, onDismiss = { showArt = false; onInfoRefresh(scope); refreshLib() })
+    }
+}
+
+/** The big "now showing on your wall" framed preview + connection status. */
+@Composable
+private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenName: String) {
+    Column(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier.fillMaxWidth()
+                .shadow(18.dp, RoundedCornerShape(24.dp), spotColor = Color(0x40654127), ambientColor = Color(0x24654127))
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color.White)
+                .padding(7.dp),
+        ) {
+            Box(Modifier.fillMaxWidth().height(224.dp).clip(RoundedCornerShape(17.dp)).background(ElecSurfaceElevated)) {
+                if (current != null) {
+                    AsyncImage(
+                        model = PhotoSender.fullUrl(screen.host, screen.port, current),
+                        contentDescription = null, contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Box(
+                    Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xAA140E06))))
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                ) {
+                    Text(
+                        if (current != null) stringResource(R.string.home_now_showing) else stringResource(R.string.library_empty),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (current != null) Color.White.copy(alpha = 0.94f) else TextSecondary,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(13.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(9.dp).clip(CircleShape).background(GoodGreen))
+            Spacer(Modifier.width(9.dp))
+            Text(stringResource(R.string.home_on_wall) + " ", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            Text(screenName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            Text(stringResource(R.string.remote_connected), style = MaterialTheme.typography.labelMedium, color = GoodGreen, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/** Horizontal strip of library thumbnails; tap to show one now, or open the manager. */
+@Composable
+private fun LibraryStrip(screen: DiscoveredScreen, items: List<String>, current: Int, onShow: (String) -> Unit, onOpen: () -> Unit) {
+    if (items.isEmpty()) {
+        Box(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ElecSurface)
+                .border(1.dp, ElecBorder, RoundedCornerShape(16.dp)).padding(vertical = 30.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.bodyMedium, color = TextSecondary) }
+        return
+    }
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items.take(12).forEachIndexed { i, name ->
+            Box(
+                Modifier.width(94.dp).height(118.dp).clip(RoundedCornerShape(15.dp)).background(ElecSurfaceElevated)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onShow(name) },
+            ) {
+                AsyncImage(
+                    model = PhotoSender.thumbUrl(screen.host, screen.port, name),
+                    contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+                )
+                if (i == current) {
+                    Text(
+                        stringResource(R.string.badge_now),
+                        style = MaterialTheme.typography.labelSmall, color = Color.White,
+                        modifier = Modifier.padding(7.dp).clip(RoundedCornerShape(50)).background(GoodGreen).padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+            }
+        }
+        Box(
+            Modifier.width(64.dp).height(118.dp).clip(RoundedCornerShape(15.dp))
+                .border(1.dp, ElecBorder, RoundedCornerShape(15.dp))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onOpen() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Outlined.ChevronRight, null, tint = NeonCyan, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.height(4.dp))
+                Text(stringResource(R.string.album_all), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            }
+        }
+    }
+}
+
+/** A soft light action tile: tinted icon chip + label. */
+@Composable
+private fun HomeAction(modifier: Modifier, icon: ImageVector, label: String, tint: Color, tintBg: Color, enabled: Boolean, onClick: () -> Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(18.dp)).background(ElecSurface).border(1.dp, ElecBorder, RoundedCornerShape(18.dp))
+            .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(tintBg), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(21.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = TextPrimary, maxLines = 1)
     }
 }
 

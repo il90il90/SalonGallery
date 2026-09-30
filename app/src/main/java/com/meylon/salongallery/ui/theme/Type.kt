@@ -11,40 +11,45 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.meylon.salongallery.R
 
-private fun grotesk(weight: Int) = Font(
-    R.font.space_grotesk,
+private fun fraunces(weight: Int) = Font(
+    R.font.fraunces,
+    weight = FontWeight(weight),
+    variationSettings = FontVariation.Settings(
+        FontVariation.weight(weight),
+        FontVariation.Setting("opsz", 40f),
+        FontVariation.Setting("SOFT", 0f),
+        FontVariation.Setting("WONK", 0f),
+    ),
+)
+
+private fun dmsans(weight: Int) = Font(
+    R.font.dm_sans,
     weight = FontWeight(weight),
     variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
 )
 
-private fun inter(weight: Int) = Font(
-    R.font.inter,
-    weight = FontWeight(weight),
-    variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
-)
+// Fraunces — warm editorial serif for headings (gallery / museum feel).
+val Display = FontFamily(fraunces(400), fraunces(500), fraunces(600), fraunces(700))
 
-// Space Grotesk — bold, techy geometric display face.
-val Display = FontFamily(grotesk(500), grotesk(600), grotesk(700))
-
-// Inter — crisp modern body sans.
-val Body = FontFamily(inter(400), inter(500), inter(600), inter(700))
+// DM Sans — clean humanist sans for body & UI.
+val Body = FontFamily(dmsans(400), dmsans(500), dmsans(600), dmsans(700))
 
 val SalonTypography = Typography(
     displayLarge = TextStyle(
-        fontFamily = Display, fontWeight = FontWeight(700),
-        fontSize = 40.sp, lineHeight = 44.sp, letterSpacing = (-0.5).sp,
+        fontFamily = Display, fontWeight = FontWeight(600),
+        fontSize = 40.sp, lineHeight = 44.sp, letterSpacing = (-0.4).sp,
     ),
     headlineMedium = TextStyle(
-        fontFamily = Display, fontWeight = FontWeight(700),
-        fontSize = 28.sp, lineHeight = 33.sp, letterSpacing = (-0.5).sp,
+        fontFamily = Display, fontWeight = FontWeight(600),
+        fontSize = 28.sp, lineHeight = 33.sp, letterSpacing = (-0.3).sp,
     ),
     headlineSmall = TextStyle(
-        fontFamily = Display, fontWeight = FontWeight(700),
-        fontSize = 23.sp, lineHeight = 29.sp, letterSpacing = (-0.3).sp,
+        fontFamily = Display, fontWeight = FontWeight(600),
+        fontSize = 23.sp, lineHeight = 28.sp, letterSpacing = (-0.2).sp,
     ),
     titleLarge = TextStyle(
         fontFamily = Display, fontWeight = FontWeight(600),
-        fontSize = 18.sp, lineHeight = 23.sp,
+        fontSize = 19.sp, lineHeight = 24.sp, letterSpacing = (-0.1).sp,
     ),
     titleMedium = TextStyle(
         fontFamily = Body, fontWeight = FontWeight(600),
@@ -58,16 +63,20 @@ val SalonTypography = Typography(
         fontFamily = Body, fontWeight = FontWeight(400),
         fontSize = 13.5.sp, lineHeight = 19.sp,
     ),
+    bodySmall = TextStyle(
+        fontFamily = Body, fontWeight = FontWeight(400),
+        fontSize = 12.5.sp, lineHeight = 17.sp,
+    ),
     labelLarge = TextStyle(
-        fontFamily = Body, fontWeight = FontWeight(700),
-        fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 0.2.sp,
+        fontFamily = Body, fontWeight = FontWeight(600),
+        fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp,
     ),
     labelMedium = TextStyle(
-        fontFamily = Body, fontWeight = FontWeight(600),
-        fontSize = 13.sp, lineHeight = 16.sp, letterSpacing = 0.3.sp,
+        fontFamily = Body, fontWeight = FontWeight(500),
+        fontSize = 13.sp, lineHeight = 16.sp, letterSpacing = 0.2.sp,
     ),
     labelSmall = TextStyle(
-        fontFamily = Body, fontWeight = FontWeight(700),
-        fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 2.sp,
+        fontFamily = Body, fontWeight = FontWeight(600),
+        fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 1.6.sp,
     ),
 )

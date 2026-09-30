@@ -1,17 +1,17 @@
 package com.meylon.salongallery.ui.theme
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
-private val ElectricColors = darkColorScheme(
-    primary = NeonCyan,
-    onPrimary = OnAccent,
-    secondary = NeonViolet,
-    onSecondary = TextPrimary,
-    background = ElecBg,
-    onBackground = TextPrimary,
-    surface = ElecSurface,
+private val GalleryColors = lightColorScheme(
+    primary = NeonCyan,          // clay
+    onPrimary = OnAccent,        // white
+    secondary = NeonViolet,      // plum
+    onSecondary = OnAccent,
+    background = ElecBg,          // paper
+    onBackground = TextPrimary,  // ink
+    surface = ElecSurface,       // card
     onSurface = TextPrimary,
     surfaceVariant = ElecSurfaceElevated,
     onSurfaceVariant = TextSecondary,
@@ -23,7 +23,7 @@ fun SalonGalleryTheme(
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
-        colorScheme = ElectricColors,
+        colorScheme = GalleryColors,
         typography = SalonTypography,
         content = content
     )

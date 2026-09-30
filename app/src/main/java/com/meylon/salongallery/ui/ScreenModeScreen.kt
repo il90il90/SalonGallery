@@ -466,8 +466,8 @@ private fun ClockText(modifier: Modifier) {
     val time = remember(now / 60000) { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(now)) }
     val date = remember(now / 3600000) { java.text.SimpleDateFormat("EEE, d MMM", java.util.Locale.getDefault()).format(java.util.Date(now)) }
     Column(modifier) {
-        Text(time, style = TextStyle(fontSize = 46.sp, fontWeight = FontWeight.Bold, color = Color.White, shadow = Shadow(Color.Black.copy(0.7f), Offset(0f, 3f), 14f)))
-        Text(date, style = TextStyle(fontSize = 18.sp, color = Color.White.copy(0.9f), shadow = Shadow(Color.Black.copy(0.7f), Offset(0f, 2f), 10f)))
+        Text(time, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Display, fontSize = 58.sp, fontWeight = FontWeight(400), color = Color.White, shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 3f), 18f)))
+        Text(date, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Body, fontSize = 18.sp, fontWeight = FontWeight(500), color = Color.White.copy(0.92f), letterSpacing = 0.5.sp, shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 2f), 12f)))
     }
 }
 
