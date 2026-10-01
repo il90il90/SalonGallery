@@ -153,6 +153,8 @@
     <string name="admin_section">Screen settings</string>
     <string name="admin_screensaver">Set as screensaver</string>
     <string name="admin_screensaver_hint">Show your gallery automatically when the screen is idle.</string>
+    <string name="remote_screensaver">Set screen as screensaver</string>
+    <string name="remote_screensaver_hint">Opens the screensaver settings on the screen so your gallery shows when it\'s idle.</string>
     <string name="admin_name">Device name</string>
     <string name="admin_name_hint">This screen</string>
     <string name="admin_save_name">Save name</string>

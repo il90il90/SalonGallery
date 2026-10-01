@@ -180,6 +180,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val musicShuffle by session.musicShuffle.collectAsStateWithLifecycle()
     val musicNext by session.musicNextTrigger.collectAsStateWithLifecycle()
     val musicPrev by session.musicPrevTrigger.collectAsStateWithLifecycle()
+    val screensaverReq by session.screensaverTrigger.collectAsStateWithLifecycle()
 
     var showSettings by remember { mutableStateOf(false) }
     var showPinPrompt by remember { mutableStateOf(false) }
@@ -234,6 +235,15 @@ fun ScreenModeScreen(actions: AppActions) {
     LaunchedEffect(musicShuffle) { musicExo.shuffleModeEnabled = musicShuffle }
     LaunchedEffect(musicNext) { if (musicNext > 0 && musicExo.mediaItemCount > 0) musicExo.seekToNext() }
     LaunchedEffect(musicPrev) { if (musicPrev > 0 && musicExo.mediaItemCount > 0) musicExo.seekToPrevious() }
+    // The Remote asked this screen to open Android's screensaver settings.
+    LaunchedEffect(screensaverReq) {
+        if (screensaverReq > 0) runCatching {
+            context.startActivity(
+                android.content.Intent(android.provider.Settings.ACTION_DREAM_SETTINGS)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
 
     // Brightness is applied as a software dimming scrim (see below) so it works like real
     // picture brightness on every device, including Android TV where window brightness is ignored.

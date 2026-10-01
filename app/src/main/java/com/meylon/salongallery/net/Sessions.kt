@@ -53,6 +53,8 @@ class ScreenSession(
     val musicShuffle = MutableStateFlow(false)
     val musicNextTrigger = MutableStateFlow(0L)
     val musicPrevTrigger = MutableStateFlow(0L)
+    /** Bumped when the Remote asks the Display to open Android's screensaver settings. */
+    val screensaverTrigger = MutableStateFlow(0L)
     /** Index into the music library that is currently playing (updated by the player). */
     val musicIndex = MutableStateFlow(0)
     val frameId = MutableStateFlow(0)
@@ -294,6 +296,8 @@ class ScreenSession(
     override fun onClock(on: Boolean, pos: String, showDate: Boolean) {
         clock.value = ClockConfig(on, ClockPos.from(pos), showDate)
     }
+
+    override fun onOpenScreensaver() { screensaverTrigger.value = System.currentTimeMillis() }
 
     override fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean) {
         val clean = feeds.map { it.trim() }.filter { it.isNotBlank() }

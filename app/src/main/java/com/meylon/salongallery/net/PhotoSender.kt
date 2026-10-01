@@ -331,6 +331,10 @@ object PhotoSender {
     suspend fun clearLibrary(host: String, port: Int) =
         get(host, port, "/clear")
 
+    /** Ask the Display to open Android's screensaver settings on its own screen. */
+    suspend fun openScreensaver(host: String, port: Int) =
+        get(host, port, "/screensaver")
+
     private suspend fun get(host: String, port: Int, path: String): Boolean =
         withContext(Dispatchers.IO) {
             try {

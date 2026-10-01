@@ -61,6 +61,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.FilterFrames
@@ -302,6 +303,17 @@ fun RemoteModeScreen(actions: AppActions) {
                 }
                 selected?.let { s ->
                     Spacer(Modifier.height(12.dp))
+                    Text(
+                        stringResource(R.string.remote_screensaver_hint),
+                        style = MaterialTheme.typography.bodySmall, color = TextSecondary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlineButton(
+                        text = stringResource(R.string.remote_screensaver),
+                        leading = Icons.Outlined.Bedtime,
+                        onClick = { remoteScope.launch { PhotoSender.openScreensaver(s.host, s.port) } },
+                    )
+                    Spacer(Modifier.height(16.dp))
                     OutlineButton(
                         text = stringResource(R.string.clear_library),
                         leading = Icons.Outlined.DeleteSweep,
