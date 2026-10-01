@@ -65,6 +65,8 @@
     <string name="duration_hint_video">Cap this clip, or play the whole thing.</string>
     <string name="pin_to_front">Pin to front</string>
     <string name="unpin">Unpin</string>
+    <string name="slideshow_autofill">Auto-fill the screen</string>
+    <string name="slideshow_autofill_hint">Group photos that don\'t fill the wall into one framed piece.</string>
     <string name="tile_clear">Clear all</string>
     <string name="tile_brightness">Brightness</string>
     <string name="tile_volume">Volume</string>

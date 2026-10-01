@@ -21,6 +21,7 @@ interface ScreenCommands {
     fun onEffect(effect: String)
     fun onFit(fit: String)
     fun onFilter(filter: String)
+    fun onCollage(on: Boolean)
     fun onText(content: String, pos: String, size: String, color: String)
     fun onClock(on: Boolean)
     fun onOrientation(o: String)
@@ -115,6 +116,9 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/filter" -> {
                 session.parameters["f"]?.firstOrNull()?.let { commands.onFilter(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/collage" -> {
+                commands.onCollage(session.parameters["on"]?.firstOrNull() == "1"); ok()
             }
             session.method == Method.GET && uri == "/text" -> {
                 commands.onText(

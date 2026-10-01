@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -155,6 +156,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val effect by session.effect.collectAsStateWithLifecycle()
     val photoFit by session.photoFit.collectAsStateWithLifecycle()
     val photoFilter by session.photoFilter.collectAsStateWithLifecycle()
+    val collage by session.collage.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
     val clockOn by session.clockOn.collectAsStateWithLifecycle()
     val orientation by session.orientation.collectAsStateWithLifecycle()
@@ -246,6 +248,25 @@ fun ScreenModeScreen(actions: AppActions) {
 
     val files = remember(libraryVersion) { session.activeFiles() }
 
+    // Orientation map (name -> isPortrait) for the auto-collage, decoded off the main thread.
+    var orientationMap by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    LaunchedEffect(libraryVersion, collage) {
+        if (!collage) return@LaunchedEffect
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val m = HashMap(orientationMap)
+            files.forEach { f ->
+                if (!isVideoName(f.name) && !m.containsKey(f.name)) {
+                    runCatching {
+                        val b = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeFile(f.path, b)
+                        if (b.outWidth > 0 && b.outHeight > 0) m[f.name] = b.outHeight > b.outWidth
+                    }
+                }
+            }
+            orientationMap = m
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -269,6 +290,8 @@ fun ScreenModeScreen(actions: AppActions) {
                         fit = photoFit,
                         filter = photoFilter,
                         volume = volume,
+                        collageOn = collage,
+                        orientationMap = orientationMap,
                         transformOf = { session.transformFor(it.name) },
                         durationOf = { session.durationFor(it.name) },
                         onNext = { session.currentIndex.value = it },
@@ -348,6 +371,8 @@ private fun Slideshow(
     fit: PhotoFit,
     filter: PhotoFilter,
     volume: Float,
+    collageOn: Boolean,
+    orientationMap: Map<String, Boolean>,
     transformOf: (File) -> PhotoTransform,
     durationOf: (File) -> Int,
     onNext: (Int) -> Unit,
@@ -355,16 +380,38 @@ private fun Slideshow(
     if (files.isEmpty()) return
     val idx = currentIndex.coerceIn(0, files.size - 1)
     val currentIsVideo = isVideoName(files[idx].name)
+    val screenLandscape = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp >= it.screenHeightDp }
+
+    // Which items (by index) form the slide starting at [from]: a collage of same-orientation
+    // photos that would otherwise leave big side gaps, or just the single item.
+    fun membersAt(from: Int): List<Int> {
+        if (!collageOn || files.size < 2) return listOf(from)
+        val f = files[from]
+        if (isVideoName(f.name)) return listOf(from)
+        val portrait = orientationMap[f.name] ?: return listOf(from)
+        val fillable = portrait == !screenLandscape  // portrait on landscape, or landscape on portrait
+        if (!fillable) return listOf(from)
+        val want = if (screenLandscape) 3 else 2
+        val out = mutableListOf(from)
+        var j = from
+        while (out.size < want) {
+            j = (j + 1) % files.size
+            if (j == from) break
+            val nf = files[j]
+            if (!isVideoName(nf.name) && orientationMap[nf.name] == portrait) out.add(j) else break
+        }
+        return if (out.size >= 2) out else listOf(from)
+    }
 
     fun advanceFrom(from: Int) {
         if (files.size <= 1) return
         val next = if (shuffle) (files.indices - from).randomOrNull() ?: from
-        else (from + 1) % files.size
+        else (from + membersAt(from).size) % files.size
         onNext(next)
     }
 
     // Still photos advance on their own duration (or the slideshow default); videos advance when they end.
-    LaunchedEffect(idx, shuffle, intervalMs, files.size, currentIsVideo) {
+    LaunchedEffect(idx, shuffle, intervalMs, files.size, currentIsVideo, collageOn) {
         if (currentIsVideo || files.size <= 1) return@LaunchedEffect
         val sec = durationOf(files[idx])
         delay(if (sec > 0) sec * 1000L else intervalMs)
@@ -387,12 +434,15 @@ private fun Slideshow(
         label = "slide",
     ) { i ->
         val file = files[i.coerceIn(0, files.size - 1)]
+        val members = membersAt(i.coerceIn(0, files.size - 1))
         if (isVideoName(file.name)) {
             VideoSlide(
                 file = file, volume = volume, fit = fit, vignette = filter == PhotoFilter.VIGNETTE,
                 loop = files.size <= 1, capSec = durationOf(file),
                 onEnded = { advanceFrom(i) },
             )
+        } else if (members.size >= 2) {
+            CollageSlide(members.map { files[it] }, filter = filter, horizontal = screenLandscape)
         } else {
             val kb = if (effect == SlideEffect.KENBURNS) {
                 val a = remember(i) { Animatable(1f) }
@@ -401,6 +451,34 @@ private fun Slideshow(
             } else null
             PhotoContent(file, fit, transformOf(file), filter) { kb?.value ?: 1f }
         }
+    }
+}
+
+/** Lays several same-orientation photos edge to edge (with a thin gap) so they fill the wall as one piece. */
+@Composable
+private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boolean) {
+    val cf = lookFilter(filter)
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        if (horizontal) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                files.forEach { f ->
+                    AsyncImage(
+                        model = f, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                files.forEach { f ->
+                    AsyncImage(
+                        model = f, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                }
+            }
+        }
+        if (filter == PhotoFilter.VIGNETTE) VignetteOverlay()
     }
 }
 
