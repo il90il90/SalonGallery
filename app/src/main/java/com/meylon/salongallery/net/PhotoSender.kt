@@ -241,6 +241,22 @@ object PhotoSender {
     suspend fun setOrientation(host: String, port: Int, o: String) =
         get(host, port, "/orientation?o=$o")
 
+    suspend fun setRss(host: String, port: Int, on: Boolean, feeds: List<String>) =
+        get(host, port, "/rss?on=${if (on) 1 else 0}&feeds=${enc(feeds.joinToString("\n"))}")
+
+    suspend fun getRss(host: String, port: Int): Pair<Boolean, List<String>>? = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/rss/get", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val o = JSONObject(body)
+            val arr = o.optJSONArray("feeds")
+            val feeds = buildList { if (arr != null) for (i in 0 until arr.length()) add(arr.optString(i)) }
+            o.optBoolean("on") to feeds
+        } catch (e: Exception) { null }
+    }
+
     suspend fun clearLibrary(host: String, port: Int) =
         get(host, port, "/clear")
 

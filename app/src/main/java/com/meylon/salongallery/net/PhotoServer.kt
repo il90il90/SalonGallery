@@ -24,6 +24,8 @@ interface ScreenCommands {
     fun onCollage(on: Boolean)
     fun onText(content: String, pos: String, size: String, color: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean)
+    fun onRss(on: Boolean, feeds: List<String>)
+    fun rssJson(): String
     fun onOrientation(o: String)
     fun onClear()
     // Library management
@@ -138,6 +140,12 @@ class PhotoServer(
             session.method == Method.GET && uri == "/orientation" -> {
                 session.parameters["o"]?.firstOrNull()?.let { commands.onOrientation(it) }; ok()
             }
+            session.method == Method.GET && uri == "/rss" -> {
+                val on = session.parameters["on"]?.firstOrNull() == "1"
+                val feeds = session.parameters["feeds"]?.firstOrNull()?.split("\n")?.filter { it.isNotBlank() } ?: emptyList()
+                commands.onRss(on, feeds); ok()
+            }
+            session.method == Method.GET && uri == "/rss/get" -> json(commands.rssJson())
             session.method == Method.GET && uri == "/clear" -> { commands.onClear(); ok() }
 
             session.method == Method.GET && uri == "/list" -> json(commands.listJson())

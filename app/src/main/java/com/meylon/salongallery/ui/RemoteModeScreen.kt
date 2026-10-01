@@ -71,6 +71,7 @@ import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TextFields
@@ -285,6 +286,7 @@ private fun ControlPanel(
     var showText by remember { mutableStateOf(false) }
     var showMusic by remember { mutableStateOf(false) }
     var showArt by remember { mutableStateOf(false) }
+    var showRss by remember { mutableStateOf(false) }
     var lib by remember { mutableStateOf<LibraryList?>(null) }
 
     fun refreshLib() { scope.launch { PhotoSender.getList(screen.host, screen.port)?.let { lib = it } } }
@@ -398,6 +400,11 @@ private fun ControlPanel(
             HomeAction(Modifier.weight(1f), Icons.Outlined.Slideshow, stringResource(R.string.tile_slideshow), NeonBlue, TintBlue, true) { showSlideshow = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.TextFields, stringResource(R.string.home_text), NeonViolet, TintPlum, true) { showText = true }
         }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            HomeAction(Modifier.weight(1f), Icons.Outlined.RssFeed, stringResource(R.string.rss_title), NeonCyan, TintClay, true) { showRss = true }
+            Spacer(Modifier.weight(3f))
+        }
 
         Spacer(Modifier.height(18.dp))
         Box(Modifier.fillMaxWidth().height(22.dp), contentAlignment = Alignment.Center) {
@@ -474,6 +481,9 @@ private fun ControlPanel(
     if (showArt) {
         ArtSheet(screen = screen, onDismiss = { showArt = false; onInfoRefresh(scope); refreshLib() })
     }
+    if (showRss) {
+        RssSheet(screen = screen, onDismiss = { showRss = false })
+    }
 }
 
 /** The big "now showing on your wall" framed preview + connection status. */
@@ -514,7 +524,7 @@ private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenNam
             Box(Modifier.size(9.dp).clip(CircleShape).background(GoodGreen))
             Spacer(Modifier.width(9.dp))
             Text(stringResource(R.string.home_on_wall) + " ", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-            Text(screenName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1)
+            Text(screenName, style = MaterialTheme.typography.bodyMedium, fontFamily = com.meylon.salongallery.ui.theme.ContentFont, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1)
             Spacer(Modifier.weight(1f))
             Text(stringResource(R.string.remote_connected), style = MaterialTheme.typography.labelMedium, color = GoodGreen, fontWeight = FontWeight.SemiBold)
         }
@@ -1185,6 +1195,90 @@ private fun SliderTile(modifier: Modifier, icon: ImageVector, label: String, acc
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun RssSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var on by remember { mutableStateOf(false) }
+    val feeds = remember { mutableStateListOf<String>() }
+    var input by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        PhotoSender.getRss(screen.host, screen.port)?.let { (o, f) -> on = o; feeds.clear(); feeds.addAll(f) }
+    }
+    fun push() { scope.launch { PhotoSender.setRss(screen.host, screen.port, on, feeds.toList()) } }
+    val suggestions = listOf(
+        "BBC News" to "https://feeds.bbci.co.uk/news/rss.xml",
+        "The Verge" to "https://www.theverge.com/rss/index.xml",
+        "NASA" to "https://www.nasa.gov/rss/dyn/breaking_news.rss",
+        "Hacker News" to "https://hnrss.org/frontpage",
+        "NYT" to "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+    )
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
+            Text(stringResource(R.string.rss_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text(stringResource(R.string.rss_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.rss_show), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                Switch(checked = on, onCheckedChange = { on = it; push() })
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = input, onValueChange = { input = it },
+                    modifier = Modifier.weight(1f), singleLine = true,
+                    placeholder = { Text(stringResource(R.string.rss_add_hint), color = TextTertiary) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+                        focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+                    ),
+                )
+                SmallBtn(Icons.Outlined.Add, NeonCyan, desc = "Add feed") {
+                    val u = input.trim()
+                    if (u.isNotBlank() && u !in feeds) { feeds.add(u); input = ""; push() }
+                }
+            }
+
+            if (feeds.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                feeds.toList().forEach { url ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, ElecBorder, RoundedCornerShape(12.dp)).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(url, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, modifier = Modifier.weight(1f))
+                        SmallBtn(Icons.Outlined.Close, Color(0xFFF87171), desc = "Remove feed") { feeds.remove(url); push() }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            SectionLabel(stringResource(R.string.rss_suggestions))
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                suggestions.forEach { (name, url) ->
+                    val added = url in feeds
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50))
+                            .border(1.dp, if (added) NeonCyan else ElecBorder, RoundedCornerShape(50))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                if (!added) { feeds.add(url); push() }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                    ) {
+                        Text((if (added) "✓ " else "+ ") + name, style = MaterialTheme.typography.labelMedium, color = if (added) NeonCyan else TextPrimary)
+                    }
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun EffectsSheet(
     effect: String, filter: String,
     onEffect: (String) -> Unit, onFilter: (String) -> Unit, onDismiss: () -> Unit,
@@ -1385,6 +1479,7 @@ private fun TextSheet(
             OutlinedTextField(
                 value = content, onValueChange = { content = it },
                 modifier = Modifier.fillMaxWidth(),
+                textStyle = androidx.compose.ui.text.TextStyle(fontFamily = com.meylon.salongallery.ui.theme.ContentFont),
                 placeholder = { Text(stringResource(R.string.text_hint), color = TextTertiary) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,

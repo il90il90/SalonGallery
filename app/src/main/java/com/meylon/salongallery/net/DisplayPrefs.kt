@@ -36,6 +36,15 @@ class DisplayPrefs(context: Context) {
         get() = sp.getInt("sleepEnd", 7 * 60)
         set(v) = sp.edit().putInt("sleepEnd", v).apply()
 
+    var rssEnabled: Boolean
+        get() = sp.getBoolean("rssOn", false)
+        set(v) = sp.edit().putBoolean("rssOn", v).apply()
+
+    /** RSS/Atom feed URLs to scroll along the bottom of the wall, one per line. */
+    var rssFeeds: List<String>
+        get() = (sp.getString("rssFeeds", "") ?: "").split("\n").map { it.trim() }.filter { it.isNotBlank() }
+        set(v) = sp.edit().putString("rssFeeds", v.joinToString("\n")).apply()
+
     /** True if, right now, the schedule says the frame should be asleep. */
     fun isSleepingNow(nowMinOfDay: Int = currentMinOfDay()): Boolean {
         if (!scheduleEnabled) return false

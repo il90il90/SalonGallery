@@ -28,11 +28,21 @@ private fun dmsans(weight: Int) = Font(
     variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
 )
 
+private fun rubik(weight: Int) = Font(
+    R.font.rubik,
+    weight = FontWeight(weight),
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+)
+
 // Fraunces — warm editorial serif for headings (gallery / museum feel).
 val Display = FontFamily(fraunces(400), fraunces(500), fraunces(600), fraunces(700))
 
 // DM Sans — clean humanist sans for body & UI.
 val Body = FontFamily(dmsans(400), dmsans(500), dmsans(600), dmsans(700))
+
+// Rubik — covers Hebrew + Latin; used for user-entered content (overlay text, RSS,
+// device names) so Hebrew renders beautifully and bidi/RTL resolves correctly.
+val ContentFont = FontFamily(rubik(400), rubik(500), rubik(600), rubik(700))
 
 val SalonTypography = Typography(
     displayLarge = TextStyle(

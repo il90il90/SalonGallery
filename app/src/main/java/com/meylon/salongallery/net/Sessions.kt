@@ -65,6 +65,8 @@ class ScreenSession(
     val collage = MutableStateFlow(false)
     val textOverlay = MutableStateFlow(TextOverlay())
     val clock = MutableStateFlow(ClockConfig())
+    val rssOn = MutableStateFlow(prefs.rssEnabled)
+    val rssFeeds = MutableStateFlow(prefs.rssFeeds)
     val orientation = MutableStateFlow(ScreenOrientation.AUTO)
     val brightness = MutableStateFlow(-1f)
     /** App-level playback volume 0..1, applied directly to the players (reliable on TV). */
@@ -247,6 +249,19 @@ class ScreenSession(
 
     override fun onClock(on: Boolean, pos: String, showDate: Boolean) {
         clock.value = ClockConfig(on, ClockPos.from(pos), showDate)
+    }
+
+    override fun onRss(on: Boolean, feeds: List<String>) {
+        val clean = feeds.map { it.trim() }.filter { it.isNotBlank() }
+        prefs.rssEnabled = on
+        prefs.rssFeeds = clean
+        rssOn.value = on
+        rssFeeds.value = clean
+    }
+
+    override fun rssJson(): String {
+        val f = rssFeeds.value.joinToString(",") { "\"${esc(it)}\"" }
+        return """{"on":${rssOn.value},"feeds":[$f]}"""
     }
 
     override fun onOrientation(o: String) {

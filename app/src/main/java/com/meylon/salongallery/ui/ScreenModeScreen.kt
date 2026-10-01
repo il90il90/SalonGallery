@@ -159,6 +159,8 @@ fun ScreenModeScreen(actions: AppActions) {
     val collage by session.collage.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
     val clock by session.clock.collectAsStateWithLifecycle()
+    val rssOn by session.rssOn.collectAsStateWithLifecycle()
+    val rssFeeds by session.rssFeeds.collectAsStateWithLifecycle()
     val orientation by session.orientation.collectAsStateWithLifecycle()
     val brightness by session.brightness.collectAsStateWithLifecycle()
     val volume by session.volume.collectAsStateWithLifecycle()
@@ -246,6 +248,16 @@ fun ScreenModeScreen(actions: AppActions) {
         onDispose {}
     }
 
+    // RSS headlines: refetch on change, then every 5 minutes.
+    var rssItems by remember { mutableStateOf<List<com.meylon.salongallery.net.RssItem>>(emptyList()) }
+    LaunchedEffect(rssOn, rssFeeds) {
+        if (!rssOn || rssFeeds.isEmpty()) { rssItems = emptyList(); return@LaunchedEffect }
+        while (true) {
+            rssItems = com.meylon.salongallery.net.RssFeed.fetch(rssFeeds)
+            delay(5 * 60 * 1000L)
+        }
+    }
+
     val files = remember(libraryVersion) { session.activeFiles() }
 
     // Orientation map (name -> isPortrait) for the auto-collage, decoded off the main thread.
@@ -302,6 +314,10 @@ fun ScreenModeScreen(actions: AppActions) {
         }
 
         if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clock)
+
+        if (mode != DisplayMode.WAITING && rssOn && rssItems.isNotEmpty()) {
+            RssTicker(rssItems, Modifier.align(Alignment.BottomCenter))
+        }
 
         // Brightness as real "picture" dimming — a software scrim that works on every
         // device (including Android TV, where window brightness is ignored).
@@ -629,13 +645,55 @@ private fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.meylon.salongall
             text.content,
             modifier = Modifier.align(align).safeDrawingPadding().padding(horizontal = 24.dp, vertical = 44.dp),
             style = TextStyle(
+                fontFamily = com.meylon.salongallery.ui.theme.ContentFont,
                 fontSize = overlaySize(text.size),
                 fontWeight = FontWeight.Bold,
                 color = overlayColor(text.color),
                 textAlign = TextAlign.Center,
+                textDirection = androidx.compose.ui.text.style.TextDirection.Content,
                 shadow = Shadow(Color.Black.copy(alpha = 0.7f), Offset(0f, 4f), 16f),
             ),
         )
+    }
+}
+
+/** A quiet rotating headline banner along the bottom of the wall. */
+@Composable
+private fun BoxScope.RssTicker(items: List<com.meylon.salongallery.net.RssItem>, modifier: Modifier) {
+    var idx by remember(items) { mutableIntStateOf(0) }
+    LaunchedEffect(items) { while (items.isNotEmpty()) { delay(7000); idx = (idx + 1) % items.size } }
+    val item = items[idx.coerceIn(0, items.lastIndex)]
+    Box(
+        modifier.fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.74f))))
+            .safeDrawingPadding().padding(horizontal = 30.dp, vertical = 20.dp),
+    ) {
+        AnimatedContent(
+            targetState = item,
+            transitionSpec = { fadeIn(tween(500)) togetherWith fadeOut(tween(500)) },
+            label = "rss",
+        ) { it ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(NeonCyan))
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        it.source.uppercase(),
+                        style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Body, fontSize = 11.sp, fontWeight = FontWeight(700), color = NeonCyan, letterSpacing = 1.sp),
+                    )
+                    Text(
+                        it.title,
+                        style = TextStyle(
+                            fontFamily = com.meylon.salongallery.ui.theme.ContentFont, fontSize = 22.sp, fontWeight = FontWeight(600),
+                            color = Color.White, lineHeight = 26.sp,
+                            textDirection = androidx.compose.ui.text.style.TextDirection.Content,
+                            shadow = Shadow(Color.Black.copy(0.7f), Offset(0f, 2f), 12f),
+                        ),
+                        maxLines = 2,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -681,6 +739,7 @@ private fun TvTextField(
         onValueChange = onValueChange,
         readOnly = !editing,
         singleLine = true,
+        textStyle = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.ContentFont),
         placeholder = { Text(placeholder, color = TextTertiary) },
         keyboardOptions = if (password) KeyboardOptions(keyboardType = KeyboardType.NumberPassword) else KeyboardOptions.Default,
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
