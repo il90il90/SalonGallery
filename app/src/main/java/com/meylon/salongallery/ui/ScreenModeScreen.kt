@@ -1055,6 +1055,28 @@ private fun WaitingToPair(deviceName: String, running: Boolean) {
                 style = MaterialTheme.typography.labelMedium,
                 color = TextSecondary, textAlign = TextAlign.Center,
             )
+            Spacer(Modifier.height(22.dp))
+            // Quick shortcut to make this app the device's system screensaver.
+            val ctx = LocalContext.current
+            OutlineButton(
+                text = stringResource(R.string.admin_screensaver),
+                leading = Icons.Outlined.Bedtime,
+                onClick = {
+                    runCatching {
+                        ctx.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_DREAM_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                },
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.admin_screensaver_hint),
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary, textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
             Spacer(Modifier.weight(1f))
         }
     }
