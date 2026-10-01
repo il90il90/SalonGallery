@@ -74,6 +74,7 @@ private fun AppRoot(prefs: RolePreferences) {
     var isChecking by remember { mutableStateOf(false) }
     var availableVersion by remember { mutableStateOf<String?>(null) }
     var apkUrl by remember { mutableStateOf<String?>(null) }
+    var apkNotes by remember { mutableStateOf("") }
     var updateDismissed by remember { mutableStateOf(false) }
 
     fun runCheck(showToast: Boolean, force: Boolean = true) {
@@ -84,6 +85,7 @@ private fun AppRoot(prefs: RolePreferences) {
                 is UpdateStatus.Available -> {
                     availableVersion = status.latest
                     apkUrl = status.apkUrl
+                    apkNotes = status.notes
                     if (showToast) {
                         Toast.makeText(
                             context,
@@ -130,7 +132,11 @@ private fun AppRoot(prefs: RolePreferences) {
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START) runCheck(showToast = false, force = false)
+            // Check both on entry (so the prompt is fresh when the app opens) and on exit
+            // (so the next launch already knows about a new build).
+            if (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_STOP) {
+                runCheck(showToast = false, force = false)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -170,6 +176,7 @@ private fun AppRoot(prefs: RolePreferences) {
     if (availableVersion != null && !updateDismissed) {
         UpdateDialog(
             version = availableVersion!!,
+            notes = apkNotes,
             onUpdate = {
                 updateDismissed = true
                 apkUrl?.let { url ->

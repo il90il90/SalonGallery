@@ -57,8 +57,11 @@ object UpdateManager {
             // First <entry> is the newest release; grab its tag from the release URL.
             val tag = Regex("/releases/tag/([^\"<]+)").find(xml)?.groupValues?.get(1)?.trim()
                 ?: return@withContext UpdateStatus.UpToDate(currentVersion)
-            val notes = Regex("<title>([^<]+)</title>").findAll(xml).drop(1).firstOrNull()
-                ?.groupValues?.get(1)?.trim().orEmpty()
+            // "What's new": the first entry's release body, else its title.
+            val entry = Regex("<entry>[\\s\\S]*?</entry>").find(xml)?.value ?: xml
+            val title = Regex("<title>([^<]+)</title>").find(entry)?.groupValues?.get(1)?.trim().orEmpty()
+            val bodyHtml = Regex("<content[^>]*>([\\s\\S]*?)</content>").find(entry)?.groupValues?.get(1).orEmpty()
+            val notes = cleanNotes(bodyHtml).ifBlank { title }
             val latest = normalizeVersion(tag)
             // Asset name follows a fixed convention we control.
             val apkUrl = "https://github.com/$owner/$repo/releases/download/$tag/SalonGallery-$latest.apk"
@@ -129,6 +132,18 @@ object UpdateManager {
             conn.disconnect()
         }
     }
+
+    /** Turns the release-body HTML from the Atom feed into a few readable lines. */
+    private fun cleanNotes(html: String): String = html
+        .replace(Regex("<li[^>]*>", RegexOption.IGNORE_CASE), "• ")
+        .replace(Regex("</(p|li|h\\d|ul|ol|div)>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("<[^>]+>"), " ")
+        .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        .replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'")
+        .replace(Regex("[ \\t]+"), " ")
+        .replace(Regex("\\n{2,}"), "\n")
+        .lines().map { it.trim() }.filter { it.isNotBlank() }
+        .joinToString("\n").take(600).trim()
 
     /** "v1.2.3" -> "1.2.3" */
     private fun normalizeVersion(raw: String): String =

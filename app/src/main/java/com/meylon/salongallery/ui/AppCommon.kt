@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -131,9 +132,9 @@ fun SettingsSheet(
     }
 }
 
-/** Startup prompt shown when a newer release is available — update in one tap. */
+/** Startup prompt shown when a newer release is available — with "what's new" + one-tap update. */
 @Composable
-fun UpdateDialog(version: String, onUpdate: () -> Unit, onLater: () -> Unit) {
+fun UpdateDialog(version: String, notes: String = "", onUpdate: () -> Unit, onLater: () -> Unit) {
     Dialog(onDismissRequest = onLater) {
         Column(
             Modifier
@@ -154,6 +155,27 @@ fun UpdateDialog(version: String, onUpdate: () -> Unit, onLater: () -> Unit) {
                 stringResource(R.string.update_ready_desc, version),
                 style = MaterialTheme.typography.bodyMedium, color = TextSecondary, textAlign = TextAlign.Center,
             )
+            if (notes.isNotBlank()) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    stringResource(R.string.update_whats_new),
+                    style = MaterialTheme.typography.labelSmall, color = NeonCyan,
+                    modifier = Modifier.align(Alignment.Start),
+                )
+                Spacer(Modifier.height(8.dp))
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 220.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(ElecBg)
+                        .border(1.dp, ElecBorder, RoundedCornerShape(14.dp))
+                        .verticalScroll(rememberScrollState())
+                        .padding(14.dp),
+                ) {
+                    Text(notes, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                }
+            }
             Spacer(Modifier.height(22.dp))
             GradientButton(text = stringResource(R.string.update_now), leading = Icons.Outlined.SystemUpdateAlt, onClick = onUpdate)
             Spacer(Modifier.height(10.dp))

@@ -65,6 +65,7 @@
     <string name="duration_hint_video">Cap this clip, or play the whole thing.</string>
     <string name="pin_to_front">Pin to front</string>
     <string name="unpin">Unpin</string>
+    <string name="update_whats_new">WHAT\'S NEW</string>
     <string name="rss_title">News</string>
     <string name="rss_hint">Scroll headlines from your favorite feeds along the bottom of the wall.</string>
     <string name="rss_show">Show on screen</string>
