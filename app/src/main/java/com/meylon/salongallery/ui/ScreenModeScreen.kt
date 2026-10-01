@@ -270,6 +270,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         filter = photoFilter,
                         volume = volume,
                         transformOf = { session.transformFor(it.name) },
+                        durationOf = { session.durationFor(it.name) },
                         onNext = { session.currentIndex.value = it },
                     )
                 }
@@ -348,6 +349,7 @@ private fun Slideshow(
     filter: PhotoFilter,
     volume: Float,
     transformOf: (File) -> PhotoTransform,
+    durationOf: (File) -> Int,
     onNext: (Int) -> Unit,
 ) {
     if (files.isEmpty()) return
@@ -361,10 +363,11 @@ private fun Slideshow(
         onNext(next)
     }
 
-    // Still photos advance on the interval timer; videos advance themselves when they end.
+    // Still photos advance on their own duration (or the slideshow default); videos advance when they end.
     LaunchedEffect(idx, shuffle, intervalMs, files.size, currentIsVideo) {
         if (currentIsVideo || files.size <= 1) return@LaunchedEffect
-        delay(intervalMs)
+        val sec = durationOf(files[idx])
+        delay(if (sec > 0) sec * 1000L else intervalMs)
         advanceFrom(idx)
     }
     AnimatedContent(
@@ -387,7 +390,7 @@ private fun Slideshow(
         if (isVideoName(file.name)) {
             VideoSlide(
                 file = file, volume = volume, fit = fit, vignette = filter == PhotoFilter.VIGNETTE,
-                loop = files.size <= 1,
+                loop = files.size <= 1, capSec = durationOf(file),
                 onEnded = { advanceFrom(i) },
             )
         } else {
@@ -404,8 +407,10 @@ private fun Slideshow(
 /** Plays one video library item; advances the slideshow when it finishes (unless it's the only item). */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, vignette: Boolean, loop: Boolean, onEnded: () -> Unit) {
+private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, vignette: Boolean, loop: Boolean, capSec: Int, onEnded: () -> Unit) {
     val context = LocalContext.current
+    val advanced = remember(file.path) { java.util.concurrent.atomic.AtomicBoolean(false) }
+    fun finishOnce() { if (advanced.compareAndSet(false, true)) onEnded() }
     val player = remember(file.path) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
@@ -415,10 +420,12 @@ private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, vignette: Boole
         }
     }
     LaunchedEffect(volume) { player.volume = volume }
+    // Optional per-clip cap: cut to the next item after capSec seconds.
+    if (!loop && capSec > 0) LaunchedEffect(file.path) { delay(capSec * 1000L); finishOnce() }
     DisposableEffect(file.path) {
         val l = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED && !loop) onEnded()
+                if (state == Player.STATE_ENDED && !loop) finishOnce()
             }
         }
         player.addListener(l)

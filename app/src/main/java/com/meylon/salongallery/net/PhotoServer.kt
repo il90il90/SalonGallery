@@ -43,6 +43,10 @@ interface ScreenCommands {
     fun fullPhoto(name: String): ByteArray?
     fun onTransform(photo: String, scale: Float, x: Float, y: Float)
     fun transformJson(photo: String): String
+    // Per-item duration + pin
+    fun onDuration(photo: String, seconds: Int)
+    fun durationJson(photo: String): String
+    fun onPin(photo: String, pinned: Boolean)
 }
 
 /**
@@ -196,6 +200,20 @@ class PhotoServer(
             session.method == Method.GET && uri == "/transform/get" -> {
                 val photo = session.parameters["photo"]?.firstOrNull()
                 json(if (photo != null) commands.transformJson(photo) else """{"s":1,"x":0,"y":0}""")
+            }
+            session.method == Method.GET && uri == "/duration" -> {
+                val photo = session.parameters["photo"]?.firstOrNull()
+                val sec = session.parameters["sec"]?.firstOrNull()?.toIntOrNull()
+                if (photo != null && sec != null) commands.onDuration(photo, sec); ok()
+            }
+            session.method == Method.GET && uri == "/duration/get" -> {
+                val photo = session.parameters["photo"]?.firstOrNull()
+                json(if (photo != null) commands.durationJson(photo) else """{"sec":0}""")
+            }
+            session.method == Method.GET && uri == "/pin" -> {
+                val photo = session.parameters["photo"]?.firstOrNull()
+                val on = session.parameters["on"]?.firstOrNull() == "1"
+                if (photo != null) commands.onPin(photo, on); ok()
             }
 
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "not found")

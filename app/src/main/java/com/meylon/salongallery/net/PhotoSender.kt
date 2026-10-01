@@ -23,6 +23,7 @@ data class LibraryList(
     val albumId: String,
     val albumName: String,
     val items: List<String>,
+    val pinned: Set<String> = emptySet(),
 )
 
 data class AlbumInfo(val id: String, val name: String, val count: Int)
@@ -66,9 +67,11 @@ object PhotoSender {
             val o = JSONObject(body)
             val arr = o.optJSONArray("items")
             val items = buildList { if (arr != null) for (i in 0 until arr.length()) add(arr.optString(i)) }
+            val parr = o.optJSONArray("pinned")
+            val pins = buildSet { if (parr != null) for (i in 0 until parr.length()) add(parr.optString(i)) }
             LibraryList(
                 o.optInt("current", 0), o.optString("mode", ""),
-                o.optString("albumId", "all"), o.optString("album", "All"), items,
+                o.optString("albumId", "all"), o.optString("album", "All"), items, pins,
             )
         } catch (e: Exception) { null }
     }
@@ -109,6 +112,17 @@ object PhotoSender {
 
     suspend fun deletePhoto(host: String, port: Int, name: String) = get(host, port, "/delete?id=$name")
     suspend fun showNow(host: String, port: Int, name: String) = get(host, port, "/shownow?id=$name")
+    suspend fun setDuration(host: String, port: Int, name: String, seconds: Int) = get(host, port, "/duration?photo=$name&sec=$seconds")
+    suspend fun setPinned(host: String, port: Int, name: String, pinned: Boolean) = get(host, port, "/pin?photo=$name&on=${if (pinned) 1 else 0}")
+    suspend fun getDuration(host: String, port: Int, name: String): Int = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/duration/get?photo=$name", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext 0 }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            JSONObject(body).optInt("sec", 0)
+        } catch (e: Exception) { 0 }
+    }
     suspend fun reorder(host: String, port: Int, names: List<String>) =
         get(host, port, "/reorder?names=${names.joinToString(",")}")
 

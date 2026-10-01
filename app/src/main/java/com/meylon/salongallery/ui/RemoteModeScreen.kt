@@ -69,6 +69,8 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TextFields
@@ -585,6 +587,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     val scope = rememberCoroutineScope()
     var items by remember { mutableStateOf<List<String>>(emptyList()) }
     var current by remember { mutableIntStateOf(0) }
+    var pinned by remember { mutableStateOf<Set<String>>(emptySet()) }
     var albums by remember { mutableStateOf<List<AlbumInfo>>(emptyList()) }
     var activeId by remember { mutableStateOf("all") }
     var loading by remember { mutableStateOf(true) }
@@ -592,11 +595,12 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     var showNew by remember { mutableStateOf(false) }
     var addTarget by remember { mutableStateOf<String?>(null) }
     var studioPhoto by remember { mutableStateOf<String?>(null) }
+    var durationTarget by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
         scope.launch {
             val l = PhotoSender.getList(screen.host, screen.port)
-            if (l != null) { items = l.items; current = l.current; activeId = l.albumId }
+            if (l != null) { items = l.items; current = l.current; activeId = l.albumId; pinned = l.pinned }
             val a = PhotoSender.getAlbums(screen.host, screen.port)
             if (a != null) albums = a.albums
             loading = false
@@ -609,10 +613,14 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
         busy = true
         scope.launch {
             uris.forEach { u ->
+                val isVideo = context.contentResolver.getType(u)?.startsWith("video") == true
                 val b = withContext(Dispatchers.IO) {
                     runCatching { context.contentResolver.openInputStream(u)?.use { it.readBytes() } }.getOrNull()
                 }
-                if (b != null) PhotoSender.sendPhoto(screen.host, screen.port, b)
+                if (b != null) {
+                    if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, b)
+                    else PhotoSender.sendPhoto(screen.host, screen.port, b)
+                }
             }
             busy = false; refresh()
         }
@@ -635,7 +643,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                         Spacer(Modifier.weight(1f))
                         if (busy) CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                         else RoundIconBtn(Icons.Outlined.Add, accent = true) {
-                            addPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            addPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                         }
                     }
 
@@ -685,6 +693,8 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                 ReorderableItem(reorderState, key = name) { isDragging ->
                                     val isNow = i == current
                                     val isNext = items.size > 1 && i == (current + 1) % items.size
+                                    val isPinned = name in pinned
+                                    val isVideo = name.startsWith("v_")
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -709,7 +719,11 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                         )
                                         Spacer(Modifier.size(10.dp))
                                         Column(Modifier.weight(1f)) {
-                                            Text("#${i + 1}", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Text("#${i + 1}", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                                                if (isVideo) Icon(Icons.Outlined.Movie, contentDescription = "video", tint = NeonBlue, modifier = Modifier.size(15.dp))
+                                                if (isPinned) Icon(Icons.Outlined.PushPin, contentDescription = "pinned", tint = NeonCyan, modifier = Modifier.size(15.dp))
+                                            }
                                             if (isNow) Badge(stringResource(R.string.badge_now), NeonCyan)
                                             else if (isNext) Badge(stringResource(R.string.badge_next), NeonViolet)
                                         }
@@ -724,7 +738,10 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                         )
                                         RowOverflow(
                                             isAll = isAll,
+                                            isPinned = isPinned,
                                             onEdit = { studioPhoto = name },
+                                            onDuration = { durationTarget = name },
+                                            onPin = { scope.launch { PhotoSender.setPinned(screen.host, screen.port, name, !isPinned); refresh() } },
                                             onAddAlbum = { addTarget = name },
                                             onDelete = {
                                                 items = items.filterIndexed { j, _ -> j != i }
@@ -775,10 +792,17 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
             onClose = { studioPhoto = null; refresh() },
         )
     }
+    durationTarget?.let { name ->
+        DurationDialog(screen = screen, name = name, onClose = { durationTarget = null; refresh() })
+    }
 }
 
 @Composable
-private fun RowOverflow(isAll: Boolean, onEdit: () -> Unit, onAddAlbum: () -> Unit, onDelete: () -> Unit) {
+private fun RowOverflow(
+    isAll: Boolean, isPinned: Boolean,
+    onEdit: () -> Unit, onDuration: () -> Unit, onPin: () -> Unit,
+    onAddAlbum: () -> Unit, onDelete: () -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     Box {
         SmallBtn(Icons.Outlined.MoreVert, TextSecondary) { open = true }
@@ -787,6 +811,16 @@ private fun RowOverflow(isAll: Boolean, onEdit: () -> Unit, onAddAlbum: () -> Un
                 text = { Text(stringResource(R.string.studio_edit), color = TextPrimary) },
                 leadingIcon = { Icon(Icons.Outlined.Tune, null, tint = NeonCyan) },
                 onClick = { open = false; onEdit() },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.duration_title), color = TextPrimary) },
+                leadingIcon = { Icon(Icons.Outlined.Timer, null, tint = NeonBlue) },
+                onClick = { open = false; onDuration() },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(if (isPinned) R.string.unpin else R.string.pin_to_front), color = TextPrimary) },
+                leadingIcon = { Icon(Icons.Outlined.PushPin, null, tint = NeonCyan) },
+                onClick = { open = false; onPin() },
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.album_add_to), color = TextPrimary) },
@@ -798,6 +832,48 @@ private fun RowOverflow(isAll: Boolean, onEdit: () -> Unit, onAddAlbum: () -> Un
                 leadingIcon = { Icon(Icons.Outlined.Close, null, tint = Color(0xFFF87171)) },
                 onClick = { open = false; onDelete() },
             )
+        }
+    }
+}
+
+/** Per-item display duration chooser. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DurationDialog(screen: DiscoveredScreen, name: String, onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val isVideo = name.startsWith("v_")
+    var sec by remember { mutableIntStateOf(0) }
+    LaunchedEffect(name) { sec = PhotoSender.getDuration(screen.host, screen.port, name) }
+    // 0 means "default" for photos, "full clip" for videos.
+    val options = listOf(0, 3, 5, 10, 20, 30, 60)
+    val labels = options.map { if (it == 0) (if (isVideo) "Full clip" else "Default") else "${it}s" }
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().padding(24.dp)) {
+            Text(stringResource(R.string.duration_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(if (isVideo) R.string.duration_hint_video else R.string.duration_hint_photo),
+                style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
+            )
+            Spacer(Modifier.height(16.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.forEachIndexed { i, opt ->
+                    val selected = opt == sec
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                            .border(if (selected) 1.5.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(14.dp))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                sec = opt; scope.launch { PhotoSender.setDuration(screen.host, screen.port, name, opt) }
+                            }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(labels[i], style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                        if (selected) Icon(Icons.Outlined.Check, null, tint = NeonCyan)
+                    }
+                }
+            }
+            Spacer(Modifier.height(20.dp))
         }
     }
 }

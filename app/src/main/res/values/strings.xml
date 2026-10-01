@@ -60,6 +60,11 @@
     <string name="effects_title">Effects</string>
     <string name="effects_transition">Transition</string>
     <string name="effects_look">Look</string>
+    <string name="duration_title">Duration</string>
+    <string name="duration_hint_photo">How long this photo stays on screen.</string>
+    <string name="duration_hint_video">Cap this clip, or play the whole thing.</string>
+    <string name="pin_to_front">Pin to front</string>
+    <string name="unpin">Unpin</string>
     <string name="tile_clear">Clear all</string>
     <string name="tile_brightness">Brightness</string>
     <string name="tile_volume">Volume</string>

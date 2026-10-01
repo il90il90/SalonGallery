@@ -27,6 +27,7 @@ class ScreenSession(
     val library = LibraryStore(File(app.filesDir, "library"))
     val albums = AlbumStore(File(app.filesDir, "albums.json"), library)
     val transforms = TransformStore(File(app.filesDir, "transforms.json"))
+    val durations = DurationStore(File(app.filesDir, "durations.json"))
     val music = MusicStore(File(app.filesDir, "music"))
     val prefs = DisplayPrefs(app)
     val videoFile = File(app.filesDir, "display_current.mp4")
@@ -39,6 +40,8 @@ class ScreenSession(
     fun activeFiles(): List<File> = albums.activePhotoNames().mapNotNull { library.fileFor(it) }
 
     fun transformFor(name: String): PhotoTransform = transforms.get(name)
+
+    fun durationFor(name: String): Int = durations.get(name)
 
     val mode = MutableStateFlow(if (library.count() > 0) DisplayMode.SLIDESHOW else DisplayMode.WAITING)
     val libraryVersion = MutableStateFlow(0L)
@@ -263,8 +266,9 @@ class ScreenSession(
         val names = albums.activePhotoNames()
         val cur = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)
         val items = names.joinToString(",") { "\"${esc(it)}\"" }
+        val pinned = library.pinnedNames().joinToString(",") { "\"${esc(it)}\"" }
         return """{"current":$cur,"mode":"${mode.value.name}","album":"${esc(albums.activeName())}",""" +
-            """"albumId":"${esc(albums.activeId)}","items":[$items]}"""
+            """"albumId":"${esc(albums.activeId)}","pinned":[$pinned],"items":[$items]}"""
     }
 
     override fun thumbnail(name: String): ByteArray? {
@@ -318,6 +322,7 @@ class ScreenSession(
             library.delete(name)
             albums.onPhotoDeleted(name)
             transforms.remove(name)
+            durations.remove(name)
             runCatching { File(thumbDir, "$name.jpg").delete() }
             val names = albums.activePhotoNames()
             if (names.isEmpty() && mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
@@ -393,6 +398,19 @@ class ScreenSession(
     override fun transformJson(photo: String): String {
         val t = transforms.get(photo)
         return """{"s":${t.scale},"x":${t.offX},"y":${t.offY}}"""
+    }
+
+    override fun onDuration(photo: String, seconds: Int) {
+        durations.set(photo, seconds)
+        libraryVersion.value = System.currentTimeMillis()
+    }
+
+    override fun durationJson(photo: String): String = """{"sec":${durations.get(photo)}}"""
+
+    override fun onPin(photo: String, pinned: Boolean) {
+        library.setPinned(photo, pinned)
+        currentIndex.value = 0
+        libraryVersion.value = System.currentTimeMillis()
     }
 }
 
