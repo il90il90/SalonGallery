@@ -75,6 +75,9 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.SkipNext
+import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
@@ -354,6 +357,12 @@ private fun ControlPanel(
 
     var screenBrightness by remember { mutableStateOf(1f) }
     var screenVolume by remember { mutableStateOf(1f) }
+    var music by remember { mutableStateOf<MusicState?>(null) }
+    fun refreshMusic() { scope.launch { PhotoSender.getMusic(screen.host, screen.port)?.let { music = it } } }
+    // Keep the mini-player in sync with the screen.
+    LaunchedEffect(screen.host, screen.port) {
+        while (true) { PhotoSender.getMusic(screen.host, screen.port)?.let { music = it }; kotlinx.coroutines.delay(4000) }
+    }
     fun refreshLib() { scope.launch { PhotoSender.getList(screen.host, screen.port)?.let { lib = it } } }
     LaunchedEffect(screen.host, screen.port) {
         refreshLib()
@@ -425,6 +434,19 @@ private fun ControlPanel(
             }
             CompactSlider(Modifier.weight(1f), Icons.AutoMirrored.Outlined.VolumeUp, NeonBlue, initial = screenVolume) { v ->
                 screenVolume = v; scope.launch { PhotoSender.setVolume(screen.host, screen.port, v) }
+            }
+        }
+
+        music?.let { m ->
+            if (m.tracks.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                MiniPlayer(
+                    state = m,
+                    onToggle = { scope.launch { PhotoSender.musicControl(screen.host, screen.port, "toggle"); refreshMusic() } },
+                    onNext = { scope.launch { PhotoSender.musicControl(screen.host, screen.port, "next"); refreshMusic() } },
+                    onPrev = { scope.launch { PhotoSender.musicControl(screen.host, screen.port, "prev"); refreshMusic() } },
+                    onOpen = { showMusic = true },
+                )
             }
         }
 
@@ -1231,6 +1253,28 @@ private fun ProgressRow(text: String) {
     }
 }
 
+/** A compact now-playing bar on the home, with transport controls for the screen's music. */
+@Composable
+private fun MiniPlayer(state: MusicState, onToggle: () -> Unit, onNext: () -> Unit, onPrev: () -> Unit, onOpen: () -> Unit) {
+    val title = state.tracks.getOrNull(state.current)?.let { it.title.ifBlank { it.name } } ?: "—"
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ElecSurface)
+            .border(1.dp, NeonViolet.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onOpen() }
+            .padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.MusicNote, null, tint = NeonViolet, modifier = Modifier.size(20.dp))
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(stringResource(R.string.music_now_playing), style = MaterialTheme.typography.labelSmall, color = NeonViolet)
+            Text(title, style = MaterialTheme.typography.titleMedium, color = TextPrimary, maxLines = 1, fontFamily = com.meylon.salongallery.ui.theme.ContentFont)
+        }
+        SmallBtn(Icons.Outlined.SkipPrevious, TextSecondary, desc = "Previous") { onPrev() }
+        SmallBtn(if (state.playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, NeonViolet, desc = "Play/pause") { onToggle() }
+        SmallBtn(Icons.Outlined.SkipNext, TextSecondary, desc = "Next") { onNext() }
+    }
+}
+
 @Composable
 private fun CompactSlider(modifier: Modifier, icon: ImageVector, accent: Color, initial: Float, onCommit: (Float) -> Unit) {
     // Re-seed from the live screen value whenever it arrives (no more snapping to the middle).
@@ -1819,26 +1863,41 @@ private fun MusicSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun FreeMusicSheet(onDownload: (FreeTrack) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     val added = remember { mutableStateListOf<String>() }
+    // A phone-local player so you can preview a track before sending it to the screen.
+    val player = remember { androidx.media3.exoplayer.ExoPlayer.Builder(context).build() }
+    DisposableEffect(Unit) { onDispose { player.release() } }
+    var previewing by remember { mutableStateOf<String?>(null) }
+    fun preview(t: FreeTrack) {
+        if (previewing == t.title) { player.stop(); previewing = null }
+        else {
+            player.setMediaItem(androidx.media3.common.MediaItem.fromUri(t.url)); player.prepare(); player.play()
+            previewing = t.title
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(stringResource(R.string.music_free), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(4.dp))
             Text(stringResource(R.string.music_free_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             Spacer(Modifier.height(16.dp))
             PhotoSender.freeMusic.forEach { t ->
                 val done = added.contains(t.title)
+                val isPreview = previewing == t.title
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(12.dp))
-                        .background(ElecSurface).padding(horizontal = 14.dp, vertical = 12.dp),
+                        .background(ElecSurface).padding(start = 8.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.weight(1f)) {
+                    SmallBtn(if (isPreview) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (isPreview) NeonViolet else TextSecondary, desc = "Preview ${t.title}") { preview(t) }
+                    Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
                         Text(t.title, style = MaterialTheme.typography.titleMedium, color = TextPrimary, maxLines = 1)
                         Text(t.artist, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1)
                     }
-                    SmallBtn(Icons.Outlined.CloudDownload, if (done) GoodGreen else NeonCyan, desc = "Download ${t.title}") {
+                    SmallBtn(Icons.Outlined.CloudDownload, if (done) GoodGreen else NeonCyan, desc = "Add ${t.title} to screen") {
                         if (!done) { added.add(t.title); onDownload(t) }
                     }
                 }
@@ -1860,6 +1919,11 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
     val added = remember { mutableStateListOf<String>() }
+    // Reflect what's already on the wall so pieces show as selected.
+    LaunchedEffect(Unit) {
+        val urls = PhotoSender.getArtSources(screen.host, screen.port)
+        added.clear(); added.addAll(urls)
+    }
 
     // Coil needs a browser User-Agent + Referer to fetch the museum's IIIF images.
     val loader = remember {
@@ -1965,7 +2029,10 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
                         Box(
                             Modifier.aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(ElecSurface)
                                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                    if (!isAdded) {
+                                    if (isAdded) {
+                                        added.remove(piece.fullUrl)
+                                        scope.launch { PhotoSender.removeArt(screen.host, screen.port, piece.fullUrl) }
+                                    } else {
                                         added.add(piece.fullUrl)
                                         scope.launch { PhotoSender.downloadPhoto(screen.host, screen.port, piece.fullUrl) }
                                     }
@@ -1985,7 +2052,7 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
                                             Icon(Icons.Outlined.Check, null, tint = Color(0xFF07121F), modifier = Modifier.size(24.dp))
                                         }
                                         Spacer(Modifier.height(6.dp))
-                                        Text(stringResource(R.string.art_added), style = MaterialTheme.typography.labelSmall, color = Color.White)
+                                        Text(stringResource(R.string.art_on_wall), style = MaterialTheme.typography.labelSmall, color = Color.White, textAlign = TextAlign.Center)
                                     }
                                 }
                             }

@@ -185,6 +185,22 @@ object PhotoSender {
     suspend fun downloadPhoto(host: String, port: Int, url: String) =
         get(host, port, "/photo/download?url=${enc(url)}")
 
+    /** Removes the library items that came from this source url (art un-select). */
+    suspend fun removeArt(host: String, port: Int, url: String) =
+        get(host, port, "/photo/removeurl?url=${enc(url)}")
+
+    /** Set of source urls currently on the wall, so the gallery can show checkmarks. */
+    suspend fun getArtSources(host: String, port: Int): Set<String> = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/sources", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext emptySet() }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val arr = JSONObject(body).optJSONArray("urls")
+            buildSet { if (arr != null) for (i in 0 until arr.length()) add(arr.optString(i)) }
+        } catch (e: Exception) { emptySet() }
+    }
+
     /** POSTs a video. Returns null on success, or a short error string. */
     suspend fun sendVideo(host: String, port: Int, bytes: ByteArray) =
         sendMedia(host, port, "/video", bytes, "video/mp4")
@@ -216,14 +232,38 @@ object PhotoSender {
     suspend fun musicDownload(host: String, port: Int, url: String, title: String) =
         get(host, port, "/music/download?url=${enc(url)}&name=${enc(title)}")
 
-    /** Curated royalty-free (CC0 / public-domain) tracks hosted on archive.org for direct download. */
-    val freeMusic: List<FreeTrack> = listOf(
-        FreeTrack("Moonlight Sonata", "Beethoven · Public Domain", "https://archive.org/download/MoonlightSonata_755/Beethoven-MoonlightSonata.mp3"),
-        FreeTrack("Prelude in C Major", "Bach · Public Domain", "https://archive.org/download/CMajorPreludeBachClassicalCalmSad/C_Major_Prelude-Bach%20Classical%20CalmSad.mp3"),
-        FreeTrack("Sugar and Coffee", "Lack of Color · Lo-fi", "https://archive.org/download/lofi-ambient-songs/Lack%20of%20Color%20-%20Sugar%20and%20coffee.mp3"),
-        FreeTrack("Iterative Ambient Gem", "Thomas Park · Ambient", "https://archive.org/download/IterativeAmbientGems/Gem_26.mp3"),
-        FreeTrack("Minimal Ambient Bounce", "Loyalty Freak Music · CC0", "https://archive.org/download/MINIMALAMBIENTBOUNCE/Loyalty%20Freak%20Music%20-%20MINIMAL%20AMBIENT%20BOUNCE%20-%2007%20No%20Cadillac.mp3"),
-    )
+    /** Curated royalty-free music (Kevin MacLeod, CC-BY) with stable direct URLs, plus a few CC0 tracks. */
+    val freeMusic: List<FreeTrack> = run {
+        val km = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/"
+        fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+        fun kmTrack(title: String) = FreeTrack(title, "Kevin MacLeod · CC-BY", "$km${enc(title)}.mp3")
+        listOf(
+            // Calm / ambient — good for a gallery
+            kmTrack("Canon in D Major"),
+            kmTrack("Gymnopedie No 1"),
+            kmTrack("Dreamy Flashback"),
+            kmTrack("Easy Lemon"),
+            kmTrack("Local Forecast - Elevator"),
+            kmTrack("Wallpaper"),
+            kmTrack("Clenched Teeth"),
+            kmTrack("Deliberate Thought"),
+            kmTrack("Enchanted Valley"),
+            kmTrack("Peaceful Desolation"),
+            kmTrack("Thinking Music"),
+            kmTrack("Wholesome"),
+            kmTrack("Carefree"),
+            kmTrack("Sardana"),
+            kmTrack("The Builder"),
+            // Playful
+            kmTrack("Monkeys Spinning Monkeys"),
+            kmTrack("Fluffing a Duck"),
+            kmTrack("Sneaky Snitch"),
+            kmTrack("Scheming Weasel faster"),
+            // Public-domain classical (archive.org)
+            FreeTrack("Moonlight Sonata", "Beethoven · Public Domain", "https://archive.org/download/MoonlightSonata_755/Beethoven-MoonlightSonata.mp3"),
+            FreeTrack("Prelude in C Major", "Bach · Public Domain", "https://archive.org/download/CMajorPreludeBachClassicalCalmSad/C_Major_Prelude-Bach%20Classical%20CalmSad.mp3"),
+        )
+    }
 
     suspend fun setFrame(host: String, port: Int, id: Int) =
         get(host, port, "/frame?id=$id")

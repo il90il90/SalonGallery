@@ -28,6 +28,7 @@ class ScreenSession(
     val albums = AlbumStore(File(app.filesDir, "albums.json"), library)
     val transforms = TransformStore(File(app.filesDir, "transforms.json"))
     val durations = DurationStore(File(app.filesDir, "durations.json"))
+    val sources = SourceStore(File(app.filesDir, "sources.json"))
     val music = MusicStore(File(app.filesDir, "music"))
     val prefs = DisplayPrefs(app)
     val videoFile = File(app.filesDir, "display_current.mp4")
@@ -158,9 +159,27 @@ class ScreenSession(
                 }
                 val bytes = conn.inputStream.use { it.readBytes() }
                 conn.disconnect()
-                if (bytes.isNotEmpty() && clearGen.get() == gen) onPhoto(bytes)
+                if (bytes.isNotEmpty() && clearGen.get() == gen) {
+                    val f = library.add(bytes)
+                    sources.set(f.name, url)
+                    if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
+                    mode.value = DisplayMode.SLIDESHOW
+                    libraryVersion.value = System.currentTimeMillis()
+                }
             }
         }.start()
+    }
+
+    override fun removeByUrl(url: String) {
+        runCatching {
+            sources.namesForUrl(url).forEach { deletePhoto(it) }
+        }
+    }
+
+    override fun sourcesJson(): String {
+        val present = sources.presentUrls(library.names().toSet())
+        val arr = present.joinToString(",") { "\"${esc(it)}\"" }
+        return """{"urls":[$arr]}"""
     }
 
     override fun onVideo(bytes: ByteArray) {
@@ -305,8 +324,10 @@ class ScreenSession(
 
     override fun onClear() {
         runCatching {
+            clearGen.incrementAndGet()
             library.clear()
             albums.onPhotosCleared()
+            sources.clear()
             runCatching { thumbDir.listFiles()?.forEach { it.delete() } }
             if (mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
             currentIndex.value = 0
@@ -378,6 +399,7 @@ class ScreenSession(
             albums.onPhotoDeleted(name)
             transforms.remove(name)
             durations.remove(name)
+            sources.remove(name)
             runCatching { File(thumbDir, "$name.jpg").delete() }
             val names = albums.activePhotoNames()
             if (names.isEmpty() && mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING

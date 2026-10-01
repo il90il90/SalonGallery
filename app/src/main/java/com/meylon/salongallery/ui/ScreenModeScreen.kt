@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -871,9 +872,27 @@ private fun ScreenAdminContent(session: ScreenSession) {
         focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
     )
 
+    val ctx = LocalContext.current
     Column(Modifier.fillMaxWidth()) {
         SectionLabel(stringResource(R.string.admin_section))
         Spacer(Modifier.height(16.dp))
+
+        // Recommend using the app as the system screensaver (auto-shows photos when idle).
+        Text(stringResource(R.string.admin_screensaver_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        Spacer(Modifier.height(8.dp))
+        OutlineButton(
+            text = stringResource(R.string.admin_screensaver),
+            leading = Icons.Outlined.Bedtime,
+            onClick = {
+                runCatching {
+                    ctx.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_DREAM_SETTINGS)
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            },
+        )
+        Spacer(Modifier.height(22.dp))
 
         Text(stringResource(R.string.admin_name), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
         Spacer(Modifier.height(8.dp))

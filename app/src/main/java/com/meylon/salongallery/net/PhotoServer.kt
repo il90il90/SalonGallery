@@ -6,6 +6,8 @@ import fi.iki.elonen.NanoHTTPD
 interface ScreenCommands {
     fun onPhoto(bytes: ByteArray)          // append to the library
     fun onPhotoUrl(url: String)            // download an image and append to the library
+    fun removeByUrl(url: String)           // remove library items that came from this url
+    fun sourcesJson(): String              // {"urls":[...]} of source urls currently on the wall
     fun onVideo(bytes: ByteArray)          // play this video
     fun onMusic(bytes: ByteArray, title: String) // add to the music library
     // Music library
@@ -75,6 +77,10 @@ class PhotoServer(
             session.method == Method.GET && uri == "/photo/download" -> {
                 session.parameters["url"]?.firstOrNull()?.let { commands.onPhotoUrl(it) }; ok()
             }
+            session.method == Method.GET && uri == "/photo/removeurl" -> {
+                session.parameters["url"]?.firstOrNull()?.let { commands.removeByUrl(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/sources" -> json(commands.sourcesJson())
             session.method == Method.POST && uri == "/video" -> {
                 readBody(session)?.let { commands.onVideo(it) }; ok()
             }
