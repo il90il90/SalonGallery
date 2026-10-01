@@ -608,7 +608,7 @@ private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, vignette: Boole
 }
 
 /** Extracts a pleasing dominant colour from a photo for the Adaptive frame. */
-private fun dominantColor(f: java.io.File): Color? = runCatching {
+internal fun dominantColor(f: java.io.File): Color? = runCatching {
     val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
     val bmp = android.graphics.BitmapFactory.decodeFile(f.path, opts) ?: return null
     val palette = androidx.palette.graphics.Palette.from(bmp).generate()
@@ -697,7 +697,7 @@ fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: P
 }
 
 @Composable
-private fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.meylon.salongallery.net.ClockConfig) {
+internal fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.meylon.salongallery.net.ClockConfig) {
     if (clock.on) {
         // Absolute corners (not start/end) so the arrows match on an RTL/Hebrew screen too.
         val align: Alignment = when (clock.pos) {
@@ -738,7 +738,7 @@ private fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.meylon.salongall
 
 /** A quiet rotating headline banner, configurable (position / image / source / summary). */
 @Composable
-private fun BoxScope.RssTicker(items: List<com.meylon.salongallery.net.RssItem>, config: com.meylon.salongallery.net.RssConfig) {
+internal fun BoxScope.RssTicker(items: List<com.meylon.salongallery.net.RssItem>, config: com.meylon.salongallery.net.RssConfig) {
     var idx by remember(items) { mutableIntStateOf(0) }
     LaunchedEffect(items) { while (items.isNotEmpty()) { delay(8000); idx = (idx + 1) % items.size } }
     val item = items[idx.coerceIn(0, items.lastIndex)]

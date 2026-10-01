@@ -78,6 +78,9 @@
     <string name="remote_connect_ip">Connect by IP</string>
     <string name="remote_connect_ip_hint">Enter the screen\'s address if it isn\'t found automatically.</string>
     <string name="remote_connect">Connect</string>
+    <string name="remote_try_demo">Try a demo</string>
+    <string name="remote_try_demo_hint">No screen? Explore the whole app with a demo screen on this phone.</string>
+    <string name="demo_preview">Preview the screen</string>
     <string name="update_whats_new">WHAT\'S NEW</string>
     <string name="update_download_failed">Couldn\'t download the update</string>
     <string name="rss_title">News</string>

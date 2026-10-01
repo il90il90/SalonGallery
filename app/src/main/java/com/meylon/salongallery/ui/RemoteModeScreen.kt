@@ -80,6 +80,8 @@ import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.Water
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TextFields
@@ -195,7 +197,21 @@ fun RemoteModeScreen(actions: AppActions) {
     var selected by remember { mutableStateOf<DiscoveredScreen?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showManual by remember { mutableStateOf(false) }
+    var demo by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf<ScreenInfo?>(null) }
+
+    // Demo mode: spin up a local Display on THIS device so the whole flow can be tried
+    // (and previewed) without a second screen.
+    fun startDemo() {
+        val s = com.meylon.salongallery.net.ScreenSessionHolder.getOrCreate(context, "Demo screen", actions.version)
+        selected = DiscoveredScreen("demo", "Demo screen", "127.0.0.1", s.port)
+        demo = true
+    }
+    fun stopDemo() {
+        demo = false
+        com.meylon.salongallery.net.ScreenSessionHolder.stopAll()
+    }
 
     LaunchedEffect(selected?.host, selected?.port) {
         val s = selected
@@ -237,10 +253,24 @@ fun RemoteModeScreen(actions: AppActions) {
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { showManual = true }
                             .padding(horizontal = 8.dp, vertical = 6.dp),
                     )
+                    Spacer(Modifier.height(20.dp))
+                    GradientButton(
+                        text = stringResource(R.string.remote_try_demo),
+                        leading = Icons.Outlined.PlayCircle,
+                        onClick = { startDemo() },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.remote_try_demo_hint),
+                        style = MaterialTheme.typography.bodySmall, color = TextTertiary, textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 } else {
                     ControlPanel(
                         screen = target,
-                        onBack = { selected = null; info = null },
+                        demo = demo,
+                        onPreview = { showPreview = true },
+                        onBack = { if (demo) stopDemo(); selected = null; info = null },
                         onInfoRefresh = { scope -> scope.launch { info = PhotoSender.getInfo(target.host, target.port) } },
                         bottomInset = navBottom,
                     )
@@ -254,6 +284,12 @@ fun RemoteModeScreen(actions: AppActions) {
             onConnect = { host, port -> selected = DiscoveredScreen("manual", host, host, port); showManual = false },
             onDismiss = { showManual = false },
         )
+    }
+
+    if (showPreview) {
+        com.meylon.salongallery.net.ScreenSessionHolder.session?.let { s ->
+            DisplayPreview(s, onClose = { showPreview = false })
+        }
     }
 
     if (showSettings) {
@@ -327,6 +363,8 @@ private fun ControlPanel(
     onBack: () -> Unit,
     onInfoRefresh: (kotlinx.coroutines.CoroutineScope) -> Unit,
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
+    demo: Boolean = false,
+    onPreview: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -428,6 +466,15 @@ private fun ControlPanel(
             current = lib?.let { it.items.getOrNull(it.current) },
             screenName = screen.name,
         )
+
+        if (demo) {
+            Spacer(Modifier.height(12.dp))
+            GradientButton(
+                text = stringResource(R.string.demo_preview),
+                leading = Icons.Outlined.Visibility,
+                onClick = onPreview,
+            )
+        }
 
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
