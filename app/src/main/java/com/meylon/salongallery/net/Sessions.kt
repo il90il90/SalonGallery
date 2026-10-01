@@ -64,7 +64,7 @@ class ScreenSession(
     /** Auto-fill the screen with a tasteful collage when a photo's orientation leaves big gaps. */
     val collage = MutableStateFlow(false)
     val textOverlay = MutableStateFlow(TextOverlay())
-    val clockOn = MutableStateFlow(false)
+    val clock = MutableStateFlow(ClockConfig())
     val orientation = MutableStateFlow(ScreenOrientation.AUTO)
     val brightness = MutableStateFlow(-1f)
     /** App-level playback volume 0..1, applied directly to the players (reliable on TV). */
@@ -245,7 +245,9 @@ class ScreenSession(
         textOverlay.value = TextOverlay(content, TextPos.from(pos), size, color)
     }
 
-    override fun onClock(on: Boolean) { clockOn.value = on }
+    override fun onClock(on: Boolean, pos: String, showDate: Boolean) {
+        clock.value = ClockConfig(on, ClockPos.from(pos), showDate)
+    }
 
     override fun onOrientation(o: String) {
         orientation.value = when (o.lowercase()) {

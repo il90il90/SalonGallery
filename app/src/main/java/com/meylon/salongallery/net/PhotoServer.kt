@@ -23,7 +23,7 @@ interface ScreenCommands {
     fun onFilter(filter: String)
     fun onCollage(on: Boolean)
     fun onText(content: String, pos: String, size: String, color: String)
-    fun onClock(on: Boolean)
+    fun onClock(on: Boolean, pos: String, showDate: Boolean)
     fun onOrientation(o: String)
     fun onClear()
     // Library management
@@ -129,7 +129,11 @@ class PhotoServer(
                 ); ok()
             }
             session.method == Method.GET && uri == "/clock" -> {
-                commands.onClock(session.parameters["on"]?.firstOrNull() == "1"); ok()
+                commands.onClock(
+                    session.parameters["on"]?.firstOrNull() == "1",
+                    session.parameters["pos"]?.firstOrNull() ?: "top_start",
+                    session.parameters["date"]?.firstOrNull() != "0",
+                ); ok()
             }
             session.method == Method.GET && uri == "/orientation" -> {
                 session.parameters["o"]?.firstOrNull()?.let { commands.onOrientation(it) }; ok()

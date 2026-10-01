@@ -158,7 +158,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val photoFilter by session.photoFilter.collectAsStateWithLifecycle()
     val collage by session.collage.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
-    val clockOn by session.clockOn.collectAsStateWithLifecycle()
+    val clock by session.clock.collectAsStateWithLifecycle()
     val orientation by session.orientation.collectAsStateWithLifecycle()
     val brightness by session.brightness.collectAsStateWithLifecycle()
     val volume by session.volume.collectAsStateWithLifecycle()
@@ -301,7 +301,7 @@ fun ScreenModeScreen(actions: AppActions) {
             else -> WaitingToPair(deviceName = deviceName, running = running)
         }
 
-        if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clockOn)
+        if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clock)
 
         // Brightness as real "picture" dimming — a software scrim that works on every
         // device (including Android TV, where window brightness is ignored).
@@ -603,8 +603,22 @@ fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: P
 }
 
 @Composable
-private fun BoxScope.OverlayLayer(text: TextOverlay, clockOn: Boolean) {
-    if (clockOn) ClockText(Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(28.dp))
+private fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.meylon.salongallery.net.ClockConfig) {
+    if (clock.on) {
+        val align = when (clock.pos) {
+            com.meylon.salongallery.net.ClockPos.TOP_START -> Alignment.TopStart
+            com.meylon.salongallery.net.ClockPos.TOP_END -> Alignment.TopEnd
+            com.meylon.salongallery.net.ClockPos.BOTTOM_START -> Alignment.BottomStart
+            com.meylon.salongallery.net.ClockPos.BOTTOM_END -> Alignment.BottomEnd
+            com.meylon.salongallery.net.ClockPos.CENTER -> Alignment.Center
+        }
+        val end = clock.pos == com.meylon.salongallery.net.ClockPos.TOP_END || clock.pos == com.meylon.salongallery.net.ClockPos.BOTTOM_END
+        ClockText(
+            Modifier.align(align).safeDrawingPadding().padding(28.dp),
+            showDate = clock.showDate,
+            alignEnd = end || clock.pos == com.meylon.salongallery.net.ClockPos.CENTER,
+        )
+    }
     if (text.content.isNotBlank()) {
         val align = when (text.pos) {
             TextPos.TOP -> Alignment.TopCenter
@@ -626,14 +640,14 @@ private fun BoxScope.OverlayLayer(text: TextOverlay, clockOn: Boolean) {
 }
 
 @Composable
-private fun ClockText(modifier: Modifier) {
+private fun ClockText(modifier: Modifier, showDate: Boolean = true, alignEnd: Boolean = false) {
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
     val time = remember(now / 60000) { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(now)) }
     val date = remember(now / 3600000) { java.text.SimpleDateFormat("EEE, d MMM", java.util.Locale.getDefault()).format(java.util.Date(now)) }
-    Column(modifier) {
+    Column(modifier, horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
         Text(time, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Display, fontSize = 58.sp, fontWeight = FontWeight(400), color = Color.White, shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 3f), 18f)))
-        Text(date, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Body, fontSize = 18.sp, fontWeight = FontWeight(500), color = Color.White.copy(0.92f), letterSpacing = 0.5.sp, shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 2f), 12f)))
+        if (showDate) Text(date, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Body, fontSize = 18.sp, fontWeight = FontWeight(500), color = Color.White.copy(0.92f), letterSpacing = 0.5.sp, shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 2f), 12f)))
     }
 }
 

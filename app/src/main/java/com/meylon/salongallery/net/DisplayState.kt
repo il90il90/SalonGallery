@@ -33,6 +33,18 @@ enum class TextPos { TOP, CENTER, BOTTOM;
     companion object { fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: BOTTOM }
 }
 
+/** Screen zone for the clock / date overlay. */
+enum class ClockPos { TOP_START, TOP_END, BOTTOM_START, BOTTOM_END, CENTER;
+    companion object { fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: TOP_START }
+}
+
+/** The clock / date overlay configuration. */
+data class ClockConfig(
+    val on: Boolean = false,
+    val pos: ClockPos = ClockPos.TOP_START,
+    val showDate: Boolean = true,
+)
+
 /** A text overlay shown on the display over the media. */
 data class TextOverlay(
     val content: String = "",
