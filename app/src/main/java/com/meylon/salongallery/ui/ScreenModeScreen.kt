@@ -101,6 +101,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.meylon.salongallery.R
 import com.meylon.salongallery.net.DisplayMode
+import com.meylon.salongallery.net.isVideoName
 import com.meylon.salongallery.net.PhotoFit
 import com.meylon.salongallery.net.PhotoTransform
 import com.meylon.salongallery.net.ScreenOrientation
@@ -185,23 +186,6 @@ fun ScreenModeScreen(actions: AppActions) {
         onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // A single ExoPlayer, reused for whatever video is set.
-    val exo = remember {
-        ExoPlayer.Builder(context).build().apply {
-            repeatMode = Player.REPEAT_MODE_ALL
-            playWhenReady = true
-        }
-    }
-    DisposableEffect(Unit) { onDispose { exo.release() } }
-    LaunchedEffect(videoVersion, mode) {
-        if (mode == DisplayMode.VIDEO && session.videoFile.exists()) {
-            exo.setMediaItem(MediaItem.fromUri(Uri.fromFile(session.videoFile)))
-            exo.prepare(); exo.play()
-        } else {
-            exo.pause()
-        }
-    }
-
     // A dedicated ExoPlayer for the background-music playlist, driven by the session.
     val musicExo = remember {
         ExoPlayer.Builder(context).build().apply { repeatMode = Player.REPEAT_MODE_ALL }
@@ -229,7 +213,7 @@ fun ScreenModeScreen(actions: AppActions) {
     }
     LaunchedEffect(musicPlaying, sleeping) { musicExo.playWhenReady = musicPlaying && !sleeping }
     // Volume from the remote → apply straight to the players (reliable on Android TV).
-    LaunchedEffect(volume) { musicExo.volume = volume; exo.volume = volume }
+    LaunchedEffect(volume) { musicExo.volume = volume }
     LaunchedEffect(musicShuffle) { musicExo.shuffleModeEnabled = musicShuffle }
     LaunchedEffect(musicNext) { if (musicNext > 0 && musicExo.mediaItemCount > 0) musicExo.seekToNext() }
     LaunchedEffect(musicPrev) { if (musicPrev > 0 && musicExo.mediaItemCount > 0) musicExo.seekToPrevious() }
@@ -270,22 +254,7 @@ fun ScreenModeScreen(actions: AppActions) {
             ) { if (sleeping) sleeping = false else openSettings() },
     ) {
         when {
-            mode == DisplayMode.VIDEO && session.videoFile.exists() ->
-                FramedContent(frameId, Modifier.fillMaxSize()) {
-                    AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                player = exo
-                                useController = false
-                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                setBackgroundColor(android.graphics.Color.BLACK)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-
-            mode == DisplayMode.SLIDESHOW && files.isNotEmpty() ->
+            mode != DisplayMode.WAITING && files.isNotEmpty() ->
                 FramedContent(frameId, Modifier.fillMaxSize()) {
                     Slideshow(
                         files = files,
@@ -294,6 +263,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         shuffle = shuffle,
                         effect = effect,
                         fit = photoFit,
+                        volume = volume,
                         transformOf = { session.transformFor(it.name) },
                         onNext = { session.currentIndex.value = it },
                     )
@@ -370,17 +340,26 @@ private fun Slideshow(
     shuffle: Boolean,
     effect: SlideEffect,
     fit: PhotoFit,
+    volume: Float,
     transformOf: (File) -> PhotoTransform,
     onNext: (Int) -> Unit,
 ) {
     if (files.isEmpty()) return
     val idx = currentIndex.coerceIn(0, files.size - 1)
-    LaunchedEffect(idx, shuffle, intervalMs, files.size) {
-        if (files.size <= 1) return@LaunchedEffect
-        delay(intervalMs)
-        val next = if (shuffle) (files.indices - idx).randomOrNull() ?: idx
-        else (idx + 1) % files.size
+    val currentIsVideo = isVideoName(files[idx].name)
+
+    fun advanceFrom(from: Int) {
+        if (files.size <= 1) return
+        val next = if (shuffle) (files.indices - from).randomOrNull() ?: from
+        else (from + 1) % files.size
         onNext(next)
+    }
+
+    // Still photos advance on the interval timer; videos advance themselves when they end.
+    LaunchedEffect(idx, shuffle, intervalMs, files.size, currentIsVideo) {
+        if (currentIsVideo || files.size <= 1) return@LaunchedEffect
+        delay(intervalMs)
+        advanceFrom(idx)
     }
     AnimatedContent(
         targetState = idx,
@@ -399,13 +378,58 @@ private fun Slideshow(
         label = "slide",
     ) { i ->
         val file = files[i.coerceIn(0, files.size - 1)]
-        val kb = if (effect == SlideEffect.KENBURNS) {
-            val a = remember(i) { Animatable(1f) }
-            LaunchedEffect(i) { a.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
-            a
-        } else null
-        PhotoContent(file, fit, transformOf(file)) { kb?.value ?: 1f }
+        if (isVideoName(file.name)) {
+            VideoSlide(
+                file = file, volume = volume, fit = fit,
+                loop = files.size <= 1,
+                onEnded = { advanceFrom(i) },
+            )
+        } else {
+            val kb = if (effect == SlideEffect.KENBURNS) {
+                val a = remember(i) { Animatable(1f) }
+                LaunchedEffect(i) { a.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
+                a
+            } else null
+            PhotoContent(file, fit, transformOf(file)) { kb?.value ?: 1f }
+        }
     }
+}
+
+/** Plays one video library item; advances the slideshow when it finishes (unless it's the only item). */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, loop: Boolean, onEnded: () -> Unit) {
+    val context = LocalContext.current
+    val player = remember(file.path) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+            repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+            playWhenReady = true
+            prepare()
+        }
+    }
+    LaunchedEffect(volume) { player.volume = volume }
+    DisposableEffect(file.path) {
+        val l = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED && !loop) onEnded()
+            }
+        }
+        player.addListener(l)
+        onDispose { player.removeListener(l); player.release() }
+    }
+    AndroidView(
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                this.player = player
+                useController = false
+                resizeMode = if (fit == PhotoFit.FIT) AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    else AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    )
 }
 
 /** Renders one photo, applying its studio [transform] and an optional Ken-Burns [kb] zoom. */

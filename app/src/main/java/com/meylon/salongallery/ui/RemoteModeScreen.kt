@@ -67,6 +67,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TextFields
@@ -295,7 +296,8 @@ private fun ControlPanel(
         return name.substringBeforeLast('.')
     }
 
-    val photosPicker = rememberLauncherForActivityResult(
+    // One picker for photos AND videos together — each item is routed to the right endpoint.
+    val mediaPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
@@ -303,22 +305,18 @@ private fun ControlPanel(
         scope.launch {
             var ok = 0
             uris.forEachIndexed { i, uri ->
+                val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true
                 val bytes = readBytes(uri)
-                if (bytes != null && PhotoSender.sendPhoto(screen.host, screen.port, bytes) == null) ok++
+                if (bytes != null) {
+                    val err = if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, bytes)
+                        else PhotoSender.sendPhoto(screen.host, screen.port, bytes)
+                    if (err == null) ok++
+                }
                 progress = (i + 1) to uris.size
             }
             busy = false
-            status = "Sent $ok / ${uris.size} photos ✓"
+            status = "Added $ok / ${uris.size} ✓"
             onInfoRefresh(scope); refreshLib()
-        }
-    }
-    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        busy = true; status = null; progress = 0 to 0
-        scope.launch {
-            val bytes = readBytes(uri)
-            val err = if (bytes != null) PhotoSender.sendVideo(screen.host, screen.port, bytes) else "read failed"
-            busy = false; status = if (err == null) "Video sent ✓" else "Couldn't send · $err"
         }
     }
     val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
@@ -376,13 +374,10 @@ private fun ControlPanel(
         SectionLabel(stringResource(R.string.home_add))
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            HomeAction(Modifier.weight(1f), Icons.Outlined.PhotoLibrary, stringResource(R.string.home_photos), NeonCyan, TintClay, !busy) {
-                photosPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            HomeAction(Modifier.weight(1f), Icons.Outlined.AddPhotoAlternate, stringResource(R.string.home_photos), NeonCyan, TintClay, !busy) {
+                mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
             }
             HomeAction(Modifier.weight(1f), Icons.Outlined.Palette, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
-            HomeAction(Modifier.weight(1f), Icons.Outlined.Movie, stringResource(R.string.home_video), NeonBlue, TintBlue, !busy) {
-                videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-            }
             HomeAction(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.home_music), NeonViolet, TintPlum, !busy) { showMusic = true }
         }
 

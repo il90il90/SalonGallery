@@ -141,9 +141,13 @@ class ScreenSession(
 
     override fun onVideo(bytes: ByteArray) {
         runCatching {
-            videoFile.writeBytes(bytes)
-            mode.value = DisplayMode.VIDEO
+            // Videos now live in the unified library and play inline in the slideshow,
+            // so photos and clips can be mixed on the wall.
+            val f = library.addVideo(bytes)
+            if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
+            mode.value = DisplayMode.SLIDESHOW
             videoVersion.value = System.currentTimeMillis()
+            libraryVersion.value = System.currentTimeMillis()
         }
     }
 
@@ -261,6 +265,7 @@ class ScreenSession(
         // so a grid of thousands doesn't re-decode full images on every scroll.
         val cached = File(thumbDir, "$name.jpg")
         if (cached.exists()) runCatching { cached.readBytes() }.getOrNull()?.let { return it }
+        if (isVideoName(name)) return videoThumbnail(f, cached)
         return runCatching {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(f.path, bounds)
@@ -277,6 +282,28 @@ class ScreenSession(
             bytes
         }.getOrNull()
     }
+
+    /** Grab a representative frame from a video clip and cache it as the thumbnail. */
+    private fun videoThumbnail(f: File, cached: File): ByteArray? = runCatching {
+        val mmr = android.media.MediaMetadataRetriever()
+        try {
+            mmr.setDataSource(f.path)
+            val frame = mmr.getFrameAtTime(1_000_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: mmr.getFrameAtTime()
+                ?: return null
+            val scale = 400f / maxOf(frame.width, frame.height).coerceAtLeast(1)
+            val bmp = if (scale < 1f)
+                Bitmap.createScaledBitmap(frame, (frame.width * scale).toInt().coerceAtLeast(1), (frame.height * scale).toInt().coerceAtLeast(1), true)
+            else frame
+            val bos = ByteArrayOutputStream()
+            bmp.compress(Bitmap.CompressFormat.JPEG, 80, bos)
+            if (bmp !== frame) bmp.recycle()
+            frame.recycle()
+            val bytes = bos.toByteArray()
+            runCatching { cached.writeBytes(bytes) }
+            bytes
+        } finally { runCatching { mmr.release() } }
+    }.getOrNull()
 
     override fun deletePhoto(name: String) {
         runCatching {

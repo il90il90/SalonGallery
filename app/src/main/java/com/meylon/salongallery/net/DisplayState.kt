@@ -34,36 +34,53 @@ data class TextOverlay(
     val color: String = "white",
 )
 
+/** True when a library item name refers to a video clip (vs a still photo). */
+fun isVideoName(name: String): Boolean = name.startsWith("v_")
+
 /**
- * A growing, ORDERED library of photos on the Display device. The order is kept in
- * `order.txt` so the Remote can reorder, delete and jump between photos.
+ * A growing, ORDERED library of mixed MEDIA (photos `p_*.jpg` and videos `v_*.mp4`)
+ * on the Display device. The order is kept in `order.txt` so the Remote can reorder,
+ * pin, delete and jump between items. Pinned items are listed first (in `pins.txt`).
  */
 class LibraryStore(private val dir: File) {
 
     private val orderFile = File(dir, "order.txt")
+    private val pinFile = File(dir, "pins.txt")
 
     init { runCatching { dir.mkdirs() } }
 
-    private fun photoFiles(): List<File> =
-        dir.listFiles()?.filter { it.isFile && it.name.startsWith("p_") } ?: emptyList()
+    private fun mediaFiles(): List<File> =
+        dir.listFiles()?.filter { it.isFile && (it.name.startsWith("p_") || it.name.startsWith("v_")) } ?: emptyList()
 
     @Synchronized
-    fun add(bytes: ByteArray): File {
-        val f = File(dir, "p_${System.currentTimeMillis()}_${(0..99999).random()}.jpg")
+    fun add(bytes: ByteArray): File = addNamed("p_${stamp()}.jpg", bytes)
+
+    @Synchronized
+    fun addVideo(bytes: ByteArray): File = addNamed("v_${stamp()}.mp4", bytes)
+
+    private fun addNamed(name: String, bytes: ByteArray): File {
+        val f = File(dir, name)
         f.writeBytes(bytes)
         runCatching { orderFile.appendText(f.name + "\n") }
         return f
     }
 
-    /** Files in the saved order; any not yet in the order file are appended. */
+    private fun stamp() = "${System.currentTimeMillis()}_${(0..99999).random()}"
+
+    /** Files in the saved order, with pinned items floated to the front. */
     @Synchronized
     fun list(): List<File> {
-        val byName = photoFiles().associateBy { it.name }
+        val byName = mediaFiles().associateBy { it.name }
         val order = readOrder().filter { byName.containsKey(it) }
         val ordered = order.mapNotNull { byName[it] }
         val missing = byName.keys - order.toSet()
-        val result = ordered + missing.mapNotNull { byName[it] }
+        var result = ordered + missing.mapNotNull { byName[it] }
         if (missing.isNotEmpty()) writeOrder(result.map { it.name })
+        val pins = readPins().filter { byName.containsKey(it) }
+        if (pins.isNotEmpty()) {
+            val pinned = pins.mapNotNull { byName[it] }
+            result = pinned + result.filter { it.name !in pins.toSet() }
+        }
         return result
     }
 
@@ -71,27 +88,38 @@ class LibraryStore(private val dir: File) {
 
     fun fileFor(name: String): File? {
         val f = File(dir, name)
-        return if (f.exists() && f.name.startsWith("p_")) f else null
+        return if (f.exists() && (f.name.startsWith("p_") || f.name.startsWith("v_"))) f else null
     }
 
-    fun count(): Int = photoFiles().size
+    fun count(): Int = mediaFiles().size
 
     @Synchronized
     fun delete(name: String) {
         runCatching { File(dir, name).delete() }
         writeOrder(readOrder().filter { it != name })
+        writePins(readPins().filter { it != name })
     }
 
     @Synchronized
     fun reorder(names: List<String>) {
-        val existing = photoFiles().map { it.name }.toSet()
+        val existing = mediaFiles().map { it.name }.toSet()
         writeOrder(names.filter { existing.contains(it) })
     }
 
+    /** Toggle (or set) whether an item is pinned to the front of the library. */
+    @Synchronized
+    fun setPinned(name: String, pinned: Boolean) {
+        val current = readPins().filter { it != name }
+        writePins(if (pinned) listOf(name) + current else current)
+    }
+
+    fun pinnedNames(): List<String> = readPins().filter { File(dir, it).exists() }
+
     @Synchronized
     fun clear() {
-        runCatching { photoFiles().forEach { it.delete() } }
+        runCatching { mediaFiles().forEach { it.delete() } }
         runCatching { orderFile.delete() }
+        runCatching { pinFile.delete() }
     }
 
     private fun readOrder(): List<String> =
@@ -100,5 +128,13 @@ class LibraryStore(private val dir: File) {
 
     private fun writeOrder(names: List<String>) {
         runCatching { orderFile.writeText(names.joinToString("\n")) }
+    }
+
+    private fun readPins(): List<String> =
+        if (pinFile.exists()) runCatching { pinFile.readLines().filter { it.isNotBlank() } }.getOrDefault(emptyList())
+        else emptyList()
+
+    private fun writePins(names: List<String>) {
+        runCatching { pinFile.writeText(names.joinToString("\n")) }
     }
 }
