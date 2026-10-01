@@ -55,10 +55,15 @@ class ScreenSession(
     /** Index into the music library that is currently playing (updated by the player). */
     val musicIndex = MutableStateFlow(0)
     val frameId = MutableStateFlow(0)
+    val frameRandom = MutableStateFlow(false)
+    /** Frame ids to shuffle among when frameRandom is on. */
+    val framePool = MutableStateFlow(listOf(1, 3, 4, 8))
     val frameWidth = MutableStateFlow(1f)
-    val intervalMs = MutableStateFlow(8000L)
+    val intervalMs = MutableStateFlow(30000L)
     val shuffle = MutableStateFlow(false)
     val effect = MutableStateFlow(SlideEffect.FADE)
+    /** Transitions to shuffle among when effect == RANDOM. */
+    val effectPool = MutableStateFlow(listOf("fade", "slide", "zoom", "dissolve"))
     val photoFit = MutableStateFlow(PhotoFit.FILL)
     val photoFilter = MutableStateFlow(PhotoFilter.NONE)
     /** Auto-fill the screen with a tasteful collage when a photo's orientation leaves big gaps. */
@@ -119,8 +124,10 @@ class ScreenSession(
         val stat = runCatching { StatFs(app.filesDir.path) }.getOrNull()
         val free = stat?.availableBytes ?: 0L
         val total = stat?.totalBytes ?: 0L
+        val b = if (brightness.value < 0f) 1f else brightness.value
         return """{"name":"${esc(effectiveName())}","version":"${esc(versionName)}",""" +
-            """"w":$screenW,"h":$screenH,"free":$free,"total":$total,"count":${library.count()}}"""
+            """"w":$screenW,"h":$screenH,"free":$free,"total":$total,"count":${library.count()},""" +
+            """"brightness":$b,"volume":${volume.value}}"""
     }
 
     // ---- ScreenCommands (called on server threads) ----
@@ -228,17 +235,26 @@ class ScreenSession(
         }
     }
 
-    override fun onFrame(id: Int) { frameId.value = id }
+    override fun onFrame(id: Int) { frameRandom.value = false; frameId.value = id }
+
+    override fun onFrameRandom(on: Boolean, pool: List<Int>) {
+        frameRandom.value = on
+        if (pool.isNotEmpty()) framePool.value = pool
+    }
 
     override fun onFrameWidth(value: Float) { frameWidth.value = value.coerceIn(0.4f, 2.2f) }
 
     override fun onSlideshow(intervalMs: Long, shuffle: Boolean) {
-        this.intervalMs.value = intervalMs.coerceIn(2000L, 120000L)
+        this.intervalMs.value = intervalMs.coerceIn(2000L, 3_600_000L)
         this.shuffle.value = shuffle
     }
 
     override fun onEffect(effect: String) {
         this.effect.value = SlideEffect.from(effect)
+    }
+
+    override fun onEffectPool(names: List<String>) {
+        if (names.isNotEmpty()) effectPool.value = names
     }
 
     override fun onFit(fit: String) {
@@ -303,8 +319,9 @@ class ScreenSession(
         val cur = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)
         val items = names.joinToString(",") { "\"${esc(it)}\"" }
         val pinned = library.pinnedNames().joinToString(",") { "\"${esc(it)}\"" }
+        val durs = names.joinToString(",") { durations.get(it).toString() }
         return """{"current":$cur,"mode":"${mode.value.name}","album":"${esc(albums.activeName())}",""" +
-            """"albumId":"${esc(albums.activeId)}","pinned":[$pinned],"items":[$items]}"""
+            """"albumId":"${esc(albums.activeId)}","pinned":[$pinned],"durs":[$durs],"items":[$items]}"""
     }
 
     override fun thumbnail(name: String): ByteArray? {
@@ -337,6 +354,8 @@ class ScreenSession(
         try {
             mmr.setDataSource(f.path)
             val frame = mmr.getFrameAtTime(1_000_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: mmr.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+                ?: mmr.getFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
                 ?: mmr.getFrameAtTime()
                 ?: return null
             val scale = 400f / maxOf(frame.width, frame.height).coerceAtLeast(1)

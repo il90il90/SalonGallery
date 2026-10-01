@@ -17,6 +17,10 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -150,10 +154,13 @@ fun ScreenModeScreen(actions: AppActions) {
     val libraryVersion by session.libraryVersion.collectAsStateWithLifecycle()
     val videoVersion by session.videoVersion.collectAsStateWithLifecycle()
     val frameId by session.frameId.collectAsStateWithLifecycle()
+    val frameRandom by session.frameRandom.collectAsStateWithLifecycle()
+    val framePool by session.framePool.collectAsStateWithLifecycle()
     val frameWidth by session.frameWidth.collectAsStateWithLifecycle()
     val intervalMs by session.intervalMs.collectAsStateWithLifecycle()
     val shuffle by session.shuffle.collectAsStateWithLifecycle()
     val effect by session.effect.collectAsStateWithLifecycle()
+    val effectPool by session.effectPool.collectAsStateWithLifecycle()
     val photoFit by session.photoFit.collectAsStateWithLifecycle()
     val photoFilter by session.photoFilter.collectAsStateWithLifecycle()
     val collage by session.collage.collectAsStateWithLifecycle()
@@ -261,6 +268,21 @@ fun ScreenModeScreen(actions: AppActions) {
 
     val files = remember(libraryVersion) { session.activeFiles() }
 
+    // Resolve the active frame (random shuffles per photo) and, for the Adaptive frame,
+    // derive a molding colour from the current photo.
+    val activeFrameId = remember(frameRandom, frameId, framePool, currentIndex) {
+        if (frameRandom && framePool.isNotEmpty())
+            framePool[kotlin.random.Random(currentIndex.toLong()).nextInt(framePool.size)]
+        else frameId
+    }
+    var adaptiveColor by remember { mutableStateOf<Color?>(null) }
+    LaunchedEffect(activeFrameId, currentIndex, libraryVersion) {
+        if (!frameById(activeFrameId).adaptive) { adaptiveColor = null; return@LaunchedEffect }
+        val f = files.getOrNull(currentIndex.coerceIn(0, maxOf(0, files.size - 1)))
+        adaptiveColor = if (f != null && !isVideoName(f.name))
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { dominantColor(f) } else null
+    }
+
     // Orientation map (name -> isPortrait) for the auto-collage, decoded off the main thread.
     var orientationMap by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
     LaunchedEffect(libraryVersion, collage) {
@@ -293,13 +315,14 @@ fun ScreenModeScreen(actions: AppActions) {
     ) {
         when {
             mode != DisplayMode.WAITING && files.isNotEmpty() ->
-                FramedContent(frameId, frameWidth, Modifier.fillMaxSize()) {
+                FramedContent(activeFrameId, frameWidth, adaptiveColor, Modifier.fillMaxSize()) {
                     Slideshow(
                         files = files,
                         currentIndex = currentIndex,
                         intervalMs = intervalMs,
                         shuffle = shuffle,
                         effect = effect,
+                        effectPool = effectPool,
                         fit = photoFit,
                         filter = photoFilter,
                         volume = volume,
@@ -385,6 +408,7 @@ private fun Slideshow(
     intervalMs: Long,
     shuffle: Boolean,
     effect: SlideEffect,
+    effectPool: List<String>,
     fit: PhotoFit,
     filter: PhotoFilter,
     volume: Float,
@@ -435,20 +459,16 @@ private fun Slideshow(
         delay(if (sec > 0) sec * 1000L else intervalMs)
         advanceFrom(idx)
     }
+    val poolEnums = remember(effectPool) { effectPool.map { SlideEffect.from(it) }.filter { it != SlideEffect.RANDOM } }
+    // Resolve the effect for a given slide: a seeded random from the pool when RANDOM.
+    fun effAt(i: Int): SlideEffect =
+        if (effect == SlideEffect.RANDOM && poolEnums.isNotEmpty())
+            poolEnums[kotlin.random.Random(i.toLong()).nextInt(poolEnums.size)]
+        else effect
+
     AnimatedContent(
         targetState = idx,
-        transitionSpec = {
-            when (effect) {
-                SlideEffect.NONE -> fadeIn(tween(1)) togetherWith fadeOut(tween(1))
-                SlideEffect.SLIDE ->
-                    (slideInHorizontally(tween(600)) { it } + fadeIn(tween(600))) togetherWith
-                        (slideOutHorizontally(tween(600)) { -it } + fadeOut(tween(600)))
-                SlideEffect.ZOOM ->
-                    (scaleIn(tween(800), initialScale = 0.9f) + fadeIn(tween(800))) togetherWith
-                        (scaleOut(tween(800), targetScale = 1.05f) + fadeOut(tween(800)))
-                else -> fadeIn(tween(800)) togetherWith fadeOut(tween(800))
-            }
-        },
+        transitionSpec = { transitionFor(effAt(targetState)) },
         label = "slide",
     ) { i ->
         val file = files[i.coerceIn(0, files.size - 1)]
@@ -462,7 +482,7 @@ private fun Slideshow(
         } else if (members.size >= 2) {
             CollageSlide(members.map { files[it] }, filter = filter, horizontal = screenLandscape)
         } else {
-            val kb = if (effect == SlideEffect.KENBURNS) {
+            val kb = if (effAt(i) == SlideEffect.KENBURNS) {
                 val a = remember(i) { Animatable(1f) }
                 LaunchedEffect(i) { a.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
                 a
@@ -470,6 +490,45 @@ private fun Slideshow(
             PhotoContent(file, fit, transformOf(file), filter) { kb?.value ?: 1f }
         }
     }
+}
+
+/** Maps a [SlideEffect] to its AnimatedContent enter/exit transition. */
+private fun AnimatedContentTransitionScope<Int>.transitionFor(e: SlideEffect): ContentTransform = when (e) {
+    SlideEffect.NONE -> fadeIn(tween(1)) togetherWith fadeOut(tween(1))
+    SlideEffect.FADE -> fadeIn(tween(800)) togetherWith fadeOut(tween(800))
+    SlideEffect.DISSOLVE -> fadeIn(tween(1600)) togetherWith fadeOut(tween(1600))
+    SlideEffect.SLIDE ->
+        (slideInHorizontally(tween(600)) { it } + fadeIn(tween(600))) togetherWith
+            (slideOutHorizontally(tween(600)) { -it } + fadeOut(tween(600)))
+    SlideEffect.SLIDERIGHT ->
+        (slideInHorizontally(tween(600)) { -it } + fadeIn(tween(600))) togetherWith
+            (slideOutHorizontally(tween(600)) { it } + fadeOut(tween(600)))
+    SlideEffect.SLIDEUP ->
+        (slideInVertically(tween(600)) { it } + fadeIn(tween(600))) togetherWith
+            (slideOutVertically(tween(600)) { -it } + fadeOut(tween(600)))
+    SlideEffect.SLIDEDOWN ->
+        (slideInVertically(tween(600)) { -it } + fadeIn(tween(600))) togetherWith
+            (slideOutVertically(tween(600)) { it } + fadeOut(tween(600)))
+    SlideEffect.ZOOM ->
+        (scaleIn(tween(800), initialScale = 0.85f) + fadeIn(tween(800))) togetherWith
+            (scaleOut(tween(800), targetScale = 1.1f) + fadeOut(tween(800)))
+    SlideEffect.ZOOMOUT ->
+        (scaleIn(tween(800), initialScale = 1.15f) + fadeIn(tween(800))) togetherWith
+            (scaleOut(tween(800), targetScale = 0.9f) + fadeOut(tween(800)))
+    SlideEffect.REVEAL ->
+        (scaleIn(tween(800), initialScale = 0.7f) + fadeIn(tween(800))) togetherWith fadeOut(tween(600))
+    SlideEffect.GROW ->
+        (scaleIn(tween(1000), initialScale = 0.4f) + fadeIn(tween(1000))) togetherWith
+            (scaleOut(tween(800), targetScale = 1.3f) + fadeOut(tween(800)))
+    SlideEffect.SWAP ->
+        (slideInHorizontally(tween(700)) { it } + scaleIn(tween(700), initialScale = 0.8f) + fadeIn(tween(700))) togetherWith
+            (slideOutHorizontally(tween(700)) { -it } + scaleOut(tween(700), targetScale = 0.8f) + fadeOut(tween(700)))
+    SlideEffect.DRIFT ->
+        (slideInVertically(tween(1200)) { it / 8 } + fadeIn(tween(1200))) togetherWith fadeOut(tween(1200))
+    SlideEffect.CARDSTACK ->
+        (scaleIn(tween(700), initialScale = 0.9f) + slideInVertically(tween(700)) { it / 6 } + fadeIn(tween(700))) togetherWith fadeOut(tween(500))
+    SlideEffect.KENBURNS -> fadeIn(tween(800)) togetherWith fadeOut(tween(800))
+    SlideEffect.RANDOM -> fadeIn(tween(800)) togetherWith fadeOut(tween(800))
 }
 
 /** Lays several same-orientation photos edge to edge (with a thin gap) so they fill the wall as one piece. */
@@ -543,6 +602,19 @@ private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, vignette: Boole
         if (vignette) VignetteOverlay()
     }
 }
+
+/** Extracts a pleasing dominant colour from a photo for the Adaptive frame. */
+private fun dominantColor(f: java.io.File): Color? = runCatching {
+    val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+    val bmp = android.graphics.BitmapFactory.decodeFile(f.path, opts) ?: return null
+    val palette = androidx.palette.graphics.Palette.from(bmp).generate()
+    bmp.recycle()
+    val c = palette.getVibrantColor(0).takeIf { it != 0 }
+        ?: palette.getMutedColor(0).takeIf { it != 0 }
+        ?: palette.getDominantColor(0).takeIf { it != 0 }
+        ?: return null
+    Color(c)
+}.getOrNull()
 
 /** A ColorFilter for the colour-matrix "looks" (null = leave the image untouched). */
 private fun lookFilter(filter: PhotoFilter): androidx.compose.ui.graphics.ColorFilter? = when (filter) {

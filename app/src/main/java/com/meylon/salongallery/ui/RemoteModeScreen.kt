@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.asPaddingValues
@@ -72,6 +74,7 @@ import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
@@ -124,6 +127,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -328,10 +332,13 @@ private fun ControlPanel(
 
     var frameId by remember { mutableIntStateOf(0) }
     var frameWidth by remember { mutableStateOf(1f) }
+    var frameRandom by remember { mutableStateOf(false) }
+    var framePool by remember { mutableStateOf(setOf(1, 3, 4, 8)) }
     var shuffle by remember { mutableStateOf(false) }
-    var intervalMs by remember { mutableStateOf(8000L) }
+    var intervalMs by remember { mutableStateOf(30000L) }
     var orientation by remember { mutableStateOf("auto") }
     var effect by remember { mutableStateOf("fade") }
+    var effectPool by remember { mutableStateOf(setOf("fade", "slide", "zoom", "dissolve")) }
     var filter by remember { mutableStateOf("none") }
     var fit by remember { mutableStateOf("fill") }
     var collage by remember { mutableStateOf(false) }
@@ -345,8 +352,13 @@ private fun ControlPanel(
     var showRss by remember { mutableStateOf(false) }
     var lib by remember { mutableStateOf<LibraryList?>(null) }
 
+    var screenBrightness by remember { mutableStateOf(1f) }
+    var screenVolume by remember { mutableStateOf(1f) }
     fun refreshLib() { scope.launch { PhotoSender.getList(screen.host, screen.port)?.let { lib = it } } }
-    LaunchedEffect(screen.host, screen.port) { refreshLib() }
+    LaunchedEffect(screen.host, screen.port) {
+        refreshLib()
+        PhotoSender.getInfo(screen.host, screen.port)?.let { screenBrightness = it.brightness; screenVolume = it.volume }
+    }
 
     suspend fun readBytes(uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
         runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
@@ -408,11 +420,11 @@ private fun ControlPanel(
 
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CompactSlider(Modifier.weight(1f), Icons.Outlined.BrightnessMedium, NeonCyan) { v ->
-                scope.launch { PhotoSender.setBrightness(screen.host, screen.port, v) }
+            CompactSlider(Modifier.weight(1f), Icons.Outlined.BrightnessMedium, NeonCyan, initial = screenBrightness) { v ->
+                screenBrightness = v; scope.launch { PhotoSender.setBrightness(screen.host, screen.port, v) }
             }
-            CompactSlider(Modifier.weight(1f), Icons.AutoMirrored.Outlined.VolumeUp, NeonBlue) { v ->
-                scope.launch { PhotoSender.setVolume(screen.host, screen.port, v) }
+            CompactSlider(Modifier.weight(1f), Icons.AutoMirrored.Outlined.VolumeUp, NeonBlue, initial = screenVolume) { v ->
+                screenVolume = v; scope.launch { PhotoSender.setVolume(screen.host, screen.port, v) }
             }
         }
 
@@ -482,17 +494,20 @@ private fun ControlPanel(
 
     if (showFrames) {
         FrameSheet(
-            current = frameId, width = frameWidth,
-            onPick = { id -> frameId = id; scope.launch { PhotoSender.setFrame(screen.host, screen.port, id) } },
+            current = frameId, width = frameWidth, random = frameRandom, pool = framePool,
+            onPick = { id -> frameId = id; frameRandom = false; scope.launch { PhotoSender.setFrame(screen.host, screen.port, id) } },
             onWidth = { w -> frameWidth = w; scope.launch { PhotoSender.setFrameWidth(screen.host, screen.port, w) } },
+            onRandom = { on -> frameRandom = on; scope.launch { PhotoSender.setFrameRandom(screen.host, screen.port, on, framePool.toList()) } },
+            onPool = { p -> framePool = p; scope.launch { PhotoSender.setFrameRandom(screen.host, screen.port, frameRandom, p.toList()) } },
             onDismiss = { showFrames = false },
         )
     }
     if (showEffects) {
         EffectsSheet(
-            effect = effect, filter = filter,
+            effect = effect, filter = filter, pool = effectPool,
             onEffect = { effect = it; scope.launch { PhotoSender.setEffect(screen.host, screen.port, it) } },
             onFilter = { filter = it; scope.launch { PhotoSender.setFilter(screen.host, screen.port, it) } },
+            onPool = { effectPool = it; scope.launch { PhotoSender.setEffectPool(screen.host, screen.port, it.toList()) } },
             onDismiss = { showEffects = false },
         )
     }
@@ -664,6 +679,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     var items by remember { mutableStateOf<List<String>>(emptyList()) }
     var current by remember { mutableIntStateOf(0) }
     var pinned by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var durations by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var albums by remember { mutableStateOf<List<AlbumInfo>>(emptyList()) }
     var activeId by remember { mutableStateOf("all") }
     var loading by remember { mutableStateOf(true) }
@@ -676,7 +692,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     fun refresh() {
         scope.launch {
             val l = PhotoSender.getList(screen.host, screen.port)
-            if (l != null) { items = l.items; current = l.current; activeId = l.albumId; pinned = l.pinned }
+            if (l != null) { items = l.items; current = l.current; activeId = l.albumId; pinned = l.pinned; durations = l.durations }
             val a = PhotoSender.getAlbums(screen.host, screen.port)
             if (a != null) albums = a.albums
             loading = false
@@ -784,24 +800,54 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                             .padding(10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        AsyncImage(
-                                            model = PhotoSender.thumbUrl(screen.host, screen.port, name),
-                                            contentDescription = null,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.size(58.dp).clip(RoundedCornerShape(10.dp))
+                                        Box(
+                                            Modifier.size(58.dp).clip(RoundedCornerShape(10.dp)).background(ElecSurfaceElevated)
                                                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                                                     scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refresh() }
                                                 },
-                                        )
-                                        Spacer(Modifier.size(10.dp))
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            AsyncImage(
+                                                model = PhotoSender.thumbUrl(screen.host, screen.port, name),
+                                                contentDescription = null, contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                            if (isVideo) Box(
+                                                Modifier.size(24.dp).clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.5f)),
+                                                contentAlignment = Alignment.Center,
+                                            ) { Icon(Icons.Outlined.PlayArrow, contentDescription = "video", tint = Color.White, modifier = Modifier.size(16.dp)) }
+                                        }
+                                        Spacer(Modifier.size(12.dp))
                                         Column(Modifier.weight(1f)) {
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                Text("#${i + 1}", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                                                if (isVideo) Icon(Icons.Outlined.Movie, contentDescription = "video", tint = NeonBlue, modifier = Modifier.size(15.dp))
+                                                Text("#${i + 1}", style = MaterialTheme.typography.labelMedium, color = TextTertiary)
+                                                Text(
+                                                    stringResource(if (isVideo) R.string.media_video else R.string.media_photo),
+                                                    style = MaterialTheme.typography.labelMedium, color = if (isVideo) NeonBlue else TextSecondary,
+                                                )
                                                 if (isPinned) Icon(Icons.Outlined.PushPin, contentDescription = "pinned", tint = NeonCyan, modifier = Modifier.size(15.dp))
                                             }
-                                            if (isNow) Badge(stringResource(R.string.badge_now), NeonCyan)
-                                            else if (isNext) Badge(stringResource(R.string.badge_next), NeonViolet)
+                                            Spacer(Modifier.height(3.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                if (isNow) Badge(stringResource(R.string.badge_now), NeonCyan)
+                                                else if (isNext) Badge(stringResource(R.string.badge_next), NeonViolet)
+                                                val sec = durations[name] ?: 0
+                                                val durLabel = when {
+                                                    sec > 0 -> if (sec >= 60) "${sec / 60}m" else "${sec}s"
+                                                    isVideo -> stringResource(R.string.duration_full)
+                                                    else -> stringResource(R.string.duration_default_short)
+                                                }
+                                                Row(
+                                                    Modifier.clip(RoundedCornerShape(50)).border(1.dp, ElecBorder, RoundedCornerShape(50))
+                                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { durationTarget = name }
+                                                        .padding(horizontal = 9.dp, vertical = 3.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    Icon(Icons.Outlined.Timer, null, tint = TextSecondary, modifier = Modifier.size(13.dp))
+                                                    Text(durLabel, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                                }
+                                            }
                                         }
                                         Icon(
                                             Icons.Outlined.DragIndicator, contentDescription = "Drag to reorder",
@@ -1186,22 +1232,24 @@ private fun ProgressRow(text: String) {
 }
 
 @Composable
-private fun CompactSlider(modifier: Modifier, icon: ImageVector, accent: Color, onCommit: (Float) -> Unit) {
-    var value by remember { mutableFloatStateOf(0.5f) }
+private fun CompactSlider(modifier: Modifier, icon: ImageVector, accent: Color, initial: Float, onCommit: (Float) -> Unit) {
+    // Re-seed from the live screen value whenever it arrives (no more snapping to the middle).
+    var value by remember(initial) { mutableFloatStateOf(initial.coerceIn(0f, 1f)) }
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .background(ElecSurface)
             .border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
-            .padding(start = 12.dp, end = 8.dp),
+            .padding(start = 12.dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = accent, modifier = Modifier.size(20.dp))
         Slider(
             value = value, onValueChange = { value = it }, onValueChangeFinished = { onCommit(value) },
-            modifier = Modifier.weight(1f).padding(start = 8.dp),
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
             colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent, inactiveTrackColor = ElecBorder),
         )
+        Text("${(value * 100).roundToInt()}%", style = MaterialTheme.typography.labelMedium, color = TextSecondary, modifier = Modifier.width(38.dp), textAlign = TextAlign.End)
     }
 }
 
@@ -1255,6 +1303,14 @@ private fun SliderTile(modifier: Modifier, icon: ImageVector, label: String, acc
     }
 }
 
+@Composable
+private fun RssToggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = TextPrimary, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RssSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
@@ -1262,10 +1318,17 @@ private fun RssSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     var on by remember { mutableStateOf(false) }
     val feeds = remember { mutableStateListOf<String>() }
     var input by remember { mutableStateOf("") }
+    var pos by remember { mutableStateOf("bottom") }
+    var showImage by remember { mutableStateOf(false) }
+    var showSource by remember { mutableStateOf(true) }
+    var showSummary by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        PhotoSender.getRss(screen.host, screen.port)?.let { (o, f) -> on = o; feeds.clear(); feeds.addAll(f) }
+        PhotoSender.getRss(screen.host, screen.port)?.let { s ->
+            on = s.on; feeds.clear(); feeds.addAll(s.feeds)
+            pos = s.pos; showImage = s.showImage; showSource = s.showSource; showSummary = s.showSummary
+        }
     }
-    fun push() { scope.launch { PhotoSender.setRss(screen.host, screen.port, on, feeds.toList()) } }
+    fun push() { scope.launch { PhotoSender.setRss(screen.host, screen.port, on, feeds.toList(), pos, showImage, showSource, showSummary) } }
     val suggestions = listOf(
         "BBC News" to "https://feeds.bbci.co.uk/news/rss.xml",
         "The Verge" to "https://www.theverge.com/rss/index.xml",
@@ -1283,6 +1346,19 @@ private fun RssSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.rss_show), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
                 Switch(checked = on, onCheckedChange = { on = it; push() })
+            }
+
+            if (on) {
+                Spacer(Modifier.height(16.dp))
+                Text(stringResource(R.string.rss_position), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(8.dp))
+                val positions = listOf("bottom", "top")
+                SegRow(listOf("Bottom", "Top"), positions.indexOf(pos).coerceAtLeast(0)) { pos = positions[it]; push() }
+
+                Spacer(Modifier.height(14.dp))
+                RssToggle(stringResource(R.string.rss_show_image), showImage) { showImage = it; push() }
+                RssToggle(stringResource(R.string.rss_show_source), showSource) { showSource = it; push() }
+                RssToggle(stringResource(R.string.rss_show_summary), showSummary) { showSummary = it; push() }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -1339,11 +1415,19 @@ private fun RssSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** All transitions as (key, label) for the Effects picker. */
+private val TRANSITIONS = listOf(
+    "fade" to "Fade", "dissolve" to "Dissolve", "slide" to "Slide ←", "slideright" to "Slide →",
+    "slideup" to "Slide ↑", "slidedown" to "Slide ↓", "zoom" to "Zoom in", "zoomout" to "Zoom out",
+    "reveal" to "Reveal", "grow" to "Grow", "swap" to "Swap", "drift" to "Drift",
+    "cardstack" to "Stack", "kenburns" to "Ken Burns", "none" to "Off",
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun EffectsSheet(
-    effect: String, filter: String,
-    onEffect: (String) -> Unit, onFilter: (String) -> Unit, onDismiss: () -> Unit,
+    effect: String, filter: String, pool: Set<String>,
+    onEffect: (String) -> Unit, onFilter: (String) -> Unit, onPool: (Set<String>) -> Unit, onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
@@ -1351,9 +1435,26 @@ private fun EffectsSheet(
 
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.effects_transition), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            val effects = listOf("fade", "slide", "zoom", "kenburns", "none")
-            SegRow(listOf("Fade", "Slide", "Zoom", "Ken Burns", "Off"), effects.indexOf(effect).coerceAtLeast(0)) { onEffect(effects[it]) }
+            Spacer(Modifier.height(10.dp))
+            val isRandom = effect == "random"
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                EffectChip("🎲 " + stringResource(R.string.effects_random), selected = isRandom, showCheck = false) {
+                    onEffect(if (isRandom) "fade" else "random")
+                }
+                TRANSITIONS.forEach { (key, label) ->
+                    val sel = if (isRandom) key in pool else key == effect
+                    EffectChip(label, selected = sel, showCheck = isRandom) {
+                        if (isRandom) {
+                            val np = if (key in pool) pool - key else pool + key
+                            if (np.isNotEmpty()) onPool(np)
+                        } else onEffect(key)
+                    }
+                }
+            }
+            if (isRandom) {
+                Spacer(Modifier.height(10.dp))
+                Text(stringResource(R.string.effects_random_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            }
 
             Spacer(Modifier.height(20.dp))
             Text(stringResource(R.string.effects_look), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
@@ -1365,6 +1466,23 @@ private fun EffectsSheet(
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+/** A rounded chip with a centered label and an optional check (used for effects + frames random pool). */
+@Composable
+private fun EffectChip(label: String, selected: Boolean, showCheck: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(50))
+            .then(if (selected) Modifier.background(NeonCyan.copy(alpha = 0.16f)) else Modifier)
+            .border(1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(50))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (showCheck && selected) Icon(Icons.Outlined.Check, null, tint = NeonCyan, modifier = Modifier.size(15.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (selected) NeonCyan else TextPrimary, textAlign = TextAlign.Center)
     }
 }
 
@@ -1403,8 +1521,8 @@ private fun LookChip(label: String, key: String, selected: Boolean, onClick: () 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FrameSheet(
-    current: Int, width: Float,
-    onPick: (Int) -> Unit, onWidth: (Float) -> Unit, onDismiss: () -> Unit,
+    current: Int, width: Float, random: Boolean, pool: Set<Int>,
+    onPick: (Int) -> Unit, onWidth: (Float) -> Unit, onRandom: (Boolean) -> Unit, onPool: (Set<Int>) -> Unit, onDismiss: () -> Unit,
 ) {
     var w by remember { mutableStateOf(width) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
@@ -1421,6 +1539,12 @@ private fun FrameSheet(
                 )
             }
 
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                EffectChip("🎲 " + stringResource(R.string.effects_random), selected = random, showCheck = false) { onRandom(!random) }
+                if (random) Text(stringResource(R.string.frame_random_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            }
+
             Spacer(Modifier.height(16.dp))
             Text(stringResource(R.string.frame_thickness), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
             Spacer(Modifier.height(4.dp))
@@ -1435,7 +1559,15 @@ private fun FrameSheet(
                 SectionLabel(cat)
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    styles.forEach { f -> FramePreview(f, f.id == current, w) { onPick(f.id) } }
+                    styles.forEach { f ->
+                        val sel = if (random) f.id in pool else f.id == current && !random
+                        FramePreview(f, sel, w, showCheck = random && f.id != 0) {
+                            if (random && f.id != 0) {
+                                val np = if (f.id in pool) pool - f.id else pool + f.id
+                                if (np.isNotEmpty()) onPool(np)
+                            } else onPick(f.id)
+                        }
+                    }
                 }
                 Spacer(Modifier.height(18.dp))
             }
@@ -1446,7 +1578,7 @@ private fun FrameSheet(
 
 /** A small live preview of a frame wrapped around a neutral sample, for the picker. */
 @Composable
-private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, onClick: () -> Unit) {
+private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showCheck: Boolean = false, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.width(86.dp)
@@ -1456,9 +1588,13 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, onClick
             Modifier.size(80.dp).clip(RoundedCornerShape(12.dp))
                 .border(if (selected) 2.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(12.dp)),
         ) {
-            FramedContent(f.id, width, Modifier.fillMaxSize()) {
+            FramedContent(f.id, width, adaptiveColor = if (f.adaptive) Color(0xFF6E8CA8) else null, modifier = Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF7C8898), Color(0xFF3E4650)))))
             }
+            if (showCheck && selected) Box(
+                Modifier.align(Alignment.TopEnd).padding(4.dp).size(22.dp).clip(RoundedCornerShape(50)).background(NeonCyan),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Outlined.Check, null, tint = Color(0xFF1A1510), modifier = Modifier.size(15.dp)) }
         }
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1493,8 +1629,8 @@ private fun SlideshowSheet(
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_interval), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
-            val intervals = listOf(5000L, 10000L, 30000L, 60000L)
-            SegRow(listOf("5s", "10s", "30s", "1m"), intervals.indexOf(intervalMs).coerceAtLeast(0)) { onInterval(intervals[it]) }
+            val intervals = listOf(10000L, 30000L, 60000L, 300000L, 900000L, 3600000L)
+            SegRow(listOf("10s", "30s", "1m", "5m", "15m", "1h"), intervals.indexOf(intervalMs).coerceAtLeast(0)) { onInterval(intervals[it]) }
 
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_orientation), style = MaterialTheme.typography.labelMedium, color = TextSecondary)

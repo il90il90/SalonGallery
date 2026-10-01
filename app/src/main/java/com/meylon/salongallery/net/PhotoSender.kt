@@ -14,6 +14,8 @@ data class ScreenInfo(
     val freeBytes: Long,
     val totalBytes: Long,
     val photoCount: Int,
+    val brightness: Float = 1f,
+    val volume: Float = 1f,
 )
 
 /** The Display's current (active-album) library, as seen by the Remote. */
@@ -24,6 +26,7 @@ data class LibraryList(
     val albumName: String,
     val items: List<String>,
     val pinned: Set<String> = emptySet(),
+    val durations: Map<String, Int> = emptyMap(),
 )
 
 data class AlbumInfo(val id: String, val name: String, val count: Int)
@@ -74,9 +77,13 @@ object PhotoSender {
             val items = buildList { if (arr != null) for (i in 0 until arr.length()) add(arr.optString(i)) }
             val parr = o.optJSONArray("pinned")
             val pins = buildSet { if (parr != null) for (i in 0 until parr.length()) add(parr.optString(i)) }
+            val darr = o.optJSONArray("durs")
+            val durs = buildMap {
+                if (darr != null) for (i in 0 until minOf(darr.length(), items.size)) put(items[i], darr.optInt(i))
+            }
             LibraryList(
                 o.optInt("current", 0), o.optString("mode", ""),
-                o.optString("albumId", "all"), o.optString("album", "All"), items, pins,
+                o.optString("albumId", "all"), o.optString("album", "All"), items, pins, durs,
             )
         } catch (e: Exception) { null }
     }
@@ -146,6 +153,8 @@ object PhotoSender {
                 freeBytes = o.optLong("free", 0L),
                 totalBytes = o.optLong("total", 0L),
                 photoCount = o.optInt("count", 0),
+                brightness = o.optDouble("brightness", 1.0).toFloat(),
+                volume = o.optDouble("volume", 1.0).toFloat(),
             )
         } catch (e: Exception) {
             null
@@ -222,11 +231,17 @@ object PhotoSender {
     suspend fun setFrameWidth(host: String, port: Int, value: Float) =
         get(host, port, "/framewidth?v=$value")
 
+    suspend fun setFrameRandom(host: String, port: Int, on: Boolean, pool: List<Int>) =
+        get(host, port, "/framerandom?on=${if (on) 1 else 0}&pool=${pool.joinToString(",")}")
+
     suspend fun setSlideshow(host: String, port: Int, intervalMs: Long, shuffle: Boolean) =
         get(host, port, "/slideshow?interval=$intervalMs&shuffle=${if (shuffle) 1 else 0}")
 
     suspend fun setEffect(host: String, port: Int, effect: String) =
         get(host, port, "/effect?e=$effect")
+
+    suspend fun setEffectPool(host: String, port: Int, names: List<String>) =
+        get(host, port, "/effectpool?names=${names.joinToString(",")}")
 
     suspend fun setFit(host: String, port: Int, fit: String) =
         get(host, port, "/fit?f=$fit")

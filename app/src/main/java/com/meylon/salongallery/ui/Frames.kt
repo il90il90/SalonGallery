@@ -22,6 +22,7 @@ data class FrameStyle(
     val name: String,
     val category: String = "Minimal",
     val recommended: Boolean = false,
+    val adaptive: Boolean = false,  // molding colour is derived from the current photo
     val moldingColors: List<Color> = emptyList(), // gradient across the molding; empty = no molding
     val moldingFrac: Float = 0f,                  // molding thickness / shorter side
     val bevelOuter: Color? = null,                // light line on the outer edge
@@ -32,6 +33,8 @@ data class FrameStyle(
 )
 
 val FRAMES = listOf(
+    // ---- Smart ----
+    FrameStyle(50, "Adaptive", "Smart", adaptive = true, matFrac = 0.03f),
     // ---- Minimal ----
     FrameStyle(0, "None", "Minimal"),
     FrameStyle(
@@ -140,9 +143,26 @@ fun frameById(id: Int): FrameStyle = FRAMES.firstOrNull { it.id == id } ?: FRAME
 
 /** Frame categories in display order, each with its styles. */
 val FRAME_CATEGORIES: List<Pair<String, List<FrameStyle>>> =
-    listOf("Minimal", "Wood", "Metal", "Classic", "Modern").map { cat ->
+    listOf("Smart", "Minimal", "Wood", "Metal", "Classic", "Modern").map { cat ->
         cat to FRAMES.filter { it.category == cat }
     }
+
+/** Builds a molding tuned to a dominant photo colour (for the Adaptive frame). */
+fun adaptiveFrameFor(color: Color): FrameStyle {
+    fun mix(c: Color, other: Color, t: Float) = Color(
+        red = c.red + (other.red - c.red) * t,
+        green = c.green + (other.green - c.green) * t,
+        blue = c.blue + (other.blue - c.blue) * t,
+    )
+    val light = mix(color, Color.White, 0.35f)
+    val dark = mix(color, Color.Black, 0.45f)
+    return FrameStyle(
+        id = 50, name = "Adaptive", category = "Smart", adaptive = true,
+        moldingColors = listOf(light, color, dark),
+        moldingFrac = 0.045f, bevelOuter = mix(color, Color.White, 0.55f), bevelInner = mix(color, Color.Black, 0.6f),
+        matColor = mix(color, Color.White, 0.82f), matFrac = 0.03f, lipColor = dark,
+    )
+}
 
 /** The recommended default frame. */
 val RECOMMENDED_FRAME: FrameStyle = FRAMES.firstOrNull { it.recommended } ?: FRAMES[1]
@@ -155,10 +175,12 @@ val RECOMMENDED_FRAME: FrameStyle = FRAMES.firstOrNull { it.recommended } ?: FRA
 fun FramedContent(
     frameId: Int,
     widthScale: Float = 1f,
+    adaptiveColor: Color? = null,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val f = frameById(frameId)
+    val base = frameById(frameId)
+    val f = if (base.adaptive && adaptiveColor != null) adaptiveFrameFor(adaptiveColor) else base
     val ws = widthScale.coerceIn(0.4f, 2.2f)
     BoxWithConstraints(modifier.background(Color.Black)) {
         val minSide = minOf(maxWidth, maxHeight)

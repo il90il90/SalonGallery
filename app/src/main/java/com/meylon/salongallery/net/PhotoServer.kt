@@ -16,9 +16,11 @@ interface ScreenCommands {
     fun onBrightness(value: Float)
     fun onVolume(value: Float)
     fun onFrame(id: Int)
+    fun onFrameRandom(on: Boolean, pool: List<Int>)
     fun onFrameWidth(value: Float)
     fun onSlideshow(intervalMs: Long, shuffle: Boolean)
     fun onEffect(effect: String)
+    fun onEffectPool(names: List<String>)
     fun onFit(fit: String)
     fun onFilter(filter: String)
     fun onCollage(on: Boolean)
@@ -105,6 +107,11 @@ class PhotoServer(
             session.method == Method.GET && uri == "/framewidth" -> {
                 session.parameters["v"]?.firstOrNull()?.toFloatOrNull()?.let { commands.onFrameWidth(it) }; ok()
             }
+            session.method == Method.GET && uri == "/framerandom" -> {
+                val on = session.parameters["on"]?.firstOrNull() == "1"
+                val pool = session.parameters["pool"]?.firstOrNull()?.split(",")?.mapNotNull { it.toIntOrNull() } ?: emptyList()
+                commands.onFrameRandom(on, pool); ok()
+            }
             session.method == Method.GET && uri == "/slideshow" -> {
                 val interval = session.parameters["interval"]?.firstOrNull()?.toLongOrNull() ?: 8000L
                 val shuffle = session.parameters["shuffle"]?.firstOrNull() == "1"
@@ -112,6 +119,10 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/effect" -> {
                 session.parameters["e"]?.firstOrNull()?.let { commands.onEffect(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/effectpool" -> {
+                val names = session.parameters["names"]?.firstOrNull()?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+                commands.onEffectPool(names); ok()
             }
             session.method == Method.GET && uri == "/fit" -> {
                 session.parameters["f"]?.firstOrNull()?.let { commands.onFit(it) }; ok()

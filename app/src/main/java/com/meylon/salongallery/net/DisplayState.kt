@@ -9,7 +9,9 @@ enum class SlideOrder { SEQUENTIAL, SHUFFLE }
 
 enum class ScreenOrientation { AUTO, PORTRAIT, LANDSCAPE }
 
-enum class SlideEffect { NONE, FADE, SLIDE, ZOOM, KENBURNS;
+enum class SlideEffect {
+    NONE, FADE, DISSOLVE, SLIDE, SLIDERIGHT, SLIDEUP, SLIDEDOWN,
+    ZOOM, ZOOMOUT, REVEAL, GROW, SWAP, DRIFT, CARDSTACK, KENBURNS, RANDOM;
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: FADE
     }

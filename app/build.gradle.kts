@@ -24,8 +24,8 @@ android {
         applicationId = "com.meylon.salongallery"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "1.17.0"
+        versionCode = 23
+        versionName = "1.18.0"
 
         buildConfigField("String", "GITHUB_OWNER", "\"il90il90\"")
         buildConfigField("String", "GITHUB_REPO", "\"SalonGallery\"")
@@ -87,6 +87,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.nanohttpd)
     implementation(libs.coil.compose)
+    implementation("androidx.palette:palette-ktx:1.0.0")
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.reorderable)
