@@ -154,12 +154,15 @@ private fun AppRoot(prefs: RolePreferences) {
                 onCheckUpdate = { runCheck(showToast = true) },
                 onInstallUpdate = {
                     apkUrl?.let { url ->
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.downloading_update),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                        scope.launch { UpdateManager.downloadAndInstall(context, url) }
+                        Toast.makeText(context, context.getString(R.string.downloading_update), Toast.LENGTH_SHORT).show()
+                        scope.launch {
+                            val r = UpdateManager.downloadAndInstall(context, url)
+                            if (r.isFailure) Toast.makeText(
+                                context,
+                                context.getString(R.string.update_download_failed) + " (" + (r.exceptionOrNull()?.message ?: "error") + ")",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
                     }
                 },
                 onChangeRole = { scope.launch { prefs.setRole(DeviceRole.UNSET) } },
@@ -181,7 +184,14 @@ private fun AppRoot(prefs: RolePreferences) {
                 updateDismissed = true
                 apkUrl?.let { url ->
                     Toast.makeText(context, context.getString(R.string.downloading_update), Toast.LENGTH_SHORT).show()
-                    scope.launch { UpdateManager.downloadAndInstall(context, url) }
+                    scope.launch {
+                        val r = UpdateManager.downloadAndInstall(context, url)
+                        if (r.isFailure) Toast.makeText(
+                            context,
+                            context.getString(R.string.update_download_failed) + " (" + (r.exceptionOrNull()?.message ?: "error") + ")",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
                 }
             },
             onLater = { updateDismissed = true },

@@ -75,6 +75,25 @@ object UpdateManager {
         }
     }
 
+    /**
+     * Candidate asset URLs for a release, tolerant of the "v" in the filename
+     * (we've shipped both `SalonGallery-1.2.3.apk` and `SalonGallery-v1.2.3.apk`).
+     */
+    private fun candidateUrls(apkUrl: String): List<String> {
+        val slash = apkUrl.lastIndexOf('/')
+        if (slash < 0) return listOf(apkUrl)
+        val base = apkUrl.substring(0, slash + 1)
+        val file = apkUrl.substring(slash + 1)
+        val set = LinkedHashSet<String>()
+        set.add(apkUrl)
+        when {
+            file.startsWith("SalonGallery-v") -> set.add(base + "SalonGallery-" + file.removePrefix("SalonGallery-v"))
+            file.startsWith("SalonGallery-") -> set.add(base + "SalonGallery-v" + file.removePrefix("SalonGallery-"))
+        }
+        set.add(base + "app-release.apk")
+        return set.toList()
+    }
+
     /** Downloads the APK to app-private storage and launches the system installer. */
     suspend fun downloadAndInstall(context: Context, apkUrl: String): Result<Unit> =
         withContext(Dispatchers.IO) {
@@ -83,14 +102,28 @@ object UpdateManager {
                 val apk = File(dir, "salongallery-update.apk")
                 if (apk.exists()) apk.delete()
 
-                (URL(apkUrl).openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = true
-                    connectTimeout = TIMEOUT_MS
-                    readTimeout = TIMEOUT_MS
-                    setRequestProperty("User-Agent", "SalonGallery-Updater")
-                }.inputStream.use { input ->
-                    apk.outputStream().use { output -> input.copyTo(output) }
+                // Try each candidate until one actually returns a file (handles the
+                // asset-naming mismatch so a tap on "Update" never fails silently).
+                var ok = false
+                var lastCode = -1
+                for (url in candidateUrls(apkUrl)) {
+                    val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                        instanceFollowRedirects = true
+                        connectTimeout = TIMEOUT_MS
+                        readTimeout = TIMEOUT_MS
+                        setRequestProperty("User-Agent", "SalonGallery-Updater")
+                    }
+                    lastCode = try { conn.responseCode } catch (e: Exception) { -1 }
+                    if (lastCode in 200..299) {
+                        conn.inputStream.use { input -> apk.outputStream().use { output -> input.copyTo(output) } }
+                        conn.disconnect()
+                        ok = apk.length() > 0
+                        if (ok) break
+                    } else {
+                        conn.disconnect()
+                    }
                 }
+                if (!ok) return@withContext Result.failure(Exception("download failed (HTTP $lastCode)"))
 
                 val uri = FileProvider.getUriForFile(
                     context, "${context.packageName}.fileprovider", apk
