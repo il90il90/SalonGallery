@@ -45,6 +45,19 @@ class DisplayPrefs(context: Context) {
         get() = (sp.getString("rssFeeds", "") ?: "").split("\n").map { it.trim() }.filter { it.isNotBlank() }
         set(v) = sp.edit().putString("rssFeeds", v.joinToString("\n")).apply()
 
+    var rssPos: String
+        get() = sp.getString("rssPos", "bottom") ?: "bottom"
+        set(v) = sp.edit().putString("rssPos", v).apply()
+    var rssShowImage: Boolean
+        get() = sp.getBoolean("rssImg", false)
+        set(v) = sp.edit().putBoolean("rssImg", v).apply()
+    var rssShowSource: Boolean
+        get() = sp.getBoolean("rssSrc", true)
+        set(v) = sp.edit().putBoolean("rssSrc", v).apply()
+    var rssShowSummary: Boolean
+        get() = sp.getBoolean("rssSum", false)
+        set(v) = sp.edit().putBoolean("rssSum", v).apply()
+
     /** True if, right now, the schedule says the frame should be asleep. */
     fun isSleepingNow(nowMinOfDay: Int = currentMinOfDay()): Boolean {
         if (!scheduleEnabled) return false

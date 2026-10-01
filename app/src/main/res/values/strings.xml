@@ -119,7 +119,7 @@
     <string name="text_clear">Clear</string>
     <string name="tile_art">Art gallery</string>
     <string name="art_title">Art gallery</string>
-    <string name="art_hint">Public-domain masterpieces from the Art Institute of Chicago — the screen downloads them over your Wi-Fi.</string>
+    <string name="art_hint">Free, public-domain art and photography — the screen downloads it over your Wi-Fi.</string>
     <string name="art_search">Search art…</string>
     <string name="art_empty">No results — try another search.</string>
     <string name="art_added">Sent to screen ✓</string>

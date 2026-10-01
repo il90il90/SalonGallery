@@ -67,6 +67,9 @@ class ScreenSession(
     val clock = MutableStateFlow(ClockConfig())
     val rssOn = MutableStateFlow(prefs.rssEnabled)
     val rssFeeds = MutableStateFlow(prefs.rssFeeds)
+    val rssConfig = MutableStateFlow(
+        RssConfig(prefs.rssPos, prefs.rssShowImage, prefs.rssShowSource, prefs.rssShowSummary)
+    )
     val orientation = MutableStateFlow(ScreenOrientation.AUTO)
     val brightness = MutableStateFlow(-1f)
     /** App-level playback volume 0..1, applied directly to the players (reliable on TV). */
@@ -131,7 +134,12 @@ class ScreenSession(
         }
     }
 
+    // Bumped on every Clear so background downloads that were already in flight don't
+    // silently re-populate the wall after the user wipes it.
+    private val clearGen = java.util.concurrent.atomic.AtomicInteger(0)
+
     override fun onPhotoUrl(url: String) {
+        val gen = clearGen.get()
         Thread {
             runCatching {
                 val u = java.net.URL(url)
@@ -143,7 +151,7 @@ class ScreenSession(
                 }
                 val bytes = conn.inputStream.use { it.readBytes() }
                 conn.disconnect()
-                if (bytes.isNotEmpty()) onPhoto(bytes)
+                if (bytes.isNotEmpty() && clearGen.get() == gen) onPhoto(bytes)
             }
         }.start()
     }
@@ -251,17 +259,24 @@ class ScreenSession(
         clock.value = ClockConfig(on, ClockPos.from(pos), showDate)
     }
 
-    override fun onRss(on: Boolean, feeds: List<String>) {
+    override fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean) {
         val clean = feeds.map { it.trim() }.filter { it.isNotBlank() }
         prefs.rssEnabled = on
         prefs.rssFeeds = clean
+        prefs.rssPos = pos
+        prefs.rssShowImage = showImage
+        prefs.rssShowSource = showSource
+        prefs.rssShowSummary = showSummary
         rssOn.value = on
         rssFeeds.value = clean
+        rssConfig.value = RssConfig(pos, showImage, showSource, showSummary)
     }
 
     override fun rssJson(): String {
         val f = rssFeeds.value.joinToString(",") { "\"${esc(it)}\"" }
-        return """{"on":${rssOn.value},"feeds":[$f]}"""
+        val c = rssConfig.value
+        return """{"on":${rssOn.value},"feeds":[$f],"pos":"${esc(c.pos)}",""" +
+            """"image":${c.showImage},"source":${c.showSource},"summary":${c.showSummary}}"""
     }
 
     override fun onOrientation(o: String) {

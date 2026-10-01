@@ -161,6 +161,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val clock by session.clock.collectAsStateWithLifecycle()
     val rssOn by session.rssOn.collectAsStateWithLifecycle()
     val rssFeeds by session.rssFeeds.collectAsStateWithLifecycle()
+    val rssConfig by session.rssConfig.collectAsStateWithLifecycle()
     val orientation by session.orientation.collectAsStateWithLifecycle()
     val brightness by session.brightness.collectAsStateWithLifecycle()
     val volume by session.volume.collectAsStateWithLifecycle()
@@ -316,7 +317,7 @@ fun ScreenModeScreen(actions: AppActions) {
         if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clock)
 
         if (mode != DisplayMode.WAITING && rssOn && rssItems.isNotEmpty()) {
-            RssTicker(rssItems, Modifier.align(Alignment.BottomCenter))
+            RssTicker(rssItems, rssConfig)
         }
 
         // Brightness as real "picture" dimming — a software scrim that works on every
@@ -622,18 +623,19 @@ fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: P
 @Composable
 private fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.meylon.salongallery.net.ClockConfig) {
     if (clock.on) {
-        val align = when (clock.pos) {
-            com.meylon.salongallery.net.ClockPos.TOP_START -> Alignment.TopStart
-            com.meylon.salongallery.net.ClockPos.TOP_END -> Alignment.TopEnd
-            com.meylon.salongallery.net.ClockPos.BOTTOM_START -> Alignment.BottomStart
-            com.meylon.salongallery.net.ClockPos.BOTTOM_END -> Alignment.BottomEnd
+        // Absolute corners (not start/end) so the arrows match on an RTL/Hebrew screen too.
+        val align: Alignment = when (clock.pos) {
+            com.meylon.salongallery.net.ClockPos.TOP_START -> androidx.compose.ui.AbsoluteAlignment.TopLeft
+            com.meylon.salongallery.net.ClockPos.TOP_END -> androidx.compose.ui.AbsoluteAlignment.TopRight
+            com.meylon.salongallery.net.ClockPos.BOTTOM_START -> androidx.compose.ui.AbsoluteAlignment.BottomLeft
+            com.meylon.salongallery.net.ClockPos.BOTTOM_END -> androidx.compose.ui.AbsoluteAlignment.BottomRight
             com.meylon.salongallery.net.ClockPos.CENTER -> Alignment.Center
         }
-        val end = clock.pos == com.meylon.salongallery.net.ClockPos.TOP_END || clock.pos == com.meylon.salongallery.net.ClockPos.BOTTOM_END
+        val right = clock.pos == com.meylon.salongallery.net.ClockPos.TOP_END || clock.pos == com.meylon.salongallery.net.ClockPos.BOTTOM_END
         ClockText(
             Modifier.align(align).safeDrawingPadding().padding(28.dp),
             showDate = clock.showDate,
-            alignEnd = end || clock.pos == com.meylon.salongallery.net.ClockPos.CENTER,
+            alignEnd = right || clock.pos == com.meylon.salongallery.net.ClockPos.CENTER,
         )
     }
     if (text.content.isNotBlank()) {
@@ -658,15 +660,18 @@ private fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.meylon.salongall
     }
 }
 
-/** A quiet rotating headline banner along the bottom of the wall. */
+/** A quiet rotating headline banner, configurable (position / image / source / summary). */
 @Composable
-private fun BoxScope.RssTicker(items: List<com.meylon.salongallery.net.RssItem>, modifier: Modifier) {
+private fun BoxScope.RssTicker(items: List<com.meylon.salongallery.net.RssItem>, config: com.meylon.salongallery.net.RssConfig) {
     var idx by remember(items) { mutableIntStateOf(0) }
-    LaunchedEffect(items) { while (items.isNotEmpty()) { delay(7000); idx = (idx + 1) % items.size } }
+    LaunchedEffect(items) { while (items.isNotEmpty()) { delay(8000); idx = (idx + 1) % items.size } }
     val item = items[idx.coerceIn(0, items.lastIndex)]
+    val top = config.pos == "top"
+    val grad = if (top) listOf(Color.Black.copy(alpha = 0.78f), Color.Transparent)
+        else listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))
     Box(
-        modifier.fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.74f))))
+        Modifier.align(if (top) Alignment.TopCenter else Alignment.BottomCenter).fillMaxWidth()
+            .background(Brush.verticalGradient(grad))
             .safeDrawingPadding().padding(horizontal = 30.dp, vertical = 20.dp),
     ) {
         AnimatedContent(
@@ -675,10 +680,18 @@ private fun BoxScope.RssTicker(items: List<com.meylon.salongallery.net.RssItem>,
             label = "rss",
         ) { it ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(NeonCyan))
-                Spacer(Modifier.width(12.dp))
+                if (config.showImage && it.imageUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = it.imageUrl, contentDescription = null, contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(72.dp).clip(RoundedCornerShape(10.dp)),
+                    )
+                    Spacer(Modifier.width(16.dp))
+                } else {
+                    Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(NeonCyan))
+                    Spacer(Modifier.width(12.dp))
+                }
                 Column {
-                    Text(
+                    if (config.showSource) Text(
                         it.source.uppercase(),
                         style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Body, fontSize = 11.sp, fontWeight = FontWeight(700), color = NeonCyan, letterSpacing = 1.sp),
                     )
@@ -689,6 +702,16 @@ private fun BoxScope.RssTicker(items: List<com.meylon.salongallery.net.RssItem>,
                             color = Color.White, lineHeight = 26.sp,
                             textDirection = androidx.compose.ui.text.style.TextDirection.Content,
                             shadow = Shadow(Color.Black.copy(0.7f), Offset(0f, 2f), 12f),
+                        ),
+                        maxLines = 2,
+                    )
+                    if (config.showSummary && it.summary.isNotBlank()) Text(
+                        it.summary,
+                        style = TextStyle(
+                            fontFamily = com.meylon.salongallery.ui.theme.ContentFont, fontSize = 15.sp, fontWeight = FontWeight(400),
+                            color = Color.White.copy(0.82f), lineHeight = 19.sp,
+                            textDirection = androidx.compose.ui.text.style.TextDirection.Content,
+                            shadow = Shadow(Color.Black.copy(0.7f), Offset(0f, 2f), 10f),
                         ),
                         maxLines = 2,
                     )

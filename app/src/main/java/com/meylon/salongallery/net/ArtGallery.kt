@@ -84,35 +84,35 @@ object ArtGallery {
         } catch (e: Exception) { null }
     }
 
+    // "Museum" = the Cleveland Museum of Art open-access API (key-free AND searchable;
+    // the Met's open search endpoint was retired / returns 410).
     private suspend fun searchMet(query: String, limit: Int): List<ArtPiece>? = withContext(Dispatchers.IO) {
         val q = enc(query.ifBlank { "landscape" })
+        val url = "https://openaccess-api.clevelandart.org/api/artworks/?q=$q&has_image=1&limit=$limit"
         try {
-            val searchConn = openGet("https://collectionapi.metmuseum.org/public/collection/v1/search?q=$q&hasImages=true")
-            if (searchConn.responseCode !in 200..299) { searchConn.disconnect(); return@withContext null }
-            val sBody = searchConn.inputStream.bufferedReader().use { it.readText() }
-            searchConn.disconnect()
-            val ids = JSONObject(sBody).optJSONArray("objectIDs") ?: return@withContext emptyList<ArtPiece>()
+            val conn = openGet(url)
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val data = JSONObject(body).optJSONArray("data") ?: return@withContext emptyList<ArtPiece>()
             buildList {
-                var i = 0
-                while (i < ids.length() && size < limit) {
-                    val id = ids.optInt(i); i++
-                    runCatching {
-                        val c = openGet("https://collectionapi.metmuseum.org/public/collection/v1/objects/$id")
-                        if (c.responseCode in 200..299) {
-                            val o = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
-                            c.disconnect()
-                            val thumb = o.optString("primaryImageSmall", "")
-                            val full = o.optString("primaryImage", "")
-                            if (thumb.isNotBlank()) add(
-                                ArtPiece(
-                                    title = o.optString("title", "Untitled").ifBlank { "Untitled" },
-                                    artist = o.optString("artistDisplayName", "").ifBlank { "Unknown artist" },
-                                    thumbUrl = thumb,
-                                    fullUrl = full.ifBlank { thumb },
-                                )
-                            ) else c.disconnect()
-                        } else c.disconnect()
-                    }
+                for (i in 0 until data.length()) {
+                    val o = data.getJSONObject(i)
+                    val images = o.optJSONObject("images") ?: continue
+                    val web = images.optJSONObject("web")?.optString("url").orEmpty()
+                    if (web.isBlank()) continue
+                    val print = images.optJSONObject("print")?.optString("url").orEmpty()
+                    val creators = o.optJSONArray("creators")
+                    val artist = if (creators != null && creators.length() > 0)
+                        creators.getJSONObject(0).optString("description", "") else ""
+                    add(
+                        ArtPiece(
+                            title = o.optString("title", "Untitled").ifBlank { "Untitled" },
+                            artist = artist.ifBlank { "Unknown artist" },
+                            thumbUrl = web,
+                            fullUrl = print.ifBlank { web },
+                        )
+                    )
                 }
             }
         } catch (e: Exception) { null }

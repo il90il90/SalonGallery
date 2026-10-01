@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.asPaddingValues
@@ -122,6 +123,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -643,7 +645,14 @@ private fun HomeAction(modifier: Modifier, icon: ImageVector, label: String, tin
             Icon(icon, null, tint = tint, modifier = Modifier.size(21.dp))
         }
         Spacer(Modifier.height(8.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), color = TextPrimary, maxLines = 1)
+        // Reserve two lines so labels like "Photos & video" wrap inside the tile and all tiles stay equal height.
+        Box(Modifier.fillMaxWidth().height(34.dp).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, lineHeight = 15.sp),
+                color = TextPrimary, maxLines = 2, textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 
@@ -960,13 +969,12 @@ private fun StudioDialog(screen: DiscoveredScreen, photo: String, bottomInset: a
         PhotoSender.getTransform(screen.host, screen.port, photo)?.let { scale = it.scale; offX = it.x; offY = it.y }
     }
 
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         Box(Modifier.fillMaxSize().background(com.meylon.salongallery.ui.theme.ElecBg)) {
             SalonBackground {
-                // Full-screen dialogs don't reliably get the navigation-bar inset, so use a
-                // fixed bottom that always clears it (a gesture pill or a 3-button bar) — the
-                // Save button must never sit under the system bar.
-                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 56.dp)) {
+                // decorFitsSystemWindows=true lets Android inset the dialog for the system bars
+                // natively, so the Save button reliably clears the nav bar on every device.
+                Column(Modifier.fillMaxSize().navigationBarsPadding().safeDrawingPadding().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 40.dp + bottomInset)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RoundIconBtn(Icons.AutoMirrored.Outlined.ArrowBack) { onClose() }
                         Spacer(Modifier.size(14.dp))

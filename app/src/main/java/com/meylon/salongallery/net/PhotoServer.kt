@@ -24,7 +24,7 @@ interface ScreenCommands {
     fun onCollage(on: Boolean)
     fun onText(content: String, pos: String, size: String, color: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean)
-    fun onRss(on: Boolean, feeds: List<String>)
+    fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean)
     fun rssJson(): String
     fun onOrientation(o: String)
     fun onClear()
@@ -143,7 +143,13 @@ class PhotoServer(
             session.method == Method.GET && uri == "/rss" -> {
                 val on = session.parameters["on"]?.firstOrNull() == "1"
                 val feeds = session.parameters["feeds"]?.firstOrNull()?.split("\n")?.filter { it.isNotBlank() } ?: emptyList()
-                commands.onRss(on, feeds); ok()
+                commands.onRss(
+                    on, feeds,
+                    session.parameters["pos"]?.firstOrNull() ?: "bottom",
+                    session.parameters["image"]?.firstOrNull() == "1",
+                    session.parameters["source"]?.firstOrNull() != "0",
+                    session.parameters["summary"]?.firstOrNull() == "1",
+                ); ok()
             }
             session.method == Method.GET && uri == "/rss/get" -> json(commands.rssJson())
             session.method == Method.GET && uri == "/clear" -> { commands.onClear(); ok() }

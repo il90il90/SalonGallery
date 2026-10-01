@@ -30,6 +30,11 @@ data class AlbumInfo(val id: String, val name: String, val count: Int)
 data class AlbumList(val activeId: String, val activeName: String, val albums: List<AlbumInfo>)
 data class RemoteTransform(val scale: Float, val x: Float, val y: Float)
 
+data class RssState(
+    val on: Boolean, val feeds: List<String>, val pos: String,
+    val showImage: Boolean, val showSource: Boolean, val showSummary: Boolean,
+)
+
 data class MusicTrack(val name: String, val title: String)
 data class MusicState(val playing: Boolean, val shuffle: Boolean, val current: Int, val tracks: List<MusicTrack>)
 
@@ -241,10 +246,17 @@ object PhotoSender {
     suspend fun setOrientation(host: String, port: Int, o: String) =
         get(host, port, "/orientation?o=$o")
 
-    suspend fun setRss(host: String, port: Int, on: Boolean, feeds: List<String>) =
-        get(host, port, "/rss?on=${if (on) 1 else 0}&feeds=${enc(feeds.joinToString("\n"))}")
+    suspend fun setRss(
+        host: String, port: Int, on: Boolean, feeds: List<String>,
+        pos: String = "bottom", showImage: Boolean = false, showSource: Boolean = true, showSummary: Boolean = false,
+    ) = get(
+        host, port,
+        "/rss?on=${if (on) 1 else 0}&feeds=${enc(feeds.joinToString("\n"))}" +
+            "&pos=$pos&image=${if (showImage) 1 else 0}&source=${if (showSource) 1 else 0}&summary=${if (showSummary) 1 else 0}",
+    )
 
-    suspend fun getRss(host: String, port: Int): Pair<Boolean, List<String>>? = withContext(Dispatchers.IO) {
+    /** Returns (enabled, feeds, pos, showImage, showSource, showSummary) or null. */
+    suspend fun getRss(host: String, port: Int): RssState? = withContext(Dispatchers.IO) {
         try {
             val conn = open("http://$host:$port/rss/get", "GET")
             if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
@@ -253,7 +265,10 @@ object PhotoSender {
             val o = JSONObject(body)
             val arr = o.optJSONArray("feeds")
             val feeds = buildList { if (arr != null) for (i in 0 until arr.length()) add(arr.optString(i)) }
-            o.optBoolean("on") to feeds
+            RssState(
+                o.optBoolean("on"), feeds, o.optString("pos", "bottom"),
+                o.optBoolean("image", false), o.optBoolean("source", true), o.optBoolean("summary", false),
+            )
         } catch (e: Exception) { null }
     }
 
