@@ -130,6 +130,7 @@ import com.meylon.salongallery.R
 import com.meylon.salongallery.net.AlbumInfo
 import com.meylon.salongallery.net.ArtGallery
 import com.meylon.salongallery.net.ArtPiece
+import com.meylon.salongallery.net.ArtSource
 import com.meylon.salongallery.net.DiscoveredScreen
 import com.meylon.salongallery.net.FreeTrack
 import com.meylon.salongallery.net.LibraryList
@@ -1560,7 +1561,8 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
-    var activeCat by remember { mutableStateOf(ArtGallery.categories.first()) }
+    var source by remember { mutableStateOf(ArtSource.ARTIC) }
+    var activeCat by remember { mutableStateOf(ArtGallery.categoriesFor(ArtSource.ARTIC).first()) }
     var results by remember { mutableStateOf<List<ArtPiece>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
@@ -1582,11 +1584,11 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
 
     suspend fun run(q: String) {
         loading = true; error = false
-        val r = ArtGallery.search(q)
+        val r = ArtGallery.search(source, q)
         if (r == null) error = true else results = r
         loading = false
     }
-    LaunchedEffect(activeCat) { run(activeCat) }
+    LaunchedEffect(activeCat, source) { run(if (query.isBlank()) activeCat else query) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
@@ -1611,7 +1613,24 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ArtGallery.categories.forEach { cat ->
+                ArtSource.entries.forEach { src ->
+                    val sel = src == source
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50))
+                            .then(if (sel) Modifier.background(NeonCyan.copy(alpha = 0.16f)) else Modifier)
+                            .border(1.dp, if (sel) NeonCyan else ElecBorder, RoundedCornerShape(50))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                if (src != source) { source = src; query = ""; activeCat = ArtGallery.categoriesFor(src).first() }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Text(src.label, style = MaterialTheme.typography.labelMedium, color = if (sel) NeonCyan else TextSecondary)
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ArtGallery.categoriesFor(source).forEach { cat ->
                     val sel = cat == activeCat && query.isBlank()
                     Box(
                         Modifier.clip(RoundedCornerShape(50))
