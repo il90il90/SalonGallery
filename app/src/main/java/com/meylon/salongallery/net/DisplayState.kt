@@ -22,6 +22,13 @@ enum class PhotoFit { FILL, FIT, BLUR;
     }
 }
 
+/** A colour "look" applied over the media. */
+enum class PhotoFilter { NONE, MONO, SEPIA, WARM, COOL, VIGNETTE;
+    companion object {
+        fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: NONE
+    }
+}
+
 enum class TextPos { TOP, CENTER, BOTTOM;
     companion object { fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: BOTTOM }
 }

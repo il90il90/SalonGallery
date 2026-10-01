@@ -76,6 +76,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
@@ -103,6 +104,7 @@ import com.meylon.salongallery.R
 import com.meylon.salongallery.net.DisplayMode
 import com.meylon.salongallery.net.isVideoName
 import com.meylon.salongallery.net.PhotoFit
+import com.meylon.salongallery.net.PhotoFilter
 import com.meylon.salongallery.net.PhotoTransform
 import com.meylon.salongallery.net.ScreenOrientation
 import com.meylon.salongallery.net.SlideEffect
@@ -152,6 +154,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val shuffle by session.shuffle.collectAsStateWithLifecycle()
     val effect by session.effect.collectAsStateWithLifecycle()
     val photoFit by session.photoFit.collectAsStateWithLifecycle()
+    val photoFilter by session.photoFilter.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
     val clockOn by session.clockOn.collectAsStateWithLifecycle()
     val orientation by session.orientation.collectAsStateWithLifecycle()
@@ -264,6 +267,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         shuffle = shuffle,
                         effect = effect,
                         fit = photoFit,
+                        filter = photoFilter,
                         volume = volume,
                         transformOf = { session.transformFor(it.name) },
                         onNext = { session.currentIndex.value = it },
@@ -341,6 +345,7 @@ private fun Slideshow(
     shuffle: Boolean,
     effect: SlideEffect,
     fit: PhotoFit,
+    filter: PhotoFilter,
     volume: Float,
     transformOf: (File) -> PhotoTransform,
     onNext: (Int) -> Unit,
@@ -381,7 +386,7 @@ private fun Slideshow(
         val file = files[i.coerceIn(0, files.size - 1)]
         if (isVideoName(file.name)) {
             VideoSlide(
-                file = file, volume = volume, fit = fit,
+                file = file, volume = volume, fit = fit, vignette = filter == PhotoFilter.VIGNETTE,
                 loop = files.size <= 1,
                 onEnded = { advanceFrom(i) },
             )
@@ -391,7 +396,7 @@ private fun Slideshow(
                 LaunchedEffect(i) { a.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
                 a
             } else null
-            PhotoContent(file, fit, transformOf(file)) { kb?.value ?: 1f }
+            PhotoContent(file, fit, transformOf(file), filter) { kb?.value ?: 1f }
         }
     }
 }
@@ -399,7 +404,7 @@ private fun Slideshow(
 /** Plays one video library item; advances the slideshow when it finishes (unless it's the only item). */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, loop: Boolean, onEnded: () -> Unit) {
+private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, vignette: Boolean, loop: Boolean, onEnded: () -> Unit) {
     val context = LocalContext.current
     val player = remember(file.path) {
         ExoPlayer.Builder(context).build().apply {
@@ -419,45 +424,96 @@ private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, loop: Boolean, 
         player.addListener(l)
         onDispose { player.removeListener(l); player.release() }
     }
-    AndroidView(
-        factory = { ctx ->
-            PlayerView(ctx).apply {
-                this.player = player
-                useController = false
-                resizeMode = if (fit == PhotoFit.FIT) AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    else AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            }
-        },
-        modifier = Modifier.fillMaxSize(),
+    Box(Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    this.player = player
+                    useController = false
+                    resizeMode = if (fit == PhotoFit.FIT) AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        else AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (vignette) VignetteOverlay()
+    }
+}
+
+/** A ColorFilter for the colour-matrix "looks" (null = leave the image untouched). */
+private fun lookFilter(filter: PhotoFilter): androidx.compose.ui.graphics.ColorFilter? = when (filter) {
+    PhotoFilter.MONO -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }
+    )
+    PhotoFilter.SEPIA -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            0.393f, 0.769f, 0.189f, 0f, 0f,
+            0.349f, 0.686f, 0.168f, 0f, 0f,
+            0.272f, 0.534f, 0.131f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    PhotoFilter.WARM -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            1.12f, 0f, 0f, 0f, 6f,
+            0f, 1.0f, 0f, 0f, 0f,
+            0f, 0f, 0.85f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    PhotoFilter.COOL -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            0.88f, 0f, 0f, 0f, 0f,
+            0f, 0.98f, 0f, 0f, 0f,
+            0f, 0f, 1.15f, 0f, 6f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    else -> null
+}
+
+/** A soft dark vignette drawn over the media (used by the VIGNETTE look). */
+@Composable
+private fun BoxScope.VignetteOverlay() {
+    Box(
+        Modifier.matchParentSize().background(
+            Brush.radialGradient(
+                0.0f to Color.Transparent, 0.68f to Color.Transparent, 1.0f to Color.Black.copy(alpha = 0.62f),
+            )
+        )
     )
 }
 
-/** Renders one photo, applying its studio [transform] and an optional Ken-Burns [kb] zoom. */
+/** Renders one photo, applying its studio [transform], a [filter] look and an optional Ken-Burns [kb] zoom. */
 @Composable
-fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, kb: () -> Float = { 1f }) {
+fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: PhotoFilter = PhotoFilter.NONE, kb: () -> Float = { 1f }) {
+    val cf = lookFilter(filter)
     val cropMod = Modifier.fillMaxSize().graphicsLayer {
         val s = transform.scale * kb()
         scaleX = s; scaleY = s
         translationX = transform.offX * size.width
         translationY = transform.offY * size.height
     }
-    when (fit) {
-        PhotoFit.FILL -> AsyncImage(
-            model = file, contentDescription = null, contentScale = ContentScale.Crop, modifier = cropMod,
-        )
-        PhotoFit.FIT -> AsyncImage(
-            model = file, contentDescription = null, contentScale = ContentScale.Fit, modifier = cropMod,
-        )
-        PhotoFit.BLUR -> Box(Modifier.fillMaxSize()) {
-            AsyncImage(
-                model = file, contentDescription = null, contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().blur(28.dp).graphicsLayer { scaleX = 1.1f; scaleY = 1.1f },
+    Box(Modifier.fillMaxSize()) {
+        when (fit) {
+            PhotoFit.FILL -> AsyncImage(
+                model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf, modifier = cropMod,
             )
-            AsyncImage(
-                model = file, contentDescription = null, contentScale = ContentScale.Fit, modifier = cropMod,
+            PhotoFit.FIT -> AsyncImage(
+                model = file, contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = cropMod,
             )
+            PhotoFit.BLUR -> Box(Modifier.fillMaxSize()) {
+                AsyncImage(
+                    model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+                    modifier = Modifier.fillMaxSize().blur(28.dp).graphicsLayer { scaleX = 1.1f; scaleY = 1.1f },
+                )
+                AsyncImage(
+                    model = file, contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = cropMod,
+                )
+            }
         }
+        if (filter == PhotoFilter.VIGNETTE) VignetteOverlay()
     }
 }
 

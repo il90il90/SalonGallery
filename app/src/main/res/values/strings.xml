@@ -57,6 +57,9 @@
     <string name="frame_recommended">Recommended</string>
     <string name="tile_music">Music</string>
     <string name="tile_slideshow">Slideshow</string>
+    <string name="effects_title">Effects</string>
+    <string name="effects_transition">Transition</string>
+    <string name="effects_look">Look</string>
     <string name="tile_clear">Clear all</string>
     <string name="tile_brightness">Brightness</string>
     <string name="tile_volume">Volume</string>

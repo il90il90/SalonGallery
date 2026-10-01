@@ -68,6 +68,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TextFields
@@ -271,8 +272,10 @@ private fun ControlPanel(
     var intervalMs by remember { mutableStateOf(8000L) }
     var orientation by remember { mutableStateOf("auto") }
     var effect by remember { mutableStateOf("fade") }
+    var filter by remember { mutableStateOf("none") }
     var fit by remember { mutableStateOf("fill") }
     var showFrames by remember { mutableStateOf(false) }
+    var showEffects by remember { mutableStateOf(false) }
     var showSlideshow by remember { mutableStateOf(false) }
     var showLibrary by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
@@ -387,6 +390,7 @@ private fun ControlPanel(
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HomeAction(Modifier.weight(1f), Icons.Outlined.FilterFrames, stringResource(R.string.tile_frame), NeonCyan, TintClay, true) { showFrames = true }
+            HomeAction(Modifier.weight(1f), Icons.Outlined.AutoAwesome, stringResource(R.string.effects_title), NeonTeal, TintSage, true) { showEffects = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.Slideshow, stringResource(R.string.tile_slideshow), NeonBlue, TintBlue, true) { showSlideshow = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.TextFields, stringResource(R.string.home_text), NeonViolet, TintPlum, true) { showText = true }
         }
@@ -417,13 +421,20 @@ private fun ControlPanel(
             onDismiss = { showFrames = false },
         )
     }
+    if (showEffects) {
+        EffectsSheet(
+            effect = effect, filter = filter,
+            onEffect = { effect = it; scope.launch { PhotoSender.setEffect(screen.host, screen.port, it) } },
+            onFilter = { filter = it; scope.launch { PhotoSender.setFilter(screen.host, screen.port, it) } },
+            onDismiss = { showEffects = false },
+        )
+    }
     if (showSlideshow) {
         SlideshowSheet(
-            shuffle = shuffle, intervalMs = intervalMs, orientation = orientation, effect = effect, fit = fit,
+            shuffle = shuffle, intervalMs = intervalMs, orientation = orientation, fit = fit,
             onShuffle = { shuffle = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, intervalMs, it) } },
             onInterval = { intervalMs = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, it, shuffle) } },
             onOrientation = { orientation = it; scope.launch { PhotoSender.setOrientation(screen.host, screen.port, it) } },
-            onEffect = { effect = it; scope.launch { PhotoSender.setEffect(screen.host, screen.port, it) } },
             onFit = { fit = it; scope.launch { PhotoSender.setFit(screen.host, screen.port, it) } },
             onDismiss = { showSlideshow = false },
         )
@@ -1095,6 +1106,67 @@ private fun SliderTile(modifier: Modifier, icon: ImageVector, label: String, acc
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun EffectsSheet(
+    effect: String, filter: String,
+    onEffect: (String) -> Unit, onFilter: (String) -> Unit, onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
+            Text(stringResource(R.string.effects_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.effects_transition), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            val effects = listOf("fade", "slide", "zoom", "kenburns", "none")
+            SegRow(listOf("Fade", "Slide", "Zoom", "Ken Burns", "Off"), effects.indexOf(effect).coerceAtLeast(0)) { onEffect(effects[it]) }
+
+            Spacer(Modifier.height(20.dp))
+            Text(stringResource(R.string.effects_look), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(12.dp))
+            val looks = listOf("none", "mono", "sepia", "warm", "cool", "vignette")
+            val labels = listOf("Original", "Mono", "Sepia", "Warm", "Cool", "Vignette")
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                looks.forEachIndexed { i, key -> LookChip(labels[i], key, key == filter) { onFilter(key) } }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** A small preview chip for a photo "look" (approximate; the real look renders on the wall). */
+@Composable
+private fun LookChip(label: String, key: String, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(80.dp)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
+    ) {
+        Box(
+            Modifier.size(74.dp).clip(RoundedCornerShape(14.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF8893A0), Color(0xFF454D59))))
+                .border(if (selected) 2.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(14.dp)),
+        ) {
+            val tint = when (key) {
+                "mono" -> Color(0xFF8A8A8A).copy(alpha = 0.5f)
+                "sepia" -> Color(0xFF6E4A1E).copy(alpha = 0.42f)
+                "warm" -> Color(0xFFFF8A3D).copy(alpha = 0.26f)
+                "cool" -> Color(0xFF3D7AFF).copy(alpha = 0.26f)
+                else -> Color.Transparent
+            }
+            if (tint != Color.Transparent) Box(Modifier.matchParentSize().background(tint))
+            if (key == "vignette") Box(
+                Modifier.matchParentSize().background(
+                    Brush.radialGradient(0.0f to Color.Transparent, 0.6f to Color.Transparent, 1.0f to Color.Black.copy(alpha = 0.6f))
+                )
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = if (selected) NeonCyan else TextSecondary, maxLines = 1)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun FrameSheet(
     current: Int, width: Float,
     onPick: (Int) -> Unit, onWidth: (Float) -> Unit, onDismiss: () -> Unit,
@@ -1164,9 +1236,9 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, onClick
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SlideshowSheet(
-    shuffle: Boolean, intervalMs: Long, orientation: String, effect: String, fit: String,
+    shuffle: Boolean, intervalMs: Long, orientation: String, fit: String,
     onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
-    onEffect: (String) -> Unit, onFit: (String) -> Unit, onDismiss: () -> Unit,
+    onFit: (String) -> Unit, onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
@@ -1188,12 +1260,6 @@ private fun SlideshowSheet(
             Spacer(Modifier.height(8.dp))
             val intervals = listOf(5000L, 10000L, 30000L, 60000L)
             SegRow(listOf("5s", "10s", "30s", "1m"), intervals.indexOf(intervalMs).coerceAtLeast(0)) { onInterval(intervals[it]) }
-
-            Spacer(Modifier.height(18.dp))
-            Text(stringResource(R.string.slideshow_effect), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            val effects = listOf("fade", "slide", "zoom", "kenburns", "none")
-            SegRow(listOf("Fade", "Slide", "Zoom", "Ken", "Off"), effects.indexOf(effect).coerceAtLeast(0)) { onEffect(effects[it]) }
 
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_orientation), style = MaterialTheme.typography.labelMedium, color = TextSecondary)

@@ -212,6 +212,9 @@ object PhotoSender {
     suspend fun setFit(host: String, port: Int, fit: String) =
         get(host, port, "/fit?f=$fit")
 
+    suspend fun setFilter(host: String, port: Int, filter: String) =
+        get(host, port, "/filter?f=$filter")
+
     suspend fun setText(host: String, port: Int, content: String, pos: String, size: String, color: String) =
         get(host, port, "/text?content=${enc(content)}&pos=$pos&size=$size&color=$color")
 

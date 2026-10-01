@@ -20,6 +20,7 @@ interface ScreenCommands {
     fun onSlideshow(intervalMs: Long, shuffle: Boolean)
     fun onEffect(effect: String)
     fun onFit(fit: String)
+    fun onFilter(filter: String)
     fun onText(content: String, pos: String, size: String, color: String)
     fun onClock(on: Boolean)
     fun onOrientation(o: String)
@@ -107,6 +108,9 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/fit" -> {
                 session.parameters["f"]?.firstOrNull()?.let { commands.onFit(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/filter" -> {
+                session.parameters["f"]?.firstOrNull()?.let { commands.onFilter(it) }; ok()
             }
             session.method == Method.GET && uri == "/text" -> {
                 commands.onText(
