@@ -184,6 +184,7 @@ fun RemoteModeScreen(actions: AppActions) {
     val screens by session.screens.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<DiscoveredScreen?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showManual by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf<ScreenInfo?>(null) }
 
     LaunchedEffect(selected?.host, selected?.port) {
@@ -218,6 +219,14 @@ fun RemoteModeScreen(actions: AppActions) {
                     else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         screens.forEach { s -> ScreenRow(s) { selected = s } }
                     }
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        stringResource(R.string.remote_connect_ip),
+                        style = MaterialTheme.typography.labelLarge, color = NeonCyan,
+                        modifier = Modifier.clip(RoundedCornerShape(50))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { showManual = true }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                    )
                 } else {
                     ControlPanel(
                         screen = target,
@@ -228,6 +237,13 @@ fun RemoteModeScreen(actions: AppActions) {
                 }
             }
         }
+    }
+
+    if (showManual) {
+        ManualConnectDialog(
+            onConnect = { host, port -> selected = DiscoveredScreen("manual", host, host, port); showManual = false },
+            onDismiss = { showManual = false },
+        )
     }
 
     if (showSettings) {
@@ -254,6 +270,44 @@ fun RemoteModeScreen(actions: AppActions) {
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun ManualConnectDialog(onConnect: (String, Int) -> Unit, onDismiss: () -> Unit) {
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("") }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.clip(RoundedCornerShape(24.dp)).background(com.meylon.salongallery.ui.theme.ElecSurface)
+                .border(1.dp, ElecBorder, RoundedCornerShape(24.dp)).padding(24.dp),
+        ) {
+            Text(stringResource(R.string.remote_connect_ip), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.remote_connect_ip_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            Spacer(Modifier.height(16.dp))
+            val tf = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+                focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+            )
+            OutlinedTextField(
+                value = host, onValueChange = { host = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("192.168.1.42", color = TextTertiary) }, label = { Text("IP address", color = TextSecondary) }, colors = tf,
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = port, onValueChange = { port = it.filter { c -> c.isDigit() } }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Port", color = TextTertiary) }, label = { Text("Port", color = TextSecondary) }, colors = tf,
+            )
+            Spacer(Modifier.height(18.dp))
+            GradientButton(
+                text = stringResource(R.string.remote_connect),
+                enabled = host.isNotBlank() && port.toIntOrNull() != null,
+                onClick = { port.toIntOrNull()?.let { onConnect(host.trim(), it) } },
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlineButton(text = stringResource(R.string.cancel), onClick = onDismiss)
+        }
     }
 }
 

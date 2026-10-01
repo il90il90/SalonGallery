@@ -405,7 +405,8 @@ private fun Slideshow(
         val f = files[from]
         if (isVideoName(f.name)) return listOf(from)
         val portrait = orientationMap[f.name] ?: return listOf(from)
-        val fillable = portrait == !screenLandscape  // portrait on landscape, or landscape on portrait
+        // Fillable when the photo's orientation is opposite the screen's (big side gaps).
+        val fillable = portrait == screenLandscape
         if (!fillable) return listOf(from)
         val want = if (screenLandscape) 3 else 2
         val out = mutableListOf(from)
