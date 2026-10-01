@@ -80,6 +80,8 @@ class ScreenSession(
     val brightness = MutableStateFlow(-1f)
     /** App-level playback volume 0..1, applied directly to the players (reliable on TV). */
     val volume = MutableStateFlow(1f)
+    /** An ambient scene that replaces the gallery ("off" | "aquarium"). */
+    val scene = MutableStateFlow("off")
     val running = MutableStateFlow(false)
     /** Index into the ordered library that the slideshow is currently showing. */
     val currentIndex = MutableStateFlow(0)
@@ -289,6 +291,8 @@ class ScreenSession(
     override fun onText(content: String, pos: String, size: String, color: String) {
         textOverlay.value = TextOverlay(content, TextPos.from(pos), size, color)
     }
+
+    override fun onScene(s: String) { scene.value = s }
 
     override fun onClock(on: Boolean, pos: String, showDate: Boolean) {
         clock.value = ClockConfig(on, ClockPos.from(pos), showDate)

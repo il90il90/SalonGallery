@@ -174,6 +174,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val brightness by session.brightness.collectAsStateWithLifecycle()
     val volume by session.volume.collectAsStateWithLifecycle()
     val running by session.running.collectAsStateWithLifecycle()
+    val scene by session.scene.collectAsStateWithLifecycle()
     val currentIndex by session.currentIndex.collectAsStateWithLifecycle()
     val musicVersion by session.musicVersion.collectAsStateWithLifecycle()
     val musicPlaying by session.musicPlaying.collectAsStateWithLifecycle()
@@ -315,6 +316,8 @@ fun ScreenModeScreen(actions: AppActions) {
             ) { if (sleeping) sleeping = false else openSettings() },
     ) {
         when {
+            scene == "aquarium" -> AquariumScene(Modifier.fillMaxSize())
+
             mode != DisplayMode.WAITING && files.isNotEmpty() ->
                 FramedContent(activeFrameId, frameWidth, adaptiveColor, Modifier.fillMaxSize()) {
                     Slideshow(
@@ -338,9 +341,9 @@ fun ScreenModeScreen(actions: AppActions) {
             else -> WaitingToPair(deviceName = deviceName, running = running)
         }
 
-        if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clock)
+        if (mode != DisplayMode.WAITING || scene == "aquarium") OverlayLayer(textOverlay, clock)
 
-        if (mode != DisplayMode.WAITING && rssOn && rssItems.isNotEmpty()) {
+        if ((mode != DisplayMode.WAITING || scene == "aquarium") && rssOn && rssItems.isNotEmpty()) {
             RssTicker(rssItems, rssConfig)
         }
 
