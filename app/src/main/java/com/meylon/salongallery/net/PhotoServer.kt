@@ -16,6 +16,7 @@ interface ScreenCommands {
     fun onBrightness(value: Float)
     fun onVolume(value: Float)
     fun onFrame(id: Int)
+    fun onFrameWidth(value: Float)
     fun onSlideshow(intervalMs: Long, shuffle: Boolean)
     fun onEffect(effect: String)
     fun onFit(fit: String)
@@ -92,6 +93,9 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/frame" -> {
                 intParam(session, "id")?.let { commands.onFrame(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/framewidth" -> {
+                session.parameters["v"]?.firstOrNull()?.toFloatOrNull()?.let { commands.onFrameWidth(it) }; ok()
             }
             session.method == Method.GET && uri == "/slideshow" -> {
                 val interval = session.parameters["interval"]?.firstOrNull()?.toLongOrNull() ?: 8000L

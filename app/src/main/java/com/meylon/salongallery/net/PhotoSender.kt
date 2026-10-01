@@ -200,6 +200,9 @@ object PhotoSender {
     suspend fun setFrame(host: String, port: Int, id: Int) =
         get(host, port, "/frame?id=$id")
 
+    suspend fun setFrameWidth(host: String, port: Int, value: Float) =
+        get(host, port, "/framewidth?v=$value")
+
     suspend fun setSlideshow(host: String, port: Int, intervalMs: Long, shuffle: Boolean) =
         get(host, port, "/slideshow?interval=$intervalMs&shuffle=${if (shuffle) 1 else 0}")
 

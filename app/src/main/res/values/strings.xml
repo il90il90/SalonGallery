@@ -53,6 +53,8 @@
     <string name="tile_photos">Send Photos</string>
     <string name="tile_video">Send Video</string>
     <string name="tile_frame">Frame</string>
+    <string name="frame_thickness">Frame thickness</string>
+    <string name="frame_recommended">Recommended</string>
     <string name="tile_music">Music</string>
     <string name="tile_slideshow">Slideshow</string>
     <string name="tile_clear">Clear all</string>

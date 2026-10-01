@@ -52,6 +52,7 @@ class ScreenSession(
     /** Index into the music library that is currently playing (updated by the player). */
     val musicIndex = MutableStateFlow(0)
     val frameId = MutableStateFlow(0)
+    val frameWidth = MutableStateFlow(1f)
     val intervalMs = MutableStateFlow(8000L)
     val shuffle = MutableStateFlow(false)
     val effect = MutableStateFlow(SlideEffect.FADE)
@@ -212,6 +213,8 @@ class ScreenSession(
     }
 
     override fun onFrame(id: Int) { frameId.value = id }
+
+    override fun onFrameWidth(value: Float) { frameWidth.value = value.coerceIn(0.4f, 2.2f) }
 
     override fun onSlideshow(intervalMs: Long, shuffle: Boolean) {
         this.intervalMs.value = intervalMs.coerceIn(2000L, 120000L)

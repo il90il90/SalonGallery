@@ -266,6 +266,7 @@ private fun ControlPanel(
     var progress by remember { mutableStateOf(0 to 0) } // done to total
 
     var frameId by remember { mutableIntStateOf(0) }
+    var frameWidth by remember { mutableStateOf(1f) }
     var shuffle by remember { mutableStateOf(false) }
     var intervalMs by remember { mutableStateOf(8000L) }
     var orientation by remember { mutableStateOf("auto") }
@@ -409,9 +410,12 @@ private fun ControlPanel(
     }
 
     if (showFrames) {
-        FrameSheet(current = frameId, onPick = { id ->
-            frameId = id; scope.launch { PhotoSender.setFrame(screen.host, screen.port, id) }
-        }, onDismiss = { showFrames = false })
+        FrameSheet(
+            current = frameId, width = frameWidth,
+            onPick = { id -> frameId = id; scope.launch { PhotoSender.setFrame(screen.host, screen.port, id) } },
+            onWidth = { w -> frameWidth = w; scope.launch { PhotoSender.setFrameWidth(screen.host, screen.port, w) } },
+            onDismiss = { showFrames = false },
+        )
     }
     if (showSlideshow) {
         SlideshowSheet(
@@ -1091,28 +1095,68 @@ private fun SliderTile(modifier: Modifier, icon: ImageVector, label: String, acc
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FrameSheet(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+private fun FrameSheet(
+    current: Int, width: Float,
+    onPick: (Int) -> Unit, onWidth: (Float) -> Unit, onDismiss: () -> Unit,
+) {
+    var w by remember { mutableStateOf(width) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
-        Column(Modifier.fillMaxWidth().padding(24.dp)) {
-            Text(stringResource(R.string.tile_frame), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.tile_frame), style = MaterialTheme.typography.headlineSmall, color = TextPrimary, modifier = Modifier.weight(1f))
+                Text(
+                    stringResource(R.string.frame_recommended),
+                    style = MaterialTheme.typography.labelLarge, color = NeonCyan,
+                    modifier = Modifier.clip(RoundedCornerShape(50))
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            onPick(RECOMMENDED_FRAME.id); w = 1f; onWidth(1f)
+                        }.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+
             Spacer(Modifier.height(16.dp))
-            FRAMES.forEach { f ->
-                val sel = f.id == current
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 5.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(if (sel) 1.5.dp else 1.dp, if (sel) NeonCyan else ElecBorder, RoundedCornerShape(14.dp))
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onPick(f.id) }
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val swatch = f.moldingColors.firstOrNull() ?: f.matColor ?: Color.Black
-                    Box(Modifier.size(30.dp).clip(RoundedCornerShape(7.dp)).background(swatch).border(1.dp, ElecBorder, RoundedCornerShape(7.dp)))
-                    Spacer(Modifier.size(12.dp))
-                    Text(f.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+            Text(stringResource(R.string.frame_thickness), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(4.dp))
+            Slider(
+                value = w, onValueChange = { w = it }, onValueChangeFinished = { onWidth(w) },
+                valueRange = 0.4f..2.2f,
+                colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = NeonCyan, inactiveTrackColor = ElecBorder),
+            )
+
+            Spacer(Modifier.height(8.dp))
+            FRAME_CATEGORIES.forEach { (cat, styles) ->
+                SectionLabel(cat)
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    styles.forEach { f -> FramePreview(f, f.id == current, w) { onPick(f.id) } }
                 }
+                Spacer(Modifier.height(18.dp))
             }
             Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+/** A small live preview of a frame wrapped around a neutral sample, for the picker. */
+@Composable
+private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(86.dp)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
+    ) {
+        Box(
+            Modifier.size(80.dp).clip(RoundedCornerShape(12.dp))
+                .border(if (selected) 2.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(12.dp)),
+        ) {
+            FramedContent(f.id, width, Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF7C8898), Color(0xFF3E4650)))))
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            if (f.recommended) Text("★", style = MaterialTheme.typography.labelSmall, color = NeonCyan)
+            Text(f.name, style = MaterialTheme.typography.labelSmall, color = if (selected) NeonCyan else TextSecondary, maxLines = 1)
         }
     }
 }

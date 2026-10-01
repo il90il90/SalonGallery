@@ -147,6 +147,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val libraryVersion by session.libraryVersion.collectAsStateWithLifecycle()
     val videoVersion by session.videoVersion.collectAsStateWithLifecycle()
     val frameId by session.frameId.collectAsStateWithLifecycle()
+    val frameWidth by session.frameWidth.collectAsStateWithLifecycle()
     val intervalMs by session.intervalMs.collectAsStateWithLifecycle()
     val shuffle by session.shuffle.collectAsStateWithLifecycle()
     val effect by session.effect.collectAsStateWithLifecycle()
@@ -255,7 +256,7 @@ fun ScreenModeScreen(actions: AppActions) {
     ) {
         when {
             mode != DisplayMode.WAITING && files.isNotEmpty() ->
-                FramedContent(frameId, Modifier.fillMaxSize()) {
+                FramedContent(frameId, frameWidth, Modifier.fillMaxSize()) {
                     Slideshow(
                         files = files,
                         currentIndex = currentIndex,
