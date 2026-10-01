@@ -79,7 +79,6 @@ import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.RssFeed
-import androidx.compose.material.icons.outlined.Water
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -384,7 +383,6 @@ private fun ControlPanel(
     var filter by remember { mutableStateOf("none") }
     var fit by remember { mutableStateOf("fill") }
     var collage by remember { mutableStateOf(false) }
-    var scene by remember { mutableStateOf("off") }
     var showFrames by remember { mutableStateOf(false) }
     var showEffects by remember { mutableStateOf(false) }
     var showSlideshow by remember { mutableStateOf(false) }
@@ -542,14 +540,6 @@ private fun ControlPanel(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HomeAction(Modifier.weight(1f), Icons.Outlined.TextFields, stringResource(R.string.home_text), NeonViolet, TintPlum, true) { showText = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.RssFeed, stringResource(R.string.rss_title), NeonCyan, TintClay, true) { showRss = true }
-            HomeAction(
-                Modifier.weight(1f), Icons.Outlined.Water,
-                stringResource(if (scene == "aquarium") R.string.scene_aquarium_on else R.string.scene_aquarium),
-                if (scene == "aquarium") NeonBlue else NeonTeal, TintBlue, true,
-            ) {
-                scene = if (scene == "aquarium") "off" else "aquarium"
-                scope.launch { PhotoSender.setScene(screen.host, screen.port, scene) }
-            }
         }
 
         Spacer(Modifier.height(18.dp))

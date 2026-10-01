@@ -28,7 +28,6 @@ interface ScreenCommands {
     fun onCollage(on: Boolean)
     fun onText(content: String, pos: String, size: String, color: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean)
-    fun onScene(s: String)
     fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean)
     fun rssJson(): String
     fun onOrientation(o: String)
@@ -170,9 +169,6 @@ class PhotoServer(
                 ); ok()
             }
             session.method == Method.GET && uri == "/rss/get" -> json(commands.rssJson())
-            session.method == Method.GET && uri == "/scene" -> {
-                session.parameters["s"]?.firstOrNull()?.let { commands.onScene(it) }; ok()
-            }
             session.method == Method.GET && uri == "/clear" -> { commands.onClear(); ok() }
 
             session.method == Method.GET && uri == "/list" -> json(commands.listJson())

@@ -84,8 +84,6 @@
     <string name="update_whats_new">WHAT\'S NEW</string>
     <string name="update_download_failed">Couldn\'t download the update</string>
     <string name="rss_title">News</string>
-    <string name="scene_aquarium">Aquarium</string>
-    <string name="scene_aquarium_on">Aquarium ✓</string>
     <string name="rss_hint">Scroll headlines from your favorite feeds along the bottom of the wall.</string>
     <string name="rss_show">Show on screen</string>
     <string name="rss_add_hint">https://…/rss</string>

@@ -327,8 +327,6 @@ object PhotoSender {
         } catch (e: Exception) { null }
     }
 
-    suspend fun setScene(host: String, port: Int, scene: String) =
-        get(host, port, "/scene?s=$scene")
 
     suspend fun clearLibrary(host: String, port: Int) =
         get(host, port, "/clear")

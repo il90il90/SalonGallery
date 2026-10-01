@@ -48,7 +48,7 @@ import kotlinx.coroutines.delay
 
 /**
  * A full-screen, self-driving live preview of the Display — used by the in-app demo so the
- * whole flow (frames, effects, aquarium, clock, news) can be seen without a second device.
+ * whole flow (frames, effects, clock, news) can be seen without a second device.
  */
 @Composable
 fun DisplayPreview(session: ScreenSession, onClose: () -> Unit) {
@@ -64,7 +64,6 @@ fun DisplayPreview(session: ScreenSession, onClose: () -> Unit) {
     val textOverlay by session.textOverlay.collectAsState()
     val clock by session.clock.collectAsState()
     val brightness by session.brightness.collectAsState()
-    val scene by session.scene.collectAsState()
     val rssOn by session.rssOn.collectAsState()
     val rssFeeds by session.rssFeeds.collectAsState()
     val rssConfig by session.rssConfig.collectAsState()
@@ -80,8 +79,6 @@ fun DisplayPreview(session: ScreenSession, onClose: () -> Unit) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             when {
-                scene == "aquarium" -> AquariumScene(Modifier.fillMaxSize())
-
                 files.isNotEmpty() -> {
                     var idx by remember(files) { mutableIntStateOf(session.currentIndex.value.coerceIn(0, files.lastIndex)) }
                     LaunchedEffect(files, interval) {
