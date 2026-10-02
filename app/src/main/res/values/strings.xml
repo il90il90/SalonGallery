@@ -47,7 +47,7 @@
     <string name="home_add">Add to your wall</string>
     <string name="home_style">Design your wall</string>
     <string name="home_photos">Photos &amp; video</string>
-    <string name="home_art">Art</string>
+    <string name="home_art">Explore</string>
     <string name="home_gphotos">Google Photos</string>
     <string name="add_photos">Photos</string>
     <string name="add_videos">Videos</string>
@@ -183,10 +183,10 @@
     <string name="text_clock">Show clock &amp; date</string>
     <string name="text_apply">Apply</string>
     <string name="text_clear">Clear</string>
-    <string name="tile_art">Art gallery</string>
-    <string name="art_title">Art gallery</string>
-    <string name="art_hint">Free, public-domain art and photography — the screen downloads it over your Wi-Fi.</string>
-    <string name="art_search">Search art…</string>
+    <string name="tile_art">Explore</string>
+    <string name="art_title">Explore</string>
+    <string name="art_hint">Free art, space, backgrounds and museum photos — the screen downloads them over your Wi-Fi.</string>
+    <string name="art_search">Search…</string>
     <string name="art_empty">No results — try another search.</string>
     <string name="art_added">Sent to screen ✓</string>
     <string name="art_error">Couldn\'t reach the art library. Check your connection.</string>

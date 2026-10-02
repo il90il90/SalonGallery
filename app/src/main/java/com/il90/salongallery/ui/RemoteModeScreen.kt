@@ -76,6 +76,7 @@ import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.LocationOn
@@ -925,7 +926,7 @@ private fun ControlPanel(
                     folderKindMenu = false; folderKind = kind; folderPicker.launch(null)
                 }
             }
-            HomeAction(Modifier.weight(1f), Icons.Outlined.Palette, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
+            HomeAction(Modifier.weight(1f), Icons.Outlined.Explore, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.home_music), NeonViolet, TintPlum, !busy) { showMusic = true }
         }
         Spacer(Modifier.height(10.dp))
