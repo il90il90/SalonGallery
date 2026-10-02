@@ -186,29 +186,46 @@ fun FramedContent(
         val minSide = minOf(maxWidth, maxHeight)
         val molding = minSide * f.moldingFrac * ws
         val mat = minSide * f.matFrac * ws
+        val framed = f.moldingColors.isNotEmpty() || f.matColor != null
+        // How deep the photo sits below the mat/molding — drives the inner-recess shadow.
+        val recess = minSide * (if (f.moldingColors.isNotEmpty()) 0.016f else 0.010f) * ws
 
         if (f.moldingColors.isNotEmpty()) {
             Box(
                 Modifier
                     .fillMaxSize()
+                    // A cross-molding sheen: lit on the top-left bevel, shadowed on the bottom-right.
                     .background(Brush.linearGradient(f.moldingColors))
                     .then(if (f.bevelOuter != null) Modifier.border(1.5.dp, f.bevelOuter) else Modifier),
             ) {
+                // Soft shadow the molding casts down onto the mat (depth of the moulding profile).
+                Box(Modifier.fillMaxSize().padding(molding * 0.82f)) {
+                    Box(
+                        Modifier.fillMaxSize()
+                            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.22f), Color.Transparent)))
+                    )
+                }
                 Box(
                     Modifier
                         .fillMaxSize()
                         .padding(molding)
                         .then(if (f.bevelInner != null) Modifier.border(2.dp, f.bevelInner) else Modifier),
-                ) { MatAndPhoto(f, mat, content) }
+                ) { MatAndPhoto(f, mat, recess, framed, content) }
             }
         } else {
-            MatAndPhoto(f, mat, content)
+            MatAndPhoto(f, mat, recess, framed, content)
         }
     }
 }
 
 @Composable
-private fun MatAndPhoto(f: FrameStyle, mat: androidx.compose.ui.unit.Dp, content: @Composable BoxScope.() -> Unit) {
+private fun MatAndPhoto(
+    f: FrameStyle,
+    mat: androidx.compose.ui.unit.Dp,
+    recess: androidx.compose.ui.unit.Dp,
+    framed: Boolean,
+    content: @Composable BoxScope.() -> Unit,
+) {
     if (f.matColor != null) {
         Box(Modifier.fillMaxSize().background(f.matColor)) {
             Box(
@@ -216,13 +233,38 @@ private fun MatAndPhoto(f: FrameStyle, mat: androidx.compose.ui.unit.Dp, content
                     .fillMaxSize()
                     .padding(mat)
                     .then(if (f.lipColor != null) Modifier.border(1.dp, f.lipColor) else Modifier),
-                content = content,
-            )
+            ) {
+                content()
+                if (framed) InnerRecessShadow(recess)
+            }
         }
     } else {
         Box(
             Modifier.fillMaxSize().then(if (f.lipColor != null) Modifier.border(1.dp, f.lipColor) else Modifier),
-            content = content,
-        )
+        ) {
+            content()
+            if (framed) InnerRecessShadow(recess)
+        }
+    }
+}
+
+/**
+ * A soft shadow on the four inner edges of the photo opening, so the image reads as set *into*
+ * the frame rather than printed flat on top of it — the key cue that sells a real frame.
+ */
+@Composable
+private fun BoxScope.InnerRecessShadow(depth: androidx.compose.ui.unit.Dp) {
+    androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+        val d = depth.toPx().coerceAtLeast(2f)
+        val sh = Color.Black.copy(alpha = 0.38f)
+        val w = size.width; val h = size.height
+        drawRect(Brush.verticalGradient(listOf(sh, Color.Transparent), startY = 0f, endY = d),
+            size = androidx.compose.ui.geometry.Size(w, d))
+        drawRect(Brush.verticalGradient(listOf(Color.Transparent, sh), startY = h - d, endY = h),
+            topLeft = androidx.compose.ui.geometry.Offset(0f, h - d), size = androidx.compose.ui.geometry.Size(w, d))
+        drawRect(Brush.horizontalGradient(listOf(sh, Color.Transparent), startX = 0f, endX = d),
+            size = androidx.compose.ui.geometry.Size(d, h))
+        drawRect(Brush.horizontalGradient(listOf(Color.Transparent, sh), startX = w - d, endX = w),
+            topLeft = androidx.compose.ui.geometry.Offset(w - d, 0f), size = androidx.compose.ui.geometry.Size(d, h))
     }
 }

@@ -415,17 +415,32 @@ class ScreenSession(
         val mmr = android.media.MediaMetadataRetriever()
         try {
             mmr.setDataSource(f.path)
-            val frame = mmr.getFrameAtTime(1_000_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                ?: mmr.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
-                ?: mmr.getFrameAtTime(500_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
-                ?: mmr.getFrameAtTime()
-                ?: return null
+            val durMs = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val vw = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val vh = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            // Aspect-correct target so getScaledFrameAtTime doesn't distort.
+            val (tw, th) = if (vw > 0 && vh > 0) {
+                val s = 400f / maxOf(vw, vh)
+                maxOf(1, (vw * s).toInt()) to maxOf(1, (vh * s).toInt())
+            } else 400 to 400
+            // Sample ~1s in (or 10% for short clips) to skip black/green intro frames. Hardware
+            // decoders often render the very first frame green, so never start at 0.
+            val sample = if (durMs > 0) minOf(1_200_000L, durMs * 1000L / 10).coerceAtLeast(300_000L) else 1_000_000L
+            val times = listOf(sample, 2_000_000L, 500_000L, 0L)
+            var frame: Bitmap? = null
+            for (t in times) {
+                frame = if (android.os.Build.VERSION.SDK_INT >= 27)
+                    runCatching { mmr.getScaledFrameAtTime(t, android.media.MediaMetadataRetriever.OPTION_CLOSEST, tw, th) }.getOrNull()
+                else runCatching { mmr.getFrameAtTime(t, android.media.MediaMetadataRetriever.OPTION_CLOSEST) }.getOrNull()
+                if (frame != null) break
+            }
+            frame = frame ?: mmr.getFrameAtTime() ?: return null
             val scale = 400f / maxOf(frame.width, frame.height).coerceAtLeast(1)
             val bmp = if (scale < 1f)
                 Bitmap.createScaledBitmap(frame, (frame.width * scale).toInt().coerceAtLeast(1), (frame.height * scale).toInt().coerceAtLeast(1), true)
             else frame
             val bos = ByteArrayOutputStream()
-            bmp.compress(Bitmap.CompressFormat.JPEG, 80, bos)
+            bmp.compress(Bitmap.CompressFormat.JPEG, 82, bos)
             if (bmp !== frame) bmp.recycle()
             frame.recycle()
             val bytes = bos.toByteArray()

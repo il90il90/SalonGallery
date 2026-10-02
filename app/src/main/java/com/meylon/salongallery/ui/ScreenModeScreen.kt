@@ -357,7 +357,7 @@ fun ScreenModeScreen(actions: AppActions) {
                 }
 
             else -> {
-                val net = remember(running) { networkInfo(context, session.port) }
+                val net = remember(running) { networkInfo(context) }
                 WaitingToPair(
                     deviceName = session.effectiveName(),
                     running = running,
@@ -540,31 +540,44 @@ private fun AnimatedContentTransitionScope<Int>.transitionFor(e: SlideEffect): C
     SlideEffect.RANDOM -> fadeIn(tween(800)) togetherWith fadeOut(tween(800))
 }
 
-/** Lays several same-orientation photos edge to edge (with a thin gap) so they fill the wall as one piece. */
+/**
+ * Lays several same-orientation photos side by side as one piece — a clean gallery "multi-aperture
+ * mat": a soft mat-coloured separator between photos, each photo recessed by a hairline edge.
+ */
 @Composable
 private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boolean) {
     val cf = lookFilter(filter)
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    val mat = Color(0xFFEBE4D7)      // warm gallery mat
+    val gap = 12.dp
+    Box(Modifier.fillMaxSize().background(mat).padding(gap)) {
         if (horizontal) {
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                files.forEach { f ->
-                    AsyncImage(
-                        model = f, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
-                }
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxHeight()) }
             }
         } else {
-            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                files.forEach { f ->
-                    AsyncImage(
-                        model = f, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
-                }
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
+                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxWidth()) }
             }
         }
         if (filter == PhotoFilter.VIGNETTE) VignetteOverlay()
+    }
+}
+
+@Composable
+private fun CollageCell(f: File, cf: androidx.compose.ui.graphics.ColorFilter?, modifier: Modifier) {
+    Box(modifier.clipToBounds()) {
+        AsyncImage(
+            model = f, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+            modifier = Modifier.fillMaxSize(),
+        )
+        // Hairline bevel so each photo reads as recessed into the mat.
+        Box(Modifier.matchParentSize().border(1.dp, Color.Black.copy(alpha = 0.28f)))
+        androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+            val d = (size.minDimension * 0.02f).coerceIn(3f, 14f)
+            val sh = Color.Black.copy(alpha = 0.3f)
+            drawRect(Brush.verticalGradient(listOf(sh, Color.Transparent), 0f, d), size = androidx.compose.ui.geometry.Size(size.width, d))
+            drawRect(Brush.horizontalGradient(listOf(sh, Color.Transparent), 0f, d), size = androidx.compose.ui.geometry.Size(d, size.height))
+        }
     }
 }
 
@@ -962,8 +975,8 @@ private fun NetChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text:
     }
 }
 
-/** (ssid, "ip:port") for the current Wi-Fi connection, for display on the waiting screen. */
-private fun networkInfo(context: android.content.Context, port: Int): Pair<String?, String?> {
+/** (ssid, ip) for the current Wi-Fi connection, for display on the waiting screen. */
+private fun networkInfo(context: android.content.Context): Pair<String?, String?> {
     val ssid = runCatching {
         val wm = context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
         wm?.connectionInfo?.ssid?.trim('"')?.takeIf { it.isNotBlank() && !it.contains("unknown", true) && it != "0x" }
@@ -972,8 +985,7 @@ private fun networkInfo(context: android.content.Context, port: Int): Pair<Strin
         java.net.NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
             .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }?.hostAddress
     }.getOrNull()
-    val address = ip?.let { if (port > 0) "$it : $port" else it }
-    return ssid to address
+    return ssid to ip
 }
 
 @Composable

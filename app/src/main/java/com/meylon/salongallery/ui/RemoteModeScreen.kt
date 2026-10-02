@@ -224,22 +224,27 @@ fun RemoteModeScreen(actions: AppActions) {
     // pretends it is connected when it is not.
     LaunchedEffect(selected?.key) {
         if (selected == null) { connected = true; lostScreen = false; return@LaunchedEffect }
+        var fails = 0
         while (true) {
             val s = selected ?: break
             val ok = PhotoSender.ping(s.host, s.port) != null
-            connected = ok
-            if (!ok) {
+            if (ok) {
+                fails = 0
+                connected = true; lostScreen = false
+            } else {
+                fails++
+                // Re-resolve from live NSD first (handles the Display restarting on a new port).
                 val fresh = session.screens.value.firstOrNull { it.key == s.key || it.name == s.name }
                 if (fresh != null && (fresh.host != s.host || fresh.port != s.port)) {
                     selected = fresh
-                    lostScreen = false
+                    kotlinx.coroutines.delay(300)
                     continue  // retry immediately against the fresh address
                 }
-                lostScreen = session.screens.value.none { it.key == s.key || it.name == s.name }
-            } else {
-                lostScreen = false
+                // Tolerate brief blips (e.g. the screen re-laying out after an orientation change):
+                // only flag "reconnecting" after a few misses, and "offline" only when sustained.
+                if (fails >= 3) { connected = false; lostScreen = fails >= 8 }
             }
-            kotlinx.coroutines.delay(if (ok) 4000 else 1500)
+            kotlinx.coroutines.delay(if (ok) 4000 else 1200)
         }
     }
 
