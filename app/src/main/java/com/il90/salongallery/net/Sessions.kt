@@ -319,12 +319,12 @@ class ScreenSession(
     override fun onFrameWidth(value: Float) { frameWidth.value = value.coerceIn(0.4f, 2.2f) }
 
     override fun onSlideshow(intervalMs: Long, shuffle: Boolean) {
-        this.intervalMs.value = intervalMs.coerceIn(2000L, 3_600_000L)
+        this.intervalMs.value = intervalMs.coerceIn(2000L, 86_400_000L)
         this.shuffle.value = shuffle
     }
 
     override fun onDefaultDuration(seconds: Int) {
-        intervalMs.value = (seconds * 1000L).coerceIn(2000L, 3_600_000L)
+        intervalMs.value = (seconds * 1000L).coerceIn(2000L, 86_400_000L)
     }
 
     override fun onEffect(effect: String) {

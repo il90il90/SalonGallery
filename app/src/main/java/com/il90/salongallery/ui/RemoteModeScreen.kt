@@ -1773,14 +1773,26 @@ private fun DurationDialog(screen: DiscoveredScreen, name: String, onClose: () -
         sec = PhotoSender.getDuration(screen.host, screen.port, name)
         PhotoSender.getInfo(screen.host, screen.port)?.let { defaultSec = (it.intervalMs / 1000L).toInt().coerceAtLeast(1) }
     }
-    fun fmt(s: Int) = if (s < 60) "${s}s" else if (s % 60 == 0) "${s / 60}m" else "${s / 60}m ${s % 60}s"
-    // 0 means "default" for photos, "full clip" for videos.
-    val options = listOf(0, 3, 5, 10, 20, 30, 60)
-    val labels = options.map {
-        when { it != 0 -> "${it}s"; isVideo -> "Full clip"; else -> "Default · ${fmt(defaultSec)}" }
+    fun fmt(s: Int): String = when {
+        s <= 0 -> "0s"
+        s % 3600 == 0 -> "${s / 3600}h"
+        s >= 3600 && (s % 60 == 0) -> "${s / 3600}h ${(s % 3600) / 60}m"
+        s % 60 == 0 -> "${s / 60}m"
+        else -> "${s / 60}m ${s % 60}s"
     }
+    // Pick a tasteful set of values per unit; everything is stored in SECONDS.
+    val secondsValues = listOf(3, 5, 10, 15, 20, 30, 45)
+    val minuteValues = listOf(1, 2, 3, 5, 10, 15, 20, 30, 45)
+    val hourValues = listOf(1, 2, 3, 4, 6, 8, 12, 24)
+    // Which tab to open on: match whatever this photo is already set to.
+    var unit by remember(sec) {
+        mutableIntStateOf(when { sec <= 0 -> 0; sec % 3600 == 0 -> 2; sec % 60 == 0 -> 1; else -> 0 })
+    }
+    val values = when (unit) { 2 -> hourValues; 1 -> minuteValues; else -> secondsValues }
+    val mult = when (unit) { 2 -> 3600; 1 -> 60; else -> 1 }
+
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.il90.salongallery.ui.theme.ElecBg) {
-        Column(Modifier.fillMaxWidth().padding(24.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text(stringResource(R.string.duration_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(8.dp))
             Text(
@@ -1792,39 +1804,69 @@ private fun DurationDialog(screen: DiscoveredScreen, name: String, onClose: () -
                 Text(stringResource(R.string.duration_default_hint), style = MaterialTheme.typography.bodySmall, color = NeonCyan)
             }
             Spacer(Modifier.height(16.dp))
+
+            // The "Default" (or "Full clip") row.
+            DurationRow(
+                label = if (isVideo) stringResource(R.string.duration_full) else "${stringResource(R.string.duration_default)} · ${fmt(defaultSec)}",
+                sub = null, selected = sec == 0,
+                onClick = { sec = 0; scope.launch { PhotoSender.setDuration(screen.host, screen.port, name, 0) } },
+                onLongClick = null,
+            )
+
+            if (!isVideo) {
+                Spacer(Modifier.height(16.dp))
+                Text(stringResource(R.string.duration_unit), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(8.dp))
+                SegRow(
+                    listOf(stringResource(R.string.unit_seconds), stringResource(R.string.unit_minutes), stringResource(R.string.unit_hours)),
+                    unit,
+                ) { unit = it }
+                Spacer(Modifier.height(12.dp))
+            }
+
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                options.forEachIndexed { i, opt ->
-                    val selected = opt == sec
-                    val isDefaultRow = opt == 0
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                            .border(if (selected) 1.5.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(14.dp))
-                            .combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() }, indication = null,
-                                onClick = { sec = opt; scope.launch { PhotoSender.setDuration(screen.host, screen.port, name, opt) } },
-                                // Long-press a real time → make it the default for EVERY "Default" photo.
-                                onLongClick = if (isVideo || isDefaultRow) null else {
-                                    {
-                                        defaultSec = opt
-                                        scope.launch { PhotoSender.setDefaultDuration(screen.host, screen.port, opt) }
-                                        android.widget.Toast.makeText(context, context.getString(R.string.duration_default_set, fmt(opt)), android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                            )
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(labels[i], style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                            if (!isVideo && !isDefaultRow && opt == defaultSec)
-                                Text(stringResource(R.string.duration_is_default), style = MaterialTheme.typography.labelSmall, color = NeonCyan)
-                        }
-                        if (selected) Icon(Icons.Outlined.Check, null, tint = NeonCyan)
-                    }
+                values.forEach { v ->
+                    val secValue = v * mult
+                    DurationRow(
+                        label = fmt(secValue),
+                        sub = if (secValue == defaultSec) stringResource(R.string.duration_is_default) else null,
+                        selected = secValue == sec,
+                        onClick = { sec = secValue; scope.launch { PhotoSender.setDuration(screen.host, screen.port, name, secValue) } },
+                        // Long-press → make it the default for EVERY "Default" photo.
+                        onLongClick = if (isVideo) null else {
+                            {
+                                defaultSec = secValue
+                                scope.launch { PhotoSender.setDefaultDuration(screen.host, screen.port, secValue) }
+                                android.widget.Toast.makeText(context, context.getString(R.string.duration_default_set, fmt(secValue)), android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
                 }
             }
             Spacer(Modifier.height(20.dp))
         }
+    }
+}
+
+/** One selectable duration row, with tap (set this photo) and optional long-press (set the default). */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DurationRow(label: String, sub: String?, selected: Boolean, onClick: () -> Unit, onLongClick: (() -> Unit)?) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .border(if (selected) 1.5.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(14.dp))
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() }, indication = null,
+                onClick = onClick, onLongClick = onLongClick,
+            )
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+            if (sub != null) Text(sub, style = MaterialTheme.typography.labelSmall, color = NeonCyan)
+        }
+        if (selected) Icon(Icons.Outlined.Check, null, tint = NeonCyan)
     }
 }
 
