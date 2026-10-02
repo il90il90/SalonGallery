@@ -237,12 +237,7 @@ fun ScreenModeScreen(actions: AppActions) {
     LaunchedEffect(musicPrev) { if (musicPrev > 0 && musicExo.mediaItemCount > 0) musicExo.seekToPrevious() }
     // The Remote asked this screen to open Android's screensaver settings.
     LaunchedEffect(screensaverReq) {
-        if (screensaverReq > 0) runCatching {
-            context.startActivity(
-                android.content.Intent(android.provider.Settings.ACTION_DREAM_SETTINGS)
-                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-        }
+        if (screensaverReq > 0) openScreensaverSettings(context)
     }
 
     // Brightness is applied as a software dimming scrim (see below) so it works like real
@@ -893,14 +888,7 @@ private fun ScreenAdminContent(session: ScreenSession) {
         OutlineButton(
             text = stringResource(R.string.admin_screensaver),
             leading = Icons.Outlined.Bedtime,
-            onClick = {
-                runCatching {
-                    ctx.startActivity(
-                        android.content.Intent(android.provider.Settings.ACTION_DREAM_SETTINGS)
-                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
-                }
-            },
+            onClick = { openScreensaverSettings(ctx) },
         )
         Spacer(Modifier.height(22.dp))
 
@@ -1020,6 +1008,37 @@ private fun PinPromptDialog(correctPin: String, onSuccess: () -> Unit, onDismiss
     }
 }
 
+/**
+ * Open the device's screensaver settings. `ACTION_DREAM_SETTINGS` is missing on many Android TV /
+ * Google TV builds, so try the known TV component too, and if nothing opens, fall back to the main
+ * Settings and tell the user where to go — never fail silently.
+ */
+private fun openScreensaverSettings(context: android.content.Context) {
+    val direct = listOf(
+        android.content.Intent(android.provider.Settings.ACTION_DREAM_SETTINGS),
+        android.content.Intent().setClassName(
+            "com.android.tv.settings",
+            "com.android.tv.settings.device.display.daydream.DaydreamActivity",
+        ),
+    )
+    for (intent in direct) {
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        try { context.startActivity(intent); return } catch (_: Exception) {}
+    }
+    // Couldn't jump straight to the screensaver page — open main Settings and guide the user.
+    android.widget.Toast.makeText(
+        context,
+        context.getString(R.string.screensaver_manual),
+        android.widget.Toast.LENGTH_LONG,
+    ).show()
+    try {
+        context.startActivity(
+            android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    } catch (_: Exception) {}
+}
+
 @Composable
 private fun WaitingToPair(deviceName: String, running: Boolean) {
     SalonBackground {
@@ -1071,14 +1090,7 @@ private fun WaitingToPair(deviceName: String, running: Boolean) {
             OutlineButton(
                 text = stringResource(R.string.admin_screensaver),
                 leading = Icons.Outlined.Bedtime,
-                onClick = {
-                    runCatching {
-                        ctx.startActivity(
-                            android.content.Intent(android.provider.Settings.ACTION_DREAM_SETTINGS)
-                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
-                    }
-                },
+                onClick = { openScreensaverSettings(ctx) },
             )
             Spacer(Modifier.height(8.dp))
             Text(
