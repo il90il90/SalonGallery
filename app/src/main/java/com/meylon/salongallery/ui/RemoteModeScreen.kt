@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -199,10 +200,47 @@ fun RemoteModeScreen(actions: AppActions) {
     var showSettings by remember { mutableStateOf(false) }
     var showManual by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf<ScreenInfo?>(null) }
+    var connected by remember { mutableStateOf(true) }
+    var lostScreen by remember { mutableStateOf(false) }  // disconnected AND can't re-find it
+    var screenHasPin by remember { mutableStateOf(false) }
+    var settingsUnlocked by remember { mutableStateOf(false) }
+    var showPinGate by remember { mutableStateOf(false) }
+
+    // Fetch whether the selected screen has a PIN (gates opening its settings from the Remote).
+    LaunchedEffect(selected?.key) {
+        settingsUnlocked = false
+        screenHasPin = selected?.let { PhotoSender.getSettings(it.host, it.port)?.hasPin } ?: false
+    }
+    fun openSettings() { if (screenHasPin && !settingsUnlocked) showPinGate = true else showSettings = true }
 
     LaunchedEffect(selected?.host, selected?.port) {
         val s = selected
         info = if (s != null) PhotoSender.getInfo(s.host, s.port) else null
+    }
+
+    // Connection watchdog: the Display's HTTP port changes when its app restarts, so a cached
+    // host:port goes stale and commands silently fail. Ping the screen; on failure re-resolve it
+    // from live NSD (same service key, fresh address) and surface the status so the Remote never
+    // pretends it is connected when it is not.
+    LaunchedEffect(selected?.key) {
+        if (selected == null) { connected = true; lostScreen = false; return@LaunchedEffect }
+        while (true) {
+            val s = selected ?: break
+            val ok = PhotoSender.ping(s.host, s.port) != null
+            connected = ok
+            if (!ok) {
+                val fresh = session.screens.value.firstOrNull { it.key == s.key || it.name == s.name }
+                if (fresh != null && (fresh.host != s.host || fresh.port != s.port)) {
+                    selected = fresh
+                    lostScreen = false
+                    continue  // retry immediately against the fresh address
+                }
+                lostScreen = session.screens.value.none { it.key == s.key || it.name == s.name }
+            } else {
+                lostScreen = false
+            }
+            kotlinx.coroutines.delay(if (ok) 4000 else 1500)
+        }
     }
 
     SalonBackground {
@@ -215,7 +253,7 @@ fun RemoteModeScreen(actions: AppActions) {
                     .padding(horizontal = 20.dp, vertical = 16.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                TopBar(onSettings = { showSettings = true })
+                TopBar(onSettings = { openSettings() })
                 Spacer(Modifier.height(24.dp))
 
                 val target = selected
@@ -243,6 +281,8 @@ fun RemoteModeScreen(actions: AppActions) {
                 } else {
                     ControlPanel(
                         screen = target,
+                        connected = connected,
+                        lostScreen = lostScreen,
                         onBack = { selected = null; info = null },
                         onInfoRefresh = { scope -> scope.launch { info = PhotoSender.getInfo(target.host, target.port) } },
                         bottomInset = navBottom,
@@ -257,6 +297,16 @@ fun RemoteModeScreen(actions: AppActions) {
             onConnect = { host, port -> selected = DiscoveredScreen("manual", host, host, port); showManual = false },
             onDismiss = { showManual = false },
         )
+    }
+
+    if (showPinGate) {
+        selected?.let { s ->
+            ScreenPinGate(
+                screen = s,
+                onSuccess = { showPinGate = false; settingsUnlocked = true; showSettings = true },
+                onDismiss = { showPinGate = false },
+            )
+        }
     }
 
     if (showSettings) {
@@ -299,6 +349,56 @@ fun RemoteModeScreen(actions: AppActions) {
                 }
             },
         )
+    }
+}
+
+private fun formatBytes(b: Long): String = when {
+    b <= 0L -> ""
+    b >= 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f MB", b / (1024.0 * 1024.0))
+    b >= 1024L -> "${b / 1024L} KB"
+    else -> "$b B"
+}
+
+@Composable
+private fun ScreenPinGate(screen: DiscoveredScreen, onSuccess: () -> Unit, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(false) }
+    val tf = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+        focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+    )
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.clip(RoundedCornerShape(24.dp)).background(com.meylon.salongallery.ui.theme.ElecSurface)
+                .border(1.dp, ElecBorder, RoundedCornerShape(24.dp)).padding(24.dp).imePadding(),
+        ) {
+            Text(stringResource(R.string.admin_enter_pin), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6); error = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(), colors = tf,
+                placeholder = { Text(stringResource(R.string.admin_pin_hint), color = TextTertiary) },
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+            )
+            if (error) { Spacer(Modifier.height(8.dp)); Text(stringResource(R.string.admin_pin_wrong), style = MaterialTheme.typography.labelMedium, color = Color(0xFFF87171)) }
+            Spacer(Modifier.height(16.dp))
+            GradientButton(
+                text = stringResource(R.string.admin_unlock), enabled = !checking && pin.length >= 4,
+                onClick = {
+                    checking = true
+                    scope.launch {
+                        if (PhotoSender.checkScreenPin(screen.host, screen.port, pin)) onSuccess()
+                        else { error = true; pin = "" }
+                        checking = false
+                    }
+                },
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlineButton(text = stringResource(R.string.cancel), onClick = onDismiss)
+        }
     }
 }
 
@@ -504,6 +604,8 @@ private fun ControlPanel(
     onBack: () -> Unit,
     onInfoRefresh: (kotlinx.coroutines.CoroutineScope) -> Unit,
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
+    connected: Boolean = true,
+    lostScreen: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -599,6 +701,10 @@ private fun ControlPanel(
     }
 
     Column(Modifier.fillMaxWidth()) {
+        if (!connected) {
+            ConnectionBanner(lostScreen = lostScreen, onChoose = onBack)
+            Spacer(Modifier.height(14.dp))
+        }
         NowShowingHero(
             screen = screen,
             current = lib?.let { it.items.getOrNull(it.current) },
@@ -756,7 +862,33 @@ private fun ControlPanel(
     }
 }
 
-/** The big "now showing on your wall" framed preview + connection status. */
+@Composable
+private fun ConnectionBanner(lostScreen: Boolean, onChoose: () -> Unit) {
+    val amber = Color(0xFFE0A857)
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(amber.copy(alpha = 0.12f)).border(1.dp, amber.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(amber))
+            Text(
+                stringResource(if (lostScreen) R.string.conn_offline else R.string.conn_reconnecting),
+                style = MaterialTheme.typography.titleSmall, color = TextPrimary, modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            stringResource(if (lostScreen) R.string.conn_offline_hint else R.string.conn_reconnecting_hint),
+            style = MaterialTheme.typography.bodySmall, color = TextSecondary,
+        )
+        if (lostScreen) {
+            Spacer(Modifier.height(10.dp))
+            OutlineButton(text = stringResource(R.string.conn_choose), onClick = onChoose)
+        }
+    }
+}
+
 @Composable
 private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenName: String) {
     Column(Modifier.fillMaxWidth()) {
@@ -879,6 +1011,8 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     var current by remember { mutableIntStateOf(0) }
     var pinned by remember { mutableStateOf<Set<String>>(emptySet()) }
     var durations by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var byteMap by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var dimMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var albums by remember { mutableStateOf<List<AlbumInfo>>(emptyList()) }
     var activeId by remember { mutableStateOf("all") }
     var loading by remember { mutableStateOf(true) }
@@ -891,7 +1025,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     fun refresh() {
         scope.launch {
             val l = PhotoSender.getList(screen.host, screen.port)
-            if (l != null) { items = l.items; current = l.current; activeId = l.albumId; pinned = l.pinned; durations = l.durations }
+            if (l != null) { items = l.items; current = l.current; activeId = l.albumId; pinned = l.pinned; durations = l.durations; byteMap = l.bytes; dimMap = l.dims }
             val a = PhotoSender.getAlbums(screen.host, screen.port)
             if (a != null) albums = a.albums
             loading = false
@@ -1025,6 +1159,16 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                                     style = MaterialTheme.typography.labelMedium, color = if (isVideo) NeonBlue else TextSecondary,
                                                 )
                                                 if (isPinned) Icon(Icons.Outlined.PushPin, contentDescription = "pinned", tint = NeonCyan, modifier = Modifier.size(15.dp))
+                                            }
+                                            run {
+                                                val dim = dimMap[name]
+                                                val b = byteMap[name] ?: 0L
+                                                val sizeLabel = formatBytes(b)
+                                                val meta = listOfNotNull(dim?.takeIf { it.isNotBlank() }, sizeLabel.takeIf { it.isNotBlank() }).joinToString("  ·  ")
+                                                if (meta.isNotBlank()) {
+                                                    Spacer(Modifier.height(2.dp))
+                                                    Text(meta, style = MaterialTheme.typography.labelSmall, color = TextTertiary)
+                                                }
                                             }
                                             Spacer(Modifier.height(3.dp))
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1815,6 +1959,17 @@ private fun FrameSheet(
     }
 }
 
+/**
+ * The expensive live frame render, split out and keyed only on (frameId, adaptive, width) so Compose
+ * SKIPS it when only the selection changes — picking a frame then no longer re-renders the whole grid.
+ */
+@Composable
+private fun FrameThumb(frameId: Int, adaptive: Boolean, width: Float) {
+    FramedContent(frameId, width, adaptiveColor = if (adaptive) Color(0xFF6E8CA8) else null, modifier = Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF7C8898), Color(0xFF3E4650)))))
+    }
+}
+
 /** A small live preview of a frame wrapped around a neutral sample, for the picker. */
 @Composable
 private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showCheck: Boolean = false, onClick: () -> Unit) {
@@ -1827,9 +1982,7 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showChe
             Modifier.size(80.dp).clip(RoundedCornerShape(12.dp))
                 .border(if (selected) 2.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(12.dp)),
         ) {
-            FramedContent(f.id, width, adaptiveColor = if (f.adaptive) Color(0xFF6E8CA8) else null, modifier = Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF7C8898), Color(0xFF3E4650)))))
-            }
+            FrameThumb(f.id, f.adaptive, width)
             if (showCheck && selected) Box(
                 Modifier.align(Alignment.TopEnd).padding(4.dp).size(22.dp).clip(RoundedCornerShape(50)).background(NeonCyan),
                 contentAlignment = Alignment.Center,
@@ -1929,7 +2082,7 @@ private fun TextSheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(24.dp)) {
             Text(stringResource(R.string.text_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(

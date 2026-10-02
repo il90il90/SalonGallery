@@ -62,6 +62,10 @@ class AlbumStore(private val file: File, private val library: LibraryStore) {
         albums.find { it.id == id }?.name = name.ifBlank { "Album" }; save()
     }
 
+    /** The photo names currently in this album (empty for ALL or unknown ids). */
+    @Synchronized fun photosIn(id: String): List<String> =
+        if (id == ALL) emptyList() else albums.find { it.id == id }?.photos?.toList() ?: emptyList()
+
     @Synchronized fun deleteAlbum(id: String) {
         albums.removeAll { it.id == id }
         if (activeId == id) activeId = ALL

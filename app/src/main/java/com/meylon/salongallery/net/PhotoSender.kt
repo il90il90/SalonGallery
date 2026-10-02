@@ -27,6 +27,8 @@ data class LibraryList(
     val items: List<String>,
     val pinned: Set<String> = emptySet(),
     val durations: Map<String, Int> = emptyMap(),
+    val bytes: Map<String, Long> = emptyMap(),   // file size per item
+    val dims: Map<String, String> = emptyMap(),  // "W×H" per item (photos only)
 )
 
 data class AlbumInfo(val id: String, val name: String, val count: Int)
@@ -87,9 +89,19 @@ object PhotoSender {
             val durs = buildMap {
                 if (darr != null) for (i in 0 until minOf(darr.length(), items.size)) put(items[i], darr.optInt(i))
             }
+            val barr = o.optJSONArray("bytes")
+            val bmap = buildMap {
+                if (barr != null) for (i in 0 until minOf(barr.length(), items.size)) put(items[i], barr.optLong(i))
+            }
+            val diarr = o.optJSONArray("dims")
+            val dmap = buildMap {
+                if (diarr != null) for (i in 0 until minOf(diarr.length(), items.size)) {
+                    val d = diarr.optString(i); if (d.isNotBlank()) put(items[i], d)
+                }
+            }
             LibraryList(
                 o.optInt("current", 0), o.optString("mode", ""),
-                o.optString("albumId", "all"), o.optString("album", "All"), items, pins, durs,
+                o.optString("albumId", "all"), o.optString("album", "All"), items, pins, durs, bmap, dmap,
             )
         } catch (e: Exception) { null }
     }

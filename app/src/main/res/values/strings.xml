@@ -82,6 +82,11 @@
     <string name="remote_connect_ip">Connect by IP</string>
     <string name="remote_connect_ip_hint">Enter the screen\'s address if it isn\'t found automatically.</string>
     <string name="remote_connect">Connect</string>
+    <string name="conn_reconnecting">Reconnecting to the screen…</string>
+    <string name="conn_reconnecting_hint">Lost the connection for a moment — changes will apply again once it\'s back.</string>
+    <string name="conn_offline">Screen is offline</string>
+    <string name="conn_offline_hint">This screen isn\'t on the network right now. Check it\'s on and connected to the same Wi-Fi.</string>
+    <string name="conn_choose">Choose another screen</string>
     <string name="remote_change_role">Return screen to setup</string>
     <string name="remote_change_role_hint">Switch this screen back to the role chooser (to make it a Remote, or re-pair).</string>
     <string name="remote_change_role_confirm">The screen will drop back to the setup chooser. You can pick Display again there.</string>

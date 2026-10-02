@@ -361,14 +361,29 @@ class ScreenSession(
         }
     }
 
+    private val dimCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private fun dimsOf(name: String): String {
+        if (isVideoName(name)) return ""
+        return dimCache.getOrPut(name) {
+            val f = library.fileFor(name) ?: return@getOrPut ""
+            runCatching {
+                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(f.path, o)
+                if (o.outWidth > 0 && o.outHeight > 0) "${o.outWidth}×${o.outHeight}" else ""
+            }.getOrDefault("")
+        }
+    }
+
     override fun listJson(): String {
         val names = albums.activePhotoNames()
         val cur = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)
         val items = names.joinToString(",") { "\"${esc(it)}\"" }
         val pinned = library.pinnedNames().joinToString(",") { "\"${esc(it)}\"" }
         val durs = names.joinToString(",") { durations.get(it).toString() }
+        val bytes = names.joinToString(",") { (library.fileFor(it)?.length() ?: 0L).toString() }
+        val dims = names.joinToString(",") { "\"${dimsOf(it)}\"" }
         return """{"current":$cur,"mode":"${mode.value.name}","album":"${esc(albums.activeName())}",""" +
-            """"albumId":"${esc(albums.activeId)}","pinned":[$pinned],"durs":[$durs],"items":[$items]}"""
+            """"albumId":"${esc(albums.activeId)}","pinned":[$pinned],"durs":[$durs],"bytes":[$bytes],"dims":[$dims],"items":[$items]}"""
     }
 
     override fun thumbnail(name: String): ByteArray? {
@@ -464,8 +479,20 @@ class ScreenSession(
     override fun renameAlbum(id: String, name: String) { albums.renameAlbum(id, name) }
 
     override fun deleteAlbum(id: String) {
+        // Deleting an album also deletes the photos that were in it (not move them to All).
+        val members = albums.photosIn(id)
         albums.deleteAlbum(id)
-        currentIndex.value = 0
+        members.forEach { name ->
+            runCatching {
+                library.delete(name)
+                albums.onPhotoDeleted(name)
+                transforms.remove(name); durations.remove(name); sources.remove(name)
+                File(thumbDir, "$name.jpg").delete()
+            }
+        }
+        val names = albums.activePhotoNames()
+        if (names.isEmpty() && mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
+        currentIndex.value = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, maxOf(0, names.size - 1))
         libraryVersion.value = System.currentTimeMillis()
     }
 
