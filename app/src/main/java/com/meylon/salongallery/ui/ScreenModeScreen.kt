@@ -44,6 +44,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material.icons.outlined.Lan
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -354,7 +356,15 @@ fun ScreenModeScreen(actions: AppActions) {
                     )
                 }
 
-            else -> WaitingToPair(deviceName = deviceName, running = running)
+            else -> {
+                val net = remember(running) { networkInfo(context, session.port) }
+                WaitingToPair(
+                    deviceName = session.effectiveName(),
+                    running = running,
+                    ssid = net.first,
+                    address = net.second,
+                )
+            }
         }
 
         if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clock)
@@ -942,7 +952,32 @@ private fun openScreensaverSettings(context: android.content.Context) {
 }
 
 @Composable
-private fun WaitingToPair(deviceName: String, running: Boolean) {
+private fun NetChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+    Row(
+        Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF14141F)).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Icon(icon, null, tint = NeonCyan, modifier = Modifier.size(15.dp))
+        Text(text, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+    }
+}
+
+/** (ssid, "ip:port") for the current Wi-Fi connection, for display on the waiting screen. */
+private fun networkInfo(context: android.content.Context, port: Int): Pair<String?, String?> {
+    val ssid = runCatching {
+        val wm = context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+        wm?.connectionInfo?.ssid?.trim('"')?.takeIf { it.isNotBlank() && !it.contains("unknown", true) && it != "0x" }
+    }.getOrNull()
+    val ip = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
+            .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }?.hostAddress
+    }.getOrNull()
+    val address = ip?.let { if (port > 0) "$it : $port" else it }
+    return ssid to address
+}
+
+@Composable
+private fun WaitingToPair(deviceName: String, running: Boolean, ssid: String? = null, address: String? = null) {
     SalonBackground {
         Column(
             modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
@@ -980,7 +1015,14 @@ private fun WaitingToPair(deviceName: String, running: Boolean) {
                     style = MaterialTheme.typography.labelMedium, color = TextSecondary,
                 )
             }
-            Spacer(Modifier.height(10.dp))
+            if (ssid != null || address != null) {
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ssid?.let { NetChip(Icons.Outlined.Wifi, it) }
+                    address?.let { NetChip(Icons.Outlined.Lan, it) }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
                 stringResource(R.string.screen_remote_hint),
                 style = MaterialTheme.typography.labelMedium,
