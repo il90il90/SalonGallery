@@ -49,7 +49,10 @@
     <string name="home_photos">Photos &amp; video</string>
     <string name="home_art">Art</string>
     <string name="home_gphotos">Google Photos</string>
-    <string name="home_folder">Whole folder</string>
+    <string name="add_photos">Photos</string>
+    <string name="add_videos">Videos</string>
+    <string name="add_both">Photos &amp; videos</string>
+    <string name="add_folder">Whole folder…</string>
     <string name="folder_empty">No photos or videos in that folder.</string>
     <string name="gphotos_title">Google Photos</string>
     <string name="gphotos_hint">Show a Google Photos album on the screen — just paste a shared-album link. No sign-in needed.</string>

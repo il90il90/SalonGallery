@@ -603,13 +603,13 @@ class ScreenSession(
      * Face-aware default orientation (and crop focus): if the people in a photo only stand upright after a turn
      * (a quarter turn or upside down), store that turn as the photo's rotation. Runs on one
      * low-priority background thread so uploads stay snappy; the user's manual rotate always wins.
-     * Each photo is checked once (remembered in orient_checked_v2.txt), so photos that were already in
+     * Each photo is checked once (remembered in orient_checked_v3.txt), so photos that were already in
      * the library before this existed get straightened too, by [sweepOrientation] at start.
      */
     private val orientExec = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "salon-orient").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
     }
-    private val orientFile = File(app.filesDir, "orient_checked_v2.txt")
+    private val orientFile = File(app.filesDir, "orient_checked_v3.txt")
     private val orientChecked: MutableSet<String> = java.util.Collections.synchronizedSet(
         runCatching { orientFile.readLines().filter { it.isNotBlank() }.toMutableSet() }.getOrDefault(mutableSetOf())
     )

@@ -715,7 +715,6 @@ private fun ControlPanel(
     var stagger by remember { mutableStateOf(false) }
     var spreadMix by remember { mutableStateOf("always") }
     var mediaMenu by remember { mutableStateOf(false) }   // All / Photos / Videos chooser for "Add"
-    var folderMenu by remember { mutableStateOf(false) }  // …and for "Whole folder"
     var folderKind by remember { mutableStateOf("all") }  // which types the chosen folder should send
     var motionSpeed by remember { mutableStateOf("medium") }
     var showFrames by remember { mutableStateOf(false) }
@@ -900,7 +899,12 @@ private fun ControlPanel(
                 HomeAction(Modifier.fillMaxWidth(), Icons.Outlined.AddPhotoAlternate, stringResource(R.string.home_photos), NeonCyan, TintClay, !busy) {
                     mediaMenu = true
                 }
-                MediaKindMenu(mediaMenu, { mediaMenu = false }) { kind -> mediaMenu = false; mediaPicker.launch(mediaTypesFor(kind)) }
+                // One "Add" entry point: pick photos, videos, both, or a whole folder.
+                AddSourceMenu(
+                    mediaMenu, { mediaMenu = false },
+                    onFiles = { kind -> mediaMenu = false; mediaPicker.launch(mediaTypesFor(kind)) },
+                    onFolder = { kind -> mediaMenu = false; folderKind = kind; folderPicker.launch(null) },
+                )
             }
             HomeAction(Modifier.weight(1f), Icons.Outlined.Palette, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.home_music), NeonViolet, TintPlum, !busy) { showMusic = true }
@@ -908,11 +912,7 @@ private fun ControlPanel(
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HomeAction(Modifier.weight(1f), Icons.Outlined.Link, stringResource(R.string.home_gphotos), NeonBlue, TintBlue, !busy) { showGooglePhotos = true }
-            Box(Modifier.weight(1f)) {
-                HomeAction(Modifier.fillMaxWidth(), Icons.Outlined.Folder, stringResource(R.string.home_folder), NeonTeal, TintSage, !busy) { folderMenu = true }
-                MediaKindMenu(folderMenu, { folderMenu = false }) { kind -> folderMenu = false; folderKind = kind; folderPicker.launch(null) }
-            }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(2f))
         }
 
         Spacer(Modifier.height(20.dp))
@@ -2494,6 +2494,26 @@ private fun mediaTypesFor(kind: String): Array<String> = when (kind) {
     "photo" -> arrayOf("image/*")
     "video" -> arrayOf("video/*")
     else -> arrayOf("image/*", "video/*")
+}
+
+/**
+ * The single "Add" menu: bring photos, videos or both from the gallery, or send a whole folder at
+ * once. Merges what used to be two near-identical buttons into one clear choice. [onFiles] opens the
+ * file picker for the chosen kind; [onFolder] opens the folder picker.
+ */
+@Composable
+private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (String) -> Unit, onFolder: (String) -> Unit) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, containerColor = com.il90.salongallery.ui.theme.ElecSurface) {
+        DropdownMenuItem(text = { Text(stringResource(R.string.add_photos), color = TextPrimary) }, onClick = { onFiles("photo") },
+            leadingIcon = { Icon(Icons.Outlined.Image, null, tint = NeonCyan) })
+        DropdownMenuItem(text = { Text(stringResource(R.string.add_videos), color = TextPrimary) }, onClick = { onFiles("video") },
+            leadingIcon = { Icon(Icons.Outlined.PlayArrow, null, tint = NeonBlue) })
+        DropdownMenuItem(text = { Text(stringResource(R.string.add_both), color = TextPrimary) }, onClick = { onFiles("all") },
+            leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null, tint = NeonCyan) })
+        androidx.compose.material3.HorizontalDivider(color = ElecBorder)
+        DropdownMenuItem(text = { Text(stringResource(R.string.add_folder), color = TextPrimary) }, onClick = { onFolder("all") },
+            leadingIcon = { Icon(Icons.Outlined.Folder, null, tint = NeonTeal) })
+    }
 }
 
 /**
