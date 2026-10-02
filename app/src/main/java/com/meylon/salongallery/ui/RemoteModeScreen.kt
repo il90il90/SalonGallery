@@ -128,6 +128,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -717,6 +718,14 @@ private fun ControlPanel(
             screen = screen,
             current = lib?.let { it.items.getOrNull(it.current) },
             screenName = screen.name,
+            onSwipe = { delta ->
+                val items = lib?.items ?: emptyList()
+                if (items.size > 1) {
+                    val cur = lib?.current ?: 0
+                    val ni = ((cur + delta) % items.size + items.size) % items.size
+                    scope.launch { PhotoSender.showNow(screen.host, screen.port, items[ni]); refreshLib() }
+                }
+            },
         )
 
         Spacer(Modifier.height(16.dp))
@@ -899,7 +908,7 @@ private fun ConnectionBanner(lostScreen: Boolean, onChoose: () -> Unit) {
 }
 
 @Composable
-private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenName: String) {
+private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenName: String, onSwipe: (Int) -> Unit = {}) {
     Column(Modifier.fillMaxWidth()) {
         Box(
             Modifier.fillMaxWidth()
@@ -909,7 +918,20 @@ private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenNam
                 .border(1.dp, ElecBorder, RoundedCornerShape(24.dp))
                 .padding(6.dp),
         ) {
-            Box(Modifier.fillMaxWidth().height(224.dp).clip(RoundedCornerShape(17.dp)).background(ElecSurfaceElevated)) {
+            Box(
+                Modifier.fillMaxWidth().height(224.dp).clip(RoundedCornerShape(17.dp)).background(ElecSurfaceElevated)
+                    // Swipe the "now showing" photo to flip it on the wall too.
+                    .pointerInput(current) {
+                        var dx = 0f
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                if (dx <= -40f) onSwipe(1) else if (dx >= 40f) onSwipe(-1)
+                                dx = 0f
+                            },
+                            onHorizontalDrag = { _, amount -> dx += amount },
+                        )
+                    },
+            ) {
                 if (current != null) {
                     AsyncImage(
                         model = PhotoSender.fullUrl(screen.host, screen.port, current),
@@ -1321,7 +1343,7 @@ private fun DurationDialog(screen: DiscoveredScreen, name: String, onClose: () -
     // 0 means "default" for photos, "full clip" for videos.
     val options = listOf(0, 3, 5, 10, 20, 30, 60)
     val labels = options.map { if (it == 0) (if (isVideo) "Full clip" else "Default") else "${it}s" }
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().padding(24.dp)) {
             Text(stringResource(R.string.duration_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(8.dp))
@@ -1507,7 +1529,7 @@ private fun NewAlbumDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddToAlbumSheet(albums: List<AlbumInfo>, onPick: (String) -> Unit, onNew: () -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().padding(24.dp)) {
             Text(stringResource(R.string.album_add_to), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(14.dp))
@@ -1710,7 +1732,7 @@ private fun RssSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
         "Hacker News" to "https://hnrss.org/frontpage",
         "NYT" to "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
     )
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text(stringResource(R.string.rss_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(4.dp))
@@ -1804,7 +1826,7 @@ private fun EffectsSheet(
     onEffect: (String) -> Unit, onFilter: (String) -> Unit, onPool: (Set<String>) -> Unit,
     onFilterPool: (Set<String>) -> Unit, onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text(stringResource(R.string.effects_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
 
@@ -1928,7 +1950,7 @@ private fun FrameSheet(
     onPick: (Int) -> Unit, onWidth: (Float) -> Unit, onRandom: (Boolean) -> Unit, onPool: (Set<Int>) -> Unit, onDismiss: () -> Unit,
 ) {
     var w by remember { mutableStateOf(width) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.tile_frame), style = MaterialTheme.typography.headlineSmall, color = TextPrimary, modifier = Modifier.weight(1f))
@@ -2033,7 +2055,7 @@ private fun SlideshowSheet(
     onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
     onFit: (String) -> Unit, onCollage: (Boolean) -> Unit, onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text(stringResource(R.string.tile_slideshow), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
 
@@ -2111,7 +2133,7 @@ private fun TextSheet(
         onClock(clock, clockPositions[clockPosIdx], clockDate, clockStyles[clockStyleIdx], clockSizes[clockSizeIdx])
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(24.dp)) {
             Text(stringResource(R.string.text_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(16.dp))
@@ -2185,7 +2207,7 @@ private fun MusicSheet(
     }
     fun bump() { refresh++ }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.music_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary, modifier = Modifier.weight(1f))
@@ -2281,7 +2303,7 @@ private fun FreeMusicSheet(onDownload: (FreeTrack) -> Unit, onDismiss: () -> Uni
             previewing = t.title
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(stringResource(R.string.music_free), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(4.dp))
@@ -2350,7 +2372,7 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     }
     LaunchedEffect(activeCat, source) { run(if (query.isBlank()) activeCat else query) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
             Text(stringResource(R.string.art_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(4.dp))

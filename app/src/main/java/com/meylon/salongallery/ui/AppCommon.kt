@@ -95,7 +95,7 @@ fun SettingsSheet(
     onDismiss: () -> Unit,
     extra: @Composable ColumnScope.() -> Unit = {},
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
             Text(

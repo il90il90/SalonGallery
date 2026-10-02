@@ -168,11 +168,13 @@ object UpdateManager {
 
     /** Turns the release-body HTML from the Atom feed into a few readable lines. */
     private fun cleanNotes(html: String): String = html
+        // Decode entities FIRST — GitHub's Atom feed HTML-encodes the body (&lt;p&gt;…), so the
+        // tags only become strippable after decoding; otherwise raw <p> leaks into the UI.
+        .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+        .replace("&#39;", "'").replace("&apos;", "'").replace("&amp;", "&")
         .replace(Regex("<li[^>]*>", RegexOption.IGNORE_CASE), "• ")
         .replace(Regex("</(p|li|h\\d|ul|ol|div)>", RegexOption.IGNORE_CASE), "\n")
         .replace(Regex("<[^>]+>"), " ")
-        .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-        .replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'")
         .replace(Regex("[ \\t]+"), " ")
         .replace(Regex("\\n{2,}"), "\n")
         .lines().map { it.trim() }.filter { it.isNotBlank() }
