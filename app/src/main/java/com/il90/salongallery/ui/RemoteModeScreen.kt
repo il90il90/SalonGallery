@@ -709,6 +709,7 @@ private fun ControlPanel(
     var filterPool by remember { mutableStateOf(setOf("none", "mono", "sepia", "warm", "cool", "vignette")) }
     var fit by remember { mutableStateOf("fill") }
     var collage by remember { mutableStateOf(false) }
+    var layout by remember { mutableStateOf("single") }
     var showFrames by remember { mutableStateOf(false) }
     var showEffects by remember { mutableStateOf(false) }
     var showSlideshow by remember { mutableStateOf(false) }
@@ -939,6 +940,8 @@ private fun ControlPanel(
     if (showSlideshow) {
         SlideshowSheet(
             shuffle = shuffle, intervalMs = intervalMs, orientation = orientation, fit = fit, collage = collage,
+            layout = layout,
+            onLayout = { layout = it; scope.launch { PhotoSender.setLayout(screen.host, screen.port, it) } },
             onShuffle = { shuffle = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, intervalMs, it) } },
             onInterval = { intervalMs = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, it, shuffle) } },
             onOrientation = { orientation = it; scope.launch { PhotoSender.setOrientation(screen.host, screen.port, it) } },
@@ -2410,6 +2413,7 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showChe
 @Composable
 private fun SlideshowSheet(
     shuffle: Boolean, intervalMs: Long, orientation: String, fit: String, collage: Boolean,
+    layout: String = "single", onLayout: (String) -> Unit = {},
     onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
     onFit: (String) -> Unit, onCollage: (Boolean) -> Unit, onDismiss: () -> Unit,
 ) {
@@ -2422,6 +2426,14 @@ private fun SlideshowSheet(
             Spacer(Modifier.height(8.dp))
             val fits = listOf("fill", "fit", "blur")
             SegRow(listOf("Fill", "Fit", "Blur"), fits.indexOf(fit).coerceAtLeast(0)) { onFit(fits[it]) }
+
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.slideshow_layout), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            val layouts = listOf("single", "mosaic", "scatter", "random")
+            SegRow(listOf("Single", "Mosaic", "Scatter", "Random"), layouts.indexOf(layout).coerceAtLeast(0)) { onLayout(layouts[it]) }
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.slideshow_layout_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
 
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_order), style = MaterialTheme.typography.labelMedium, color = TextSecondary)

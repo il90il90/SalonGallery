@@ -121,6 +121,7 @@ import com.il90.salongallery.net.isVideoName
 import com.il90.salongallery.net.PhotoFit
 import com.il90.salongallery.net.PhotoFilter
 import com.il90.salongallery.net.PhotoTransform
+import com.il90.salongallery.net.LayoutMode
 import com.il90.salongallery.net.ScreenOrientation
 import com.il90.salongallery.net.SlideEffect
 import com.il90.salongallery.net.ScreenSessionHolder
@@ -176,6 +177,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val photoFit by session.photoFit.collectAsStateWithLifecycle()
     val photoFilter by session.photoFilter.collectAsStateWithLifecycle()
     val collage by session.collage.collectAsStateWithLifecycle()
+    val layout by session.layout.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
     val clock by session.clock.collectAsStateWithLifecycle()
     val rssOn by session.rssOn.collectAsStateWithLifecycle()
@@ -375,6 +377,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         filter = photoFilter,
                         volume = volume,
                         collageOn = collage,
+                        layout = layout,
                         orientationMap = orientationMap,
                         transformOf = { session.transformFor(it.name) },
                         durationOf = { session.durationFor(it.name) },
@@ -468,6 +471,7 @@ private fun Slideshow(
     filter: PhotoFilter,
     volume: Float,
     collageOn: Boolean,
+    layout: LayoutMode = LayoutMode.SINGLE,
     orientationMap: Map<String, Boolean>,
     transformOf: (File) -> PhotoTransform,
     durationOf: (File) -> Int,
@@ -480,10 +484,38 @@ private fun Slideshow(
 
     // Which items (by index) form the slide starting at [from]: a collage of same-orientation
     // photos that would otherwise leave big side gaps, or just the single item.
+    // Which spread (if any) the slide starting at [from] is: fixed by the layout setting, or for
+    // RANDOM a seeded per-slide draw (so a given slide always renders the same way) — roughly a
+    // third singles, a third mosaics, a third scatters. Needs at least 4 photos to be worth it.
+    fun spreadAt(from: Int): LayoutMode? {
+        if (files.size < 4) return null
+        return when (layout) {
+            LayoutMode.SINGLE -> null
+            LayoutMode.MOSAIC -> LayoutMode.MOSAIC
+            LayoutMode.SCATTER -> LayoutMode.SCATTER
+            LayoutMode.RANDOM -> when (kotlin.random.Random(from.toLong() * 7919 + 17).nextInt(3)) {
+                0 -> null; 1 -> LayoutMode.MOSAIC; else -> LayoutMode.SCATTER
+            }
+        }
+    }
+
     fun membersAt(from: Int): List<Int> {
+        val f0 = files[from]
+        if (isVideoName(f0.name)) return listOf(from)
+        // A mosaic / scatter spread: this photo plus the next 3–4 stills (wrapping, skipping clips).
+        if (spreadAt(from) != null) {
+            val want = 4 + kotlin.random.Random(from.toLong() * 31 + 3).nextInt(2)   // 4 or 5
+            val out = mutableListOf(from)
+            var j = from
+            while (out.size < want) {
+                j = (j + 1) % files.size
+                if (j == from) break
+                if (!isVideoName(files[j].name)) out.add(j)
+            }
+            if (out.size >= 3) return out
+        }
         if (!collageOn || files.size < 2) return listOf(from)
         val f = files[from]
-        if (isVideoName(f.name)) return listOf(from)
         val portrait = orientationMap[f.name] ?: return listOf(from)
         // Fillable when the photo's orientation is opposite the screen's (big side gaps).
         val fillable = portrait == screenLandscape
@@ -508,7 +540,7 @@ private fun Slideshow(
     }
 
     // Still photos advance on their own duration (or the slideshow default); videos advance when they end.
-    LaunchedEffect(idx, shuffle, intervalMs, files.size, currentIsVideo, collageOn) {
+    LaunchedEffect(idx, shuffle, intervalMs, files.size, currentIsVideo, collageOn, layout) {
         if (currentIsVideo || files.size <= 1) return@LaunchedEffect
         val sec = durationOf(files[idx])
         delay(if (sec > 0) sec * 1000L else intervalMs)
@@ -547,8 +579,13 @@ private fun Slideshow(
                 loop = files.size <= 1, capSec = durationOf(file),
                 onEnded = { advanceFrom(i) },
             )
+        } else if (members.size >= 3 && spreadAt(i) != null) {
+            val mf = members.map { files[it] }
+            val rotOf: (File) -> Int = { transformOf(it).rotNorm }
+            if (spreadAt(i) == LayoutMode.MOSAIC) MosaicSlide(mf, filter = eff, seed = i, landscape = screenLandscape, rotOf = rotOf)
+            else ScatterSlide(mf, filter = eff, seed = i, rotOf = rotOf)
         } else if (members.size >= 2) {
-            CollageSlide(members.map { files[it] }, filter = eff, horizontal = screenLandscape)
+            CollageSlide(members.map { files[it] }, filter = eff, horizontal = screenLandscape, rotOf = { transformOf(it).rotNorm })
         } else {
             val kb = if (effAt(i) == SlideEffect.KENBURNS) {
                 val a = remember(i) { Animatable(1f) }
@@ -603,19 +640,108 @@ private fun AnimatedContentTransitionScope<Int>.transitionFor(e: SlideEffect): C
  * Lays several same-orientation photos side by side as one piece — a clean gallery "multi-aperture
  * mat": a soft mat-coloured separator between photos, each photo recessed by a hairline edge.
  */
+/**
+ * 3–5 photos in a gutter-separated grid on a warm mat — the gutters are the "divider strips". The
+ * template is chosen by [seed] so each slide gets a different but stable arrangement.
+ */
 @Composable
-private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boolean) {
+private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, landscape: Boolean, rotOf: (File) -> Int = { 0 }) {
     val cf = lookFilter(filter)
-    val mat = Color(0xFFEBE4D7)      // warm gallery mat
-    val gap = 12.dp
+    val mat = Color(0xFFEBE4D7)
+    val gap = 10.dp
+    val r = kotlin.random.Random(seed.toLong() * 104729 + 7)
+    val n = files.size.coerceIn(3, 5)
+    val f = files.take(n)
+
+    // Building blocks: a row/column of cells sharing space equally.
+    @Composable fun cell(file: File, m: Modifier) = CollageCell(file, cf, m, rot = rotOf(file))
+    @Composable fun strip(items: List<File>, m: Modifier, horizontal: Boolean) {
+        if (horizontal) Row(m, horizontalArrangement = Arrangement.spacedBy(gap)) { items.forEach { cell(it, Modifier.weight(1f).fillMaxHeight()) } }
+        else Column(m, verticalArrangement = Arrangement.spacedBy(gap)) { items.forEach { cell(it, Modifier.weight(1f).fillMaxWidth()) } }
+    }
+    // "Hero + strip": one large photo taking ~60% along the main axis, the rest sharing a strip
+    // beside it. On a landscape screen the hero sits left/right; on portrait, top/bottom.
+    @Composable fun heroAndStrip(heroFirst: Boolean) {
+        val hero = f[0]; val rest = f.drop(1)
+        if (landscape) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+            if (heroFirst) { cell(hero, Modifier.weight(1.5f).fillMaxHeight()); strip(rest, Modifier.weight(1f).fillMaxHeight(), horizontal = false) }
+            else { strip(rest, Modifier.weight(1f).fillMaxHeight(), horizontal = false); cell(hero, Modifier.weight(1.5f).fillMaxHeight()) }
+        } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
+            if (heroFirst) { cell(hero, Modifier.weight(1.5f).fillMaxWidth()); strip(rest, Modifier.weight(1f).fillMaxWidth(), horizontal = true) }
+            else { strip(rest, Modifier.weight(1f).fillMaxWidth(), horizontal = true); cell(hero, Modifier.weight(1.5f).fillMaxWidth()) }
+        }
+    }
+    // "Two bands": the photos split into two rows (landscape) or two columns (portrait).
+    @Composable fun twoBands(firstCount: Int) {
+        val a = f.take(firstCount); val b = f.drop(firstCount)
+        if (landscape) Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
+            strip(a, Modifier.weight(1f).fillMaxWidth(), horizontal = true); strip(b, Modifier.weight(1f).fillMaxWidth(), horizontal = true)
+        } else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+            strip(a, Modifier.weight(1f).fillMaxHeight(), horizontal = false); strip(b, Modifier.weight(1f).fillMaxHeight(), horizontal = false)
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(mat).padding(gap)) {
-        if (horizontal) {
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxHeight()) }
-            }
-        } else {
-            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
-                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxWidth()) }
+        when (n) {
+            3 -> heroAndStrip(heroFirst = r.nextBoolean())
+            4 -> when (r.nextInt(3)) { 0 -> twoBands(2); else -> heroAndStrip(heroFirst = r.nextBoolean()) }
+            else -> when (r.nextInt(3)) { 0 -> twoBands(2); 1 -> twoBands(3); else -> heroAndStrip(heroFirst = r.nextBoolean()) }
+        }
+        if (filter == PhotoFilter.VIGNETTE) VignetteOverlay()
+    }
+}
+
+/**
+ * 3–5 photos "tossed on a table": each a white-bordered print, slightly tilted, placed on a
+ * jittered grid so they read as a casual spread without burying one another. Seeded by [seed].
+ */
+@Composable
+private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotOf: (File) -> Int = { 0 }) {
+    val cf = lookFilter(filter)
+    val r = kotlin.random.Random(seed.toLong() * 65537 + 11)
+    val n = files.size.coerceIn(3, 5)
+    val f = files.take(n)
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF26201B))) {
+        // Faint table-top vignette so the prints sit "in" the surface rather than float on flat black.
+        Box(Modifier.matchParentSize().background(Brush.radialGradient(listOf(Color(0xFF3A312A), Color(0xFF1C1714)), radius = maxWidth.value * density * 0.75f)))
+        val w = maxWidth.value; val h = maxHeight.value          // dp
+        val landscape = w >= h
+        val cols = if (landscape) (if (n <= 3) n else 3) else 2
+        val rows = (n + cols - 1) / cols
+        val cellW = w / cols; val cellH = h / rows
+        // A print is a bit smaller than its cell so tilt + jitter leave breathing room.
+        val base = minOf(cellW, cellH) * 0.86f
+        f.forEachIndexed { k, file ->
+            val col = k % cols; val row = k / cols
+            // Centre a short last row.
+            val rowCount = if (row == rows - 1) n - row * cols else cols
+            val rowOffset = (cols - rowCount) * cellW / 2f
+            val size = base * (0.9f + r.nextFloat() * 0.2f)
+            val cx = rowOffset + col * cellW + cellW / 2f + (r.nextFloat() - 0.5f) * cellW * 0.22f
+            val cy = row * cellH + cellH / 2f + (r.nextFloat() - 0.5f) * cellH * 0.22f
+            val tilt = (r.nextFloat() - 0.5f) * 16f                    // ±8°
+            val border = size * 0.035f
+            Box(
+                Modifier
+                    .size(size.dp)
+                    .graphicsLayer {
+                        translationX = (cx - size / 2f) * density
+                        translationY = (cy - size / 2f) * density
+                        rotationZ = tilt
+                        shadowElevation = 22f * density
+                        shape = androidx.compose.ui.graphics.RectangleShape
+                        clip = false
+                    }
+                    .background(Color(0xFFF7F3EC))
+                    .padding(start = border.dp, top = border.dp, end = border.dp, bottom = (border * 2.4f).dp),
+            ) {
+                // The print is square, so the photo's own quarter-turn is a plain rotation (no swap).
+                val rot = rotOf(file)
+                AsyncImage(
+                    model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+                    modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = rot.toFloat() },
+                )
             }
         }
         if (filter == PhotoFilter.VIGNETTE) VignetteOverlay()
@@ -623,11 +749,35 @@ private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boo
 }
 
 @Composable
-private fun CollageCell(f: File, cf: androidx.compose.ui.graphics.ColorFilter?, modifier: Modifier) {
-    Box(modifier.clipToBounds()) {
+private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boolean, rotOf: (File) -> Int = { 0 }) {
+    val cf = lookFilter(filter)
+    val mat = Color(0xFFEBE4D7)      // warm gallery mat
+    val gap = 12.dp
+    Box(Modifier.fillMaxSize().background(mat).padding(gap)) {
+        if (horizontal) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxHeight(), rot = rotOf(f)) }
+            }
+        } else {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
+                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxWidth(), rot = rotOf(f)) }
+            }
+        }
+        if (filter == PhotoFilter.VIGNETTE) VignetteOverlay()
+    }
+}
+
+@Composable
+private fun CollageCell(f: File, cf: androidx.compose.ui.graphics.ColorFilter?, modifier: Modifier, rot: Int = 0) {
+    BoxWithConstraints(modifier.clipToBounds(), contentAlignment = Alignment.Center) {
+        // Honour the photo's display rotation like PhotoContent does: lay a quarter-turned image
+        // out with width/height swapped (requiredSize — plain size() gets clamped) so it still fills.
+        val swapped = rot == 90 || rot == 270
         AsyncImage(
             model = f, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .requiredSize(if (swapped) maxHeight else maxWidth, if (swapped) maxWidth else maxHeight)
+                .graphicsLayer { rotationZ = rot.toFloat() },
         )
         // Hairline bevel so each photo reads as recessed into the mat.
         Box(Modifier.matchParentSize().border(1.dp, Color.Black.copy(alpha = 0.28f)))

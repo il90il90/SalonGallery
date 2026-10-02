@@ -17,6 +17,16 @@ enum class SlideEffect {
     }
 }
 
+/**
+ * How slides are composed: one photo per slide, a MOSAIC (4–5 photos in a gutter-separated grid on a
+ * mat), a SCATTER (4–5 photos tossed on a table as tilted prints), or RANDOM — a seeded mix of all three.
+ */
+enum class LayoutMode { SINGLE, MOSAIC, SCATTER, RANDOM;
+    companion object {
+        fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: SINGLE
+    }
+}
+
 /** How a photo is scaled to the screen. */
 enum class PhotoFit { FILL, FIT, BLUR;
     companion object {

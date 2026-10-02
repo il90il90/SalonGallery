@@ -131,6 +131,8 @@
     <string name="slideshow_orientation">Screen orientation</string>
     <string name="slideshow_effect">Transition</string>
     <string name="slideshow_fit">Photo fit</string>
+    <string name="slideshow_layout">Layout</string>
+    <string name="slideshow_layout_hint">Mosaic and Scatter show 4–5 photos per slide (needs at least 4). Random mixes them with single photos.</string>
     <string name="library_manage">Photo library</string>
     <string name="library_title">Library</string>
     <string name="library_empty">No photos yet — tap + to add some.</string>

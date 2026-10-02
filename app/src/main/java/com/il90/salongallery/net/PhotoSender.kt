@@ -337,6 +337,9 @@ object PhotoSender {
 
     suspend fun setCollage(host: String, port: Int, on: Boolean) =
         get(host, port, "/collage?on=${if (on) 1 else 0}")
+    /** Slide composition: single | mosaic | scatter | random. */
+    suspend fun setLayout(host: String, port: Int, mode: String) =
+        get(host, port, "/layout?mode=$mode")
 
     suspend fun setText(host: String, port: Int, content: String, pos: String, size: String, color: String) =
         get(host, port, "/text?content=${enc(content)}&pos=$pos&size=$size&color=$color")

@@ -27,6 +27,7 @@ interface ScreenCommands {
     fun onFit(fit: String)
     fun onFilter(filter: String)
     fun onCollage(on: Boolean)
+    fun onLayout(mode: String)             // single | mosaic | scatter | random
     fun onText(content: String, pos: String, size: String, color: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String)
     fun onOpenScreensaver()
@@ -162,6 +163,9 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/collage" -> {
                 commands.onCollage(session.parameters["on"]?.firstOrNull() == "1"); ok()
+            }
+            session.method == Method.GET && uri == "/layout" -> {
+                session.parameters["mode"]?.firstOrNull()?.let { commands.onLayout(it) }; ok()
             }
             session.method == Method.GET && uri == "/text" -> {
                 commands.onText(

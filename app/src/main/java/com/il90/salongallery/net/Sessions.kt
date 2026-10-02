@@ -77,6 +77,8 @@ class ScreenSession(
     val photoFilter = MutableStateFlow(PhotoFilter.NONE)
     /** Auto-fill the screen with a tasteful collage when a photo's orientation leaves big gaps. */
     val collage = MutableStateFlow(false)
+    /** Slide composition: single photos, mosaics, scatters, or a random mix. */
+    val layout = MutableStateFlow(LayoutMode.SINGLE)
     val textOverlay = MutableStateFlow(TextOverlay())
     val clock = MutableStateFlow(ClockConfig())
     val rssOn = MutableStateFlow(prefs.rssEnabled)
@@ -310,6 +312,8 @@ class ScreenSession(
     }
 
     override fun onCollage(on: Boolean) { collage.value = on }
+
+    override fun onLayout(mode: String) { layout.value = LayoutMode.from(mode) }
 
     override fun onText(content: String, pos: String, size: String, color: String) {
         textOverlay.value = TextOverlay(content, TextPos.from(pos), size, color)
