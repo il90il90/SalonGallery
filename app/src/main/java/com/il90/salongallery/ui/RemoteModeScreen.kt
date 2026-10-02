@@ -96,6 +96,7 @@ import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Slideshow
 import androidx.compose.material.icons.outlined.TextFields
@@ -712,6 +713,9 @@ private fun ControlPanel(
     var motion by remember { mutableStateOf("off") }
     var stagger by remember { mutableStateOf(false) }
     var spreadMix by remember { mutableStateOf("always") }
+    var mediaMenu by remember { mutableStateOf(false) }   // All / Photos / Videos chooser for "Add"
+    var folderMenu by remember { mutableStateOf(false) }  // …and for "Whole folder"
+    var folderKind by remember { mutableStateOf("all") }  // which types the chosen folder should send
     var motionSpeed by remember { mutableStateOf("medium") }
     var showFrames by remember { mutableStateOf(false) }
     var showEffects by remember { mutableStateOf(false) }
@@ -800,7 +804,7 @@ private fun ControlPanel(
         if (tree == null) return@rememberLauncherForActivityResult
         busy = true; status = null
         scope.launch {
-            val uris = withContext(Dispatchers.IO) { mediaInTree(context, tree) }
+            val uris = withContext(Dispatchers.IO) { mediaInTree(context, tree, folderKind) }
             busy = false
             if (uris.isEmpty()) { status = context.getString(R.string.folder_empty); return@launch }
             destAlbums = PhotoSender.getAlbums(screen.host, screen.port)?.albums ?: emptyList()
@@ -891,8 +895,11 @@ private fun ControlPanel(
         SectionLabel(stringResource(R.string.home_add))
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            HomeAction(Modifier.weight(1f), Icons.Outlined.AddPhotoAlternate, stringResource(R.string.home_photos), NeonCyan, TintClay, !busy) {
-                mediaPicker.launch(MEDIA_TYPES)
+            Box(Modifier.weight(1f)) {
+                HomeAction(Modifier.fillMaxWidth(), Icons.Outlined.AddPhotoAlternate, stringResource(R.string.home_photos), NeonCyan, TintClay, !busy) {
+                    mediaMenu = true
+                }
+                MediaKindMenu(mediaMenu, { mediaMenu = false }) { kind -> mediaMenu = false; mediaPicker.launch(mediaTypesFor(kind)) }
             }
             HomeAction(Modifier.weight(1f), Icons.Outlined.Palette, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.home_music), NeonViolet, TintPlum, !busy) { showMusic = true }
@@ -900,7 +907,10 @@ private fun ControlPanel(
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HomeAction(Modifier.weight(1f), Icons.Outlined.Link, stringResource(R.string.home_gphotos), NeonBlue, TintBlue, !busy) { showGooglePhotos = true }
-            HomeAction(Modifier.weight(1f), Icons.Outlined.Folder, stringResource(R.string.home_folder), NeonTeal, TintSage, !busy) { folderPicker.launch(null) }
+            Box(Modifier.weight(1f)) {
+                HomeAction(Modifier.fillMaxWidth(), Icons.Outlined.Folder, stringResource(R.string.home_folder), NeonTeal, TintSage, !busy) { folderMenu = true }
+                MediaKindMenu(folderMenu, { folderMenu = false }) { kind -> folderMenu = false; folderKind = kind; folderPicker.launch(null) }
+            }
             Spacer(Modifier.weight(1f))
         }
 
@@ -1288,6 +1298,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     // Media-type filter: "all" (default) | "photo" | "video". Purely a view over `items` — the
     // library order, reorder and server calls always use the full list.
     var mediaFilter by remember { mutableStateOf("all") }
+    var addMenu by remember { mutableStateOf(false) }   // All / Photos / Videos chooser for the album "+"
     val shown = remember(items, mediaFilter) {
         when (mediaFilter) {
             "photo" -> items.filterNot { it.startsWith("v_") }
@@ -1350,8 +1361,9 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                             )
                             Spacer(Modifier.weight(1f))
                             if (busy) CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
-                            else RoundIconBtn(Icons.Outlined.Add, accent = true) {
-                                addPicker.launch(MEDIA_TYPES)
+                            else Box {
+                                RoundIconBtn(Icons.Outlined.Add, accent = true) { addMenu = true }
+                                MediaKindMenu(addMenu, { addMenu = false }) { kind -> addMenu = false; addPicker.launch(mediaTypesFor(kind)) }
                             }
                         }
                     }
@@ -2476,11 +2488,35 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showChe
     }
 }
 
+/** The MIME types a picker should offer for the chosen kind: all | photo | video. */
+private fun mediaTypesFor(kind: String): Array<String> = when (kind) {
+    "photo" -> arrayOf("image/*")
+    "video" -> arrayOf("video/*")
+    else -> arrayOf("image/*", "video/*")
+}
+
 /**
- * Every photo and video under a folder the user granted with OpenDocumentTree (sub-folders
- * included), oldest first by modification time so the wall keeps the camera roll's order.
+ * A little All / Photos / Videos chooser shown when the user taps an "add" button, so they can
+ * bring only photos, only videos, or both. [onPick] gets "all" | "photo" | "video".
  */
-private fun mediaInTree(context: android.content.Context, tree: Uri): List<Uri> {
+@Composable
+private fun MediaKindMenu(expanded: Boolean, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, containerColor = com.il90.salongallery.ui.theme.ElecSurface) {
+        DropdownMenuItem(text = { Text(stringResource(R.string.filter_all), color = TextPrimary) }, onClick = { onPick("all") },
+            leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null, tint = NeonCyan) })
+        DropdownMenuItem(text = { Text(stringResource(R.string.filter_photos), color = TextPrimary) }, onClick = { onPick("photo") },
+            leadingIcon = { Icon(Icons.Outlined.Image, null, tint = NeonCyan) })
+        DropdownMenuItem(text = { Text(stringResource(R.string.filter_videos), color = TextPrimary) }, onClick = { onPick("video") },
+            leadingIcon = { Icon(Icons.Outlined.PlayArrow, null, tint = NeonBlue) })
+    }
+}
+
+/**
+ * Photos and videos under a folder the user granted with OpenDocumentTree (sub-folders included),
+ * oldest first by modification time so the wall keeps the camera roll's order. [kind] limits it to
+ * all | photo | video.
+ */
+private fun mediaInTree(context: android.content.Context, tree: Uri, kind: String = "all"): List<Uri> {
     val cr = context.contentResolver
     val found = mutableListOf<Pair<Long, Uri>>()
     val dirs = ArrayDeque<String>().apply { add(android.provider.DocumentsContract.getTreeDocumentId(tree)) }
@@ -2499,7 +2535,7 @@ private fun mediaInTree(context: android.content.Context, tree: Uri): List<Uri> 
                     val mime = c.getString(1) ?: ""
                     when {
                         mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR -> dirs.add(id)
-                        mime.startsWith("image/") || mime.startsWith("video/") ->
+                        (kind != "video" && mime.startsWith("image/")) || (kind != "photo" && mime.startsWith("video/")) ->
                             found += (if (c.isNull(2)) 0L else c.getLong(2)) to android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id)
                     }
                 }
