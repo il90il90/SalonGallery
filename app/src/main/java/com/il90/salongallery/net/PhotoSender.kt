@@ -39,7 +39,7 @@ data class LibraryList(
 )
 
 /** The slide currently on the wall, for mirroring it in the Remote. */
-data class NowInfo(val style: String, val seed: Int, val members: List<String>)
+data class NowInfo(val style: String, val seed: Int, val members: List<String>, val rots: List<Int> = emptyList())
 
 data class AlbumInfo(val id: String, val name: String, val count: Int)
 data class AlbumList(val activeId: String, val activeName: String, val albums: List<AlbumInfo>)
@@ -76,7 +76,9 @@ object PhotoSender {
             val o = JSONObject(body)
             val arr = o.optJSONArray("members")
             val members = buildList { if (arr != null) for (i in 0 until arr.length()) add(arr.getString(i)) }
-            NowInfo(o.optString("style", "single"), o.optInt("seed", 0), members)
+            val rotArr = o.optJSONArray("rots")
+            val rots = buildList { if (rotArr != null) for (i in 0 until rotArr.length()) add(rotArr.getInt(i)) }
+            NowInfo(o.optString("style", "single"), o.optInt("seed", 0), members, rots)
         } catch (e: Exception) { null }
     }
 

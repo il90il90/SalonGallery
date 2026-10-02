@@ -590,14 +590,14 @@ private fun Slideshow(
     // the slide after that — at the display resolution, so the bitmaps are ready the instant the
     // transition starts. (Shuffle can't be predicted, so there we just warm a few upcoming files.)
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val dm = remember { ctx.resources.displayMetrics }
     LaunchedEffect(idx, files.size, layout, shuffle, spreadMix) {
         if (files.size <= 1) return@LaunchedEffect
+        val spx = slidePx(ctx)
         fun warm(f: File) {
             if (isVideoName(f.name)) return
             coil.Coil.imageLoader(ctx).enqueue(
                 coil.request.ImageRequest.Builder(ctx).data(f)
-                    .size(dm.widthPixels, dm.heightPixels)
+                    .size(spx, spx)
                     .precision(coil.size.Precision.INEXACT)
                     .build()
             )
@@ -884,7 +884,7 @@ private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotO
                 // The print is square, so the photo's own quarter-turn is a plain rotation (no swap).
                 val rot = rotOf(file)
                 AsyncImage(
-                    model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+                    model = rememberSlideModel(file), contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
                     alignment = focusAlignment(focusOf(file), 1f, 1f),
                     modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = rot.toFloat() },
                 )
@@ -1075,7 +1075,7 @@ private fun CollageCell(f: File, cf: androidx.compose.ui.graphics.ColorFilter?, 
         val bw = if (swapped) maxHeight else maxWidth
         val bh = if (swapped) maxWidth else maxHeight
         AsyncImage(
-            model = f, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+            model = rememberSlideModel(f), contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
             // Aim the crop at the faces rather than the middle of the photo.
             alignment = focusAlignment(focus, bw.value, bh.value),
             modifier = Modifier
@@ -1297,6 +1297,20 @@ internal fun focusAlignment(focus: PhotoFocus?, boxW: Float, boxH: Float): Align
     return androidx.compose.ui.BiasAbsoluteAlignment(bias(focus.x, vx, 0.5f), bias(focus.y, vy, 0.42f))
 }
 
+/** The one decode size every slideshow image shares, capped so a hardware-bitmap texture is always
+ *  safe and so each photo is decoded ONCE and reused by its collage cell and full-screen alike. */
+private const val SLIDE_MAX_PX = 2048
+private fun slidePx(ctx: android.content.Context): Int =
+    ctx.resources.displayMetrics.let { minOf(maxOf(it.widthPixels, it.heightPixels), SLIDE_MAX_PX) }
+@Composable
+private fun rememberSlideModel(file: File): coil.request.ImageRequest {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val px = remember { slidePx(ctx) }
+    return remember(file, px) {
+        coil.request.ImageRequest.Builder(ctx).data(file).size(px, px).precision(coil.size.Precision.INEXACT).build()
+    }
+}
+
 /** Renders one photo, applying its studio [transform], a [filter] look and an optional Ken-Burns [kb] zoom. */
 @Composable
 fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: PhotoFilter = PhotoFilter.NONE, focus: PhotoFocus? = null, kb: () -> Float = { 1f }) {
@@ -1325,19 +1339,19 @@ fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: P
         val cropAlign = if (handCropped) Alignment.Center else focusAlignment(focus, w.value, h.value)
         when (fit) {
             PhotoFit.FILL -> AsyncImage(
-                model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+                model = rememberSlideModel(file), contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
                 alignment = cropAlign, modifier = imgMod(),
             )
             PhotoFit.FIT -> AsyncImage(
-                model = file, contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = imgMod(),
+                model = rememberSlideModel(file), contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = imgMod(),
             )
             PhotoFit.BLUR -> {
                 AsyncImage(
-                    model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+                    model = rememberSlideModel(file), contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
                     modifier = imgMod(1.1f).blur(28.dp),
                 )
                 AsyncImage(
-                    model = file, contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = imgMod(),
+                    model = rememberSlideModel(file), contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = imgMod(),
                 )
             }
         }

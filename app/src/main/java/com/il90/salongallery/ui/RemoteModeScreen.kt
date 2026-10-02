@@ -1185,12 +1185,15 @@ private fun NowShowingHero(
  */
 @Composable
 private fun MirrorSpread(screen: DiscoveredScreen, now: com.il90.salongallery.net.NowInfo, rots: Map<String, Int>) {
+    @Suppress("NAME_SHADOWING") val rots = rots
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(Color(0xFF14100B))) {
         val w = maxWidth.value; val h = maxHeight.value
         val n = now.members.size
         val items = remember(now.style, n, w, h, now.seed) { mirrorPlacements(now.style, n, w, h, now.seed) }
         items.forEachIndexed { k, p ->
             val name = now.members.getOrNull(k) ?: return@forEachIndexed
+            // Prefer the rotation the wall itself reported for this photo; fall back to the library map.
+            val rotStoredAuth = now.rots.getOrNull(k) ?: rots[name] ?: 0
             val circle = p.style == PrintStyle.CIRCLE
             val bordered = p.style != PrintStyle.CELL
             val pad = if (bordered) minOf(p.w, p.h) * 0.05f else 0f
@@ -1203,7 +1206,7 @@ private fun MirrorSpread(screen: DiscoveredScreen, now: com.il90.salongallery.ne
                     .then(if (bordered) Modifier.background(Color(0xFFF5F2EC)) else Modifier)
                     .padding(pad.dp),
             ) {
-                val rotStored = rots[name] ?: 0
+                val rotStored = rotStoredAuth
                 val swapped = rotStored == 90 || rotStored == 270
                 BoxWithConstraints(Modifier.fillMaxSize().then(if (circle) Modifier.clip(CircleShape) else Modifier).clipToBounds(), contentAlignment = Alignment.Center) {
                     AsyncImage(

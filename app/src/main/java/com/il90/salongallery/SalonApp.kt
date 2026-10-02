@@ -8,18 +8,17 @@ import coil.memory.MemoryCache
 /**
  * App-wide Coil image loader.
  *
- * Big photos (e.g. a 4000×2252 phone shot) could show up as a **black frame** on some TVs: Coil
- * decodes to a hardware (GPU-texture) bitmap by default, and a device whose max GL texture size is
- * smaller than the image simply fails to upload the texture and draws nothing. Turning hardware
- * bitmaps off makes Coil hand Compose a normal software bitmap, which Skia can always draw (it tiles
- * past the GL limit) — so every photo renders, at every size, on every box. For a wall that shows a
- * handful of images at a time the extra memory is negligible, and a soft crossfade hides the decode.
+ * Hardware (GPU-texture) bitmaps are kept on — they are light on memory and fast to draw. The old
+ * black-frame problem on big photos (a bitmap larger than the device's max GL texture size fails to
+ * upload and draws nothing) is handled instead by capping every slideshow decode to a safe size
+ * (see the slideshow code), which also means each photo is decoded ONCE and reused everywhere — in a
+ * collage cell and full-screen alike — so a spread never shows an empty cell while a photo decodes.
  */
 class SalonApp : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
-            .allowHardware(false)
-            .crossfade(200)
-            .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.30).build() }
+            .allowHardware(true)
+            .crossfade(180)
+            .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.35).build() }
             .build()
 }

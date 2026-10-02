@@ -152,10 +152,13 @@ class ScreenSession(
     /** JSON describing the current slide: its layout, seed and the photos it is made of. */
     private fun nowBody(): String {
         val n = nowSlide.value
-        val members = n?.members.orEmpty().joinToString(",") { "\"${esc(it)}\"" }
+        val names = n?.members.orEmpty()
+        val members = names.joinToString(",") { "\"${esc(it)}\"" }
+        // Authoritative rotation for each member, so the Remote mirrors the wall exactly (no stale map).
+        val rots = names.joinToString(",") { transforms.get(it).rotNorm.toString() }
         val style = n?.style ?: "single"
         val seed = n?.seed ?: 0
-        return """{"style":"$style","seed":$seed,"w":$screenW,"h":$screenH,"members":[$members]}"""
+        return """{"style":"$style","seed":$seed,"w":$screenW,"h":$screenH,"members":[$members],"rots":[$rots]}"""
     }
 
     private fun pingBody(): String {
