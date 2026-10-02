@@ -1723,7 +1723,6 @@ private fun networkInfo(context: android.content.Context): Pair<String?, String?
     return ssid to ip
 }
 
-@Composable
 /** A warm full-screen "Receiving photos…" cover shown while a batch streams in, so the wall never
  *  flashes black mid-upload. */
 @Composable
@@ -1744,6 +1743,7 @@ private fun ReceivingOverlay(count: Int) {
     }
 }
 
+@Composable
 private fun WaitingToPair(
     deviceName: String,
     running: Boolean,
