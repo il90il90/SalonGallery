@@ -49,11 +49,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.Lan
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -195,6 +197,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val clock by session.clock.collectAsStateWithLifecycle()
     val weather by session.weather.collectAsStateWithLifecycle()
     val weatherNow by session.weatherNow.collectAsStateWithLifecycle()
+    val receiving by session.receiving.collectAsStateWithLifecycle()
     val rssOn by session.rssOn.collectAsStateWithLifecycle()
     val rssFeeds by session.rssFeeds.collectAsStateWithLifecycle()
     val rssConfig by session.rssConfig.collectAsStateWithLifecycle()
@@ -449,6 +452,12 @@ fun ScreenModeScreen(actions: AppActions) {
         if (mode != DisplayMode.WAITING && rssOn && rssItems.isNotEmpty()) {
             RssTicker(rssItems, rssConfig)
         }
+
+        // While a batch of photos is streaming in, cover the decoding gaps with a warm "Receiving…"
+        // screen instead of letting the wall flash black (which looks like the TV is off).
+        androidx.compose.animation.AnimatedVisibility(
+            visible = receiving, enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut(),
+        ) { ReceivingOverlay(count = files.size) }
 
         // Brightness as real "picture" dimming — a software scrim that works on every
         // device (including Android TV, where window brightness is ignored).
@@ -1715,6 +1724,26 @@ private fun networkInfo(context: android.content.Context): Pair<String?, String?
 }
 
 @Composable
+/** A warm full-screen "Receiving photos…" cover shown while a batch streams in, so the wall never
+ *  flashes black mid-upload. */
+@Composable
+private fun ReceivingOverlay(count: Int) {
+    SalonBackground {
+        Column(
+            Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            LogoChip(size = 76, icon = Icons.Outlined.PhotoLibrary)
+            Spacer(Modifier.height(22.dp))
+            CircularProgressIndicator(color = NeonCyan, strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
+            Spacer(Modifier.height(20.dp))
+            Text(stringResource(R.string.screen_receiving), style = MaterialTheme.typography.headlineSmall, color = TextPrimary, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(8.dp))
+            Text(stringResource(R.string.screen_receiving_count, count), style = MaterialTheme.typography.titleMedium, color = NeonCyan)
+        }
+    }
+}
+
 private fun WaitingToPair(
     deviceName: String,
     running: Boolean,

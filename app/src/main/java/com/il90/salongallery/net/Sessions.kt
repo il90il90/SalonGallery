@@ -86,6 +86,17 @@ class ScreenSession(
     val spreadStagger = MutableStateFlow(false)
     /** The slide on the wall right now, so the Remote can show exactly what the wall shows. */
     val nowSlide = MutableStateFlow<NowSlide?>(null)
+    /** True while photos are actively streaming in (so the wall shows "Receiving…" instead of black). */
+    val receiving = MutableStateFlow(false)
+    private val recvExec = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "salon-recv").apply { isDaemon = true }
+    }
+    @Volatile private var recvFuture: java.util.concurrent.ScheduledFuture<*>? = null
+    private fun markReceiving() {
+        receiving.value = true
+        recvFuture?.cancel(false)
+        recvFuture = recvExec.schedule({ receiving.value = false }, 2500, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
     /** How often a spread appears instead of a single photo. */
     val spreadMix = MutableStateFlow(SpreadMix.ALWAYS)
     /** Subtle motion while a still waits on screen, and how fast it runs. */
@@ -188,6 +199,7 @@ class ScreenSession(
             mode.value = DisplayMode.SLIDESHOW
             libraryVersion.value = System.currentTimeMillis()
             showNewest(f.name)
+            markReceiving()
             autoOrient(f)
         }
     }
@@ -223,6 +235,7 @@ class ScreenSession(
                     mode.value = DisplayMode.SLIDESHOW
                     libraryVersion.value = System.currentTimeMillis()
                     showNewest(f.name)
+                    markReceiving()
                     autoOrient(f)
                 }
             }
@@ -251,6 +264,7 @@ class ScreenSession(
             videoVersion.value = System.currentTimeMillis()
             libraryVersion.value = System.currentTimeMillis()
             showNewest(f.name)
+            markReceiving()
         }
     }
 
