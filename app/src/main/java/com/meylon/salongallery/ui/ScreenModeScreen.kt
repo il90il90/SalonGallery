@@ -47,6 +47,8 @@ import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.Lan
+import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -385,6 +387,7 @@ fun ScreenModeScreen(actions: AppActions) {
                     running = running,
                     ssid = net.first,
                     address = net.second,
+                    onChangeRole = actions.onChangeRole,
                 )
             }
         }
@@ -1117,7 +1120,13 @@ private fun networkInfo(context: android.content.Context): Pair<String?, String?
 }
 
 @Composable
-private fun WaitingToPair(deviceName: String, running: Boolean, ssid: String? = null, address: String? = null) {
+private fun WaitingToPair(
+    deviceName: String,
+    running: Boolean,
+    ssid: String? = null,
+    address: String? = null,
+    onChangeRole: (() -> Unit)? = null,
+) {
     SalonBackground {
         Column(
             modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
@@ -1170,6 +1179,16 @@ private fun WaitingToPair(deviceName: String, running: Boolean, ssid: String? = 
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
             Spacer(Modifier.weight(1f))
+            // Escape hatch: this device is a Display with no on-screen controls, so if it has no
+            // Remote paired (or was set to Display by mistake) this is the only way back to the role
+            // chooser without clearing app data. Only on the waiting screen — never over the art.
+            onChangeRole?.let {
+                TextButton(onClick = it) {
+                    Icon(Icons.Outlined.SwapHoriz, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.change_role), style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                }
+            }
         }
     }
 }

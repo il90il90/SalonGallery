@@ -9,6 +9,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -454,6 +458,7 @@ private fun ManualConnectDialog(onConnect: (String, Int) -> Unit, onDismiss: () 
  * The screen's admin settings, edited entirely from the Remote: device name, auto-sleep
  * schedule, screen PIN, and a "return to setup" that drops the screen back to role selection.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -480,6 +485,8 @@ private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit)
         focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
     )
 
+    val nameReq = rememberRevealRequester()
+    val pinReq = rememberRevealRequester()
     Column(Modifier.fillMaxWidth()) {
         SectionLabel(stringResource(R.string.admin_section))
 
@@ -488,11 +495,12 @@ private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = name, onValueChange = { name = it; nameSaved = false }, singleLine = true,
-            modifier = Modifier.fillMaxWidth(), colors = tf,
+            modifier = Modifier.fillMaxWidth().revealOnFocus(nameReq), colors = tf,
             placeholder = { Text(stringResource(R.string.admin_name_hint), color = TextTertiary) },
         )
         Spacer(Modifier.height(10.dp))
         GradientButton(
+            modifier = Modifier.bringIntoViewRequester(nameReq),
             text = if (nameSaved) stringResource(R.string.admin_saved) else stringResource(R.string.admin_save_name),
             enabled = loaded,
             onClick = { scope.launch { PhotoSender.setName(screen.host, screen.port, name.trim()); nameSaved = true } },
@@ -508,7 +516,7 @@ private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6); pinMsg = null },
-            singleLine = true, modifier = Modifier.fillMaxWidth(), colors = tf,
+            singleLine = true, modifier = Modifier.fillMaxWidth().revealOnFocus(pinReq), colors = tf,
             placeholder = { Text(stringResource(R.string.admin_pin_hint), color = TextTertiary) },
             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
@@ -516,7 +524,7 @@ private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit)
             ),
         )
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.bringIntoViewRequester(pinReq), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) {
                 GradientButton(text = stringResource(R.string.admin_save_pin), enabled = loaded, onClick = {
                     if (pin.length >= 4) scope.launch {
@@ -1500,6 +1508,29 @@ private fun AlbumChip(label: String, active: Boolean, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Keeps the submit button for a form visible while a text field above it is focused. The field
+ * raises itself above the keyboard on its own; this additionally scrolls [req]'s target (put the
+ * button in a `Modifier.bringIntoViewRequester(req)`) into view so the action isn't hidden behind
+ * the IME. Attach `Modifier.revealOnFocus(req)` to each text field that feeds that button.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun rememberRevealRequester(): BringIntoViewRequester = remember { BringIntoViewRequester() }
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Modifier.revealOnFocus(req: BringIntoViewRequester): Modifier {
+    val scope = rememberCoroutineScope()
+    // The keyboard animates in over a few hundred ms; imePadding grows frame by frame as it does.
+    // Re-issue bringIntoView across that window so the final scroll lands against the settled
+    // layout — a single early call measures a half-raised keyboard and stops short, leaving the
+    // button it should reveal clipped by the IME.
+    return this.onFocusEvent {
+        if (it.isFocused) scope.launch { repeat(4) { delay(180); req.bringIntoView() } }
+    }
+}
+
 @Composable
 private fun NewAlbumChip(onClick: () -> Unit) {
     Row(
@@ -1744,7 +1775,7 @@ private fun RssSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
         "NYT" to "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
     )
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(24.dp)) {
             Text(stringResource(R.string.rss_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(4.dp))
             Text(stringResource(R.string.rss_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
@@ -2343,7 +2374,7 @@ private fun FreeMusicSheet(onDownload: (FreeTrack) -> Unit, onDismiss: () -> Uni
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun GooglePhotosSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -2361,6 +2392,7 @@ private fun GooglePhotosSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     val errFetch = stringResource(R.string.gphotos_err_fetch)
     val errEmpty = stringResource(R.string.gphotos_err_empty)
     val doneFmt = stringResource(R.string.gphotos_done)
+    val importReq = rememberRevealRequester()
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(24.dp)) {
             Text(stringResource(R.string.gphotos_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
@@ -2383,14 +2415,14 @@ private fun GooglePhotosSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = link, onValueChange = { link = it; status = null }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), colors = tf,
+                modifier = Modifier.fillMaxWidth().revealOnFocus(importReq), colors = tf,
                 placeholder = { Text("https://photos.app.goo.gl/…", color = TextTertiary) },
                 label = { Text(stringResource(R.string.gphotos_link_label), color = TextSecondary) },
             )
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
                 value = albumName, onValueChange = { albumName = it }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), colors = tf,
+                modifier = Modifier.fillMaxWidth().revealOnFocus(importReq), colors = tf,
                 placeholder = { Text(stringResource(R.string.gphotos_album_default), color = TextTertiary) },
                 label = { Text(stringResource(R.string.gphotos_album_label), color = TextSecondary) },
             )
@@ -2400,6 +2432,7 @@ private fun GooglePhotosSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
             GradientButton(
+                modifier = Modifier.bringIntoViewRequester(importReq),
                 text = if (busy) stringResource(R.string.gphotos_importing) else stringResource(R.string.gphotos_import),
                 enabled = !busy && GooglePhotos.looksLikeShareLink(link),
                 onClick = {
@@ -2472,7 +2505,7 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     LaunchedEffect(activeCat, source) { run(if (query.isBlank()) activeCat else query) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
+        Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
             Text(stringResource(R.string.art_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(4.dp))
             Text(stringResource(R.string.art_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
