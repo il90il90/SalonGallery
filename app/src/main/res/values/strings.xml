@@ -97,6 +97,9 @@
     <string name="duration_full">Full clip</string>
     <string name="duration_default_short">Default</string>
     <string name="duration_hint_photo">How long this photo stays on screen.</string>
+    <string name="duration_default_hint">Tip: long-press a time to make it the default for every photo.</string>
+    <string name="duration_default_set">Default set to %1$s for all photos</string>
+    <string name="duration_is_default">Current default</string>
     <string name="duration_hint_video">Cap this clip, or play the whole thing.</string>
     <string name="pin_to_front">Pin to front</string>
     <string name="unpin">Unpin</string>

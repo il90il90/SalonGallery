@@ -167,7 +167,7 @@ class ScreenSession(
             """"w":$screenW,"h":$screenH,"free":$free,"total":$total,"count":${library.count()},""" +
             // "lib" changes on every library mutation (add/delete/clear/rotate/reorder) so the Remote can
             // refresh what it shows from a single poll instead of guessing after each of its own actions.
-            """"brightness":$b,"volume":${volume.value},"lib":${libraryVersion.value}}"""
+            """"brightness":$b,"volume":${volume.value},"interval":${intervalMs.value},"lib":${libraryVersion.value}}"""
     }
 
     // ---- ScreenCommands (called on server threads) ----
@@ -311,6 +311,10 @@ class ScreenSession(
     override fun onSlideshow(intervalMs: Long, shuffle: Boolean) {
         this.intervalMs.value = intervalMs.coerceIn(2000L, 3_600_000L)
         this.shuffle.value = shuffle
+    }
+
+    override fun onDefaultDuration(seconds: Int) {
+        intervalMs.value = (seconds * 1000L).coerceIn(2000L, 3_600_000L)
     }
 
     override fun onEffect(effect: String) {

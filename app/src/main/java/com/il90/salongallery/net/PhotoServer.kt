@@ -21,6 +21,7 @@ interface ScreenCommands {
     fun onFrameRandom(on: Boolean, pool: List<Int>)
     fun onFrameWidth(value: Float)
     fun onSlideshow(intervalMs: Long, shuffle: Boolean)
+    fun onDefaultDuration(seconds: Int)    // the slideshow default, in seconds, for all "Default" photos
     fun onEffect(effect: String)
     fun onEffectPool(names: List<String>)
     fun onFilterPool(names: List<String>)
@@ -149,6 +150,9 @@ class PhotoServer(
                 val interval = session.parameters["interval"]?.firstOrNull()?.toLongOrNull() ?: 8000L
                 val shuffle = session.parameters["shuffle"]?.firstOrNull() == "1"
                 commands.onSlideshow(interval, shuffle); ok()
+            }
+            session.method == Method.GET && uri == "/defaultdur" -> {
+                session.parameters["sec"]?.firstOrNull()?.toIntOrNull()?.let { commands.onDefaultDuration(it) }; ok()
             }
             session.method == Method.GET && uri == "/effect" -> {
                 session.parameters["e"]?.firstOrNull()?.let { commands.onEffect(it) }; ok()

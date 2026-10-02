@@ -16,6 +16,8 @@ data class ScreenInfo(
     val photoCount: Int,
     val brightness: Float = 1f,
     val volume: Float = 1f,
+    /** The slideshow default interval in ms (what a photo set to "Default" waits). */
+    val intervalMs: Long = 30000L,
     /** Bumped by the Display on any library change; the Remote refreshes its lists when it moves. */
     val libVersion: Long = 0L,
     /** The Display app's versionName — shown in the screen list so an old install is obvious. */
@@ -210,6 +212,7 @@ object PhotoSender {
                 photoCount = o.optInt("count", 0),
                 brightness = o.optDouble("brightness", 1.0).toFloat(),
                 volume = o.optDouble("volume", 1.0).toFloat(),
+                intervalMs = o.optLong("interval", 30000L),
                 libVersion = o.optLong("lib", 0L),
                 version = o.optString("version", ""),
             )
@@ -335,6 +338,9 @@ object PhotoSender {
 
     suspend fun setSlideshow(host: String, port: Int, intervalMs: Long, shuffle: Boolean) =
         get(host, port, "/slideshow?interval=$intervalMs&shuffle=${if (shuffle) 1 else 0}")
+    /** Sets the slideshow default duration (seconds) applied to every photo left on "Default". */
+    suspend fun setDefaultDuration(host: String, port: Int, seconds: Int) =
+        get(host, port, "/defaultdur?sec=$seconds")
 
     suspend fun setEffect(host: String, port: Int, effect: String) =
         get(host, port, "/effect?e=$effect")

@@ -1762,14 +1762,25 @@ private fun RowOverflow(
 /** Per-item display duration chooser. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun DurationDialog(screen: DiscoveredScreen, name: String, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val isVideo = name.startsWith("v_")
     var sec by remember { mutableIntStateOf(0) }
-    LaunchedEffect(name) { sec = PhotoSender.getDuration(screen.host, screen.port, name) }
+    // The current slideshow default (seconds) that a "Default" photo waits — shown on the Default row.
+    var defaultSec by remember { mutableIntStateOf(30) }
+    LaunchedEffect(name) {
+        sec = PhotoSender.getDuration(screen.host, screen.port, name)
+        PhotoSender.getInfo(screen.host, screen.port)?.let { defaultSec = (it.intervalMs / 1000L).toInt().coerceAtLeast(1) }
+    }
+    fun fmt(s: Int) = if (s < 60) "${s}s" else if (s % 60 == 0) "${s / 60}m" else "${s / 60}m ${s % 60}s"
     // 0 means "default" for photos, "full clip" for videos.
     val options = listOf(0, 3, 5, 10, 20, 30, 60)
-    val labels = options.map { if (it == 0) (if (isVideo) "Full clip" else "Default") else "${it}s" }
+    val labels = options.map {
+        when { it != 0 -> "${it}s"; isVideo -> "Full clip"; else -> "Default · ${fmt(defaultSec)}" }
+    }
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.il90.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().padding(24.dp)) {
             Text(stringResource(R.string.duration_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
@@ -1778,20 +1789,38 @@ private fun DurationDialog(screen: DiscoveredScreen, name: String, onClose: () -
                 stringResource(if (isVideo) R.string.duration_hint_video else R.string.duration_hint_photo),
                 style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
             )
+            if (!isVideo) {
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.duration_default_hint), style = MaterialTheme.typography.bodySmall, color = NeonCyan)
+            }
             Spacer(Modifier.height(16.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 options.forEachIndexed { i, opt ->
                     val selected = opt == sec
+                    val isDefaultRow = opt == 0
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                             .border(if (selected) 1.5.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(14.dp))
-                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                sec = opt; scope.launch { PhotoSender.setDuration(screen.host, screen.port, name, opt) }
-                            }
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() }, indication = null,
+                                onClick = { sec = opt; scope.launch { PhotoSender.setDuration(screen.host, screen.port, name, opt) } },
+                                // Long-press a real time → make it the default for EVERY "Default" photo.
+                                onLongClick = if (isVideo || isDefaultRow) null else {
+                                    {
+                                        defaultSec = opt
+                                        scope.launch { PhotoSender.setDefaultDuration(screen.host, screen.port, opt) }
+                                        android.widget.Toast.makeText(context, context.getString(R.string.duration_default_set, fmt(opt)), android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                            )
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(labels[i], style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                        Column(Modifier.weight(1f)) {
+                            Text(labels[i], style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            if (!isVideo && !isDefaultRow && opt == defaultSec)
+                                Text(stringResource(R.string.duration_is_default), style = MaterialTheme.typography.labelSmall, color = NeonCyan)
+                        }
                         if (selected) Icon(Icons.Outlined.Check, null, tint = NeonCyan)
                     }
                 }
