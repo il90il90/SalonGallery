@@ -106,6 +106,12 @@ jobs:
           bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$bt/apksigner" verify --print-certs "$apk" | tee certs.txt
           if grep -q "CN=Android Debug" certs.txt; then echo "::error::APK is debug-signed"; exit 1; fi
+          # Pin the signing certificate every prior release used (verified against v1.48.0): guards
+          # against the keystore secret ever being swapped for a different key, which would stop the
+          # in-app updater installing over existing installs. The cert hash is public (it's in every APK).
+          got=$(grep -i "SHA-256 digest:" certs.txt | head -1 | grep -oE "[0-9a-f]{64}")
+          want=99064a19bfa2ca26c4b2df211e3dce2688750222217fe5bca7f99a82f7d9e09d
+          if [ "$got" != "$want" ]; then echo "::error::APK signed by unexpected key ($got, expected $want)"; exit 1; fi
           cp "$apk" "SalonGallery-${{ steps.ver.outputs.version }}.apk"
 
       - name: Publish GitHub Release
