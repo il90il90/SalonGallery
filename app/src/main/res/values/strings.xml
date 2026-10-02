@@ -146,7 +146,7 @@
     <string name="slideshow_effect">Transition</string>
     <string name="slideshow_fit">Photo fit</string>
     <string name="slideshow_layout">Layout</string>
-    <string name="slideshow_layout_hint">Every layout except Single shows several photos per slide — 4–5, up to 12 for Patchwork — as many as your library allows (needs at least 4). Random picks a different layout each time.</string>
+    <string name="slideshow_layout_hint">Every layout except Single shows several photos per slide — 4–5, up to 12 for Patchwork — as many as your library allows (needs at least 4). Mix uses a different layout each time.</string>
     <string name="slideshow_spread_mix">How often a collage appears (the other slides show one photo)</string>
     <string name="slideshow_stagger">Photos appear one by one</string>
     <string name="slideshow_stagger_hint">Each photo of a multi-photo slide fades in a moment after the one before.</string>

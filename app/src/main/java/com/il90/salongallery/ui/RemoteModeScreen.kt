@@ -864,6 +864,22 @@ private fun ControlPanel(
             },
         )
 
+        // Upload / status banner right under the hero, where it's immediately visible.
+        if (busy || status != null) {
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ElecSurface).border(1.dp, ElecBorder, RoundedCornerShape(14.dp)).padding(vertical = 12.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
+                when {
+                    busy && progress.second > 1 -> ProgressRow("Sending ${progress.first}/${progress.second}…")
+                    busy -> ProgressRow(stringResource(R.string.remote_sending))
+                    status != null -> Text(
+                        status!!, style = MaterialTheme.typography.labelMedium,
+                        color = if (status!!.contains("✓") || status!!.contains("cleared")) GoodGreen else Color(0xFFC0503A),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             CompactSlider(Modifier.weight(1f), Icons.Outlined.BrightnessMedium, NeonCyan, initial = screenBrightness) { v ->
@@ -920,6 +936,7 @@ private fun ControlPanel(
                     mediaMenu, { mediaMenu = false },
                     onFiles = { kind -> mediaMenu = false; mediaPicker.launch(PickVisualMediaRequest(visualTypeFor(kind))) },
                     onFolder = { mediaMenu = false; folderKindMenu = true },
+                    onGooglePhotos = { mediaMenu = false; showGooglePhotos = true },
                 )
                 // Second step for "Whole folder": which kinds to pull from it.
                 MediaKindMenu(folderKindMenu, { folderKindMenu = false }) { kind ->
@@ -928,11 +945,6 @@ private fun ControlPanel(
             }
             HomeAction(Modifier.weight(1f), Icons.Outlined.Explore, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.home_music), NeonViolet, TintPlum, !busy) { showMusic = true }
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            HomeAction(Modifier.weight(1f), Icons.Outlined.Link, stringResource(R.string.home_gphotos), NeonBlue, TintBlue, !busy) { showGooglePhotos = true }
-            Spacer(Modifier.weight(2f))
         }
 
         Spacer(Modifier.height(20.dp))
@@ -950,19 +962,6 @@ private fun ControlPanel(
         }
 
         Spacer(Modifier.height(18.dp))
-        Box(Modifier.fillMaxWidth().height(22.dp), contentAlignment = Alignment.Center) {
-            when {
-                busy && progress.second > 1 -> ProgressRow("Sending ${progress.first}/${progress.second}…")
-                busy -> ProgressRow(stringResource(R.string.remote_sending))
-                status != null -> Text(
-                    status!!, style = MaterialTheme.typography.labelMedium,
-                    color = if (status!!.contains("✓") || status!!.contains("cleared")) GoodGreen else Color(0xFFC0503A),
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
         OutlineButton(text = stringResource(R.string.remote_disconnect), onClick = onBack)
         Spacer(Modifier.height(24.dp))
     }
@@ -2653,7 +2652,7 @@ private fun visualTypeFor(kind: String): ActivityResultContracts.PickVisualMedia
  * file picker for the chosen kind; [onFolder] opens the folder picker.
  */
 @Composable
-private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (String) -> Unit, onFolder: () -> Unit) {
+private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (String) -> Unit, onFolder: () -> Unit, onGooglePhotos: () -> Unit = {}) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, containerColor = com.il90.salongallery.ui.theme.ElecSurface) {
         DropdownMenuItem(text = { Text(stringResource(R.string.add_photos), color = TextPrimary) }, onClick = { onFiles("photo") },
             leadingIcon = { Icon(Icons.Outlined.Image, null, tint = NeonCyan) })
@@ -2664,6 +2663,8 @@ private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (St
         androidx.compose.material3.HorizontalDivider(color = ElecBorder)
         DropdownMenuItem(text = { Text(stringResource(R.string.add_folder), color = TextPrimary) }, onClick = { onFolder() },
             leadingIcon = { Icon(Icons.Outlined.Folder, null, tint = NeonTeal) })
+        DropdownMenuItem(text = { Text(stringResource(R.string.home_gphotos), color = TextPrimary) }, onClick = { onGooglePhotos() },
+            leadingIcon = { Icon(Icons.Outlined.Link, null, tint = NeonBlue) })
     }
 }
 
@@ -2739,7 +2740,15 @@ private fun LayoutPreviewTile(key: String, label: String, selected: Boolean, onC
             contentAlignment = Alignment.Center,
         ) {
             if (key == "random") {
-                Text("🎲", style = MaterialTheme.typography.headlineSmall)
+                // "Mix": a few overlapping mini shapes to say "a bit of each layout".
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(6.dp)) {
+                    val c = Color(0xFFF2EEE6)
+                    drawRoundRect(c.copy(alpha = 0.55f), androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.28f), androidx.compose.ui.geometry.Size(size.width * 0.5f, size.height * 0.5f), androidx.compose.ui.geometry.CornerRadius(3f))
+                    withTransform({ rotate(-12f, androidx.compose.ui.geometry.Offset(size.width * 0.5f, size.height * 0.5f)) }) {
+                        drawRoundRect(c.copy(alpha = 0.8f), androidx.compose.ui.geometry.Offset(size.width * 0.3f, size.height * 0.14f), androidx.compose.ui.geometry.Size(size.width * 0.4f, size.height * 0.42f), androidx.compose.ui.geometry.CornerRadius(3f))
+                    }
+                    drawOval(c, androidx.compose.ui.geometry.Offset(size.width * 0.62f, size.height * 0.46f), androidx.compose.ui.geometry.Size(size.width * 0.3f, size.height * 0.4f))
+                }
             } else {
                 val vw = 100f; val vh = 64f
                 val items = remember(key) { layoutPreviewItems(key, vw, vh) }
@@ -2785,11 +2794,12 @@ private fun layoutPreviewItems(key: String, w: Float, h: Float): List<Placement>
 
 /** Slide layouts offered in the Slideshow sheet: key sent to the Display → chip label. */
 private val LAYOUTS = listOf(
-    "single" to "Single", "mosaic" to "Mosaic", "scatter" to "Scatter", "grid" to "Grid",
+    // "random" (sent to the Display) is shown as "Mix" — it mixes the layouts, it isn't disorderly.
+    "random" to "Mix", "single" to "Single", "mosaic" to "Mosaic", "scatter" to "Scatter", "grid" to "Grid",
     "polaroid" to "Polaroids", "filmstrip" to "Film strip", "stack" to "Stack", "fan" to "Fan",
     "gallery" to "Gallery wall", "clothesline" to "Clothesline", "bubbles" to "Bubbles",
     "magazine" to "Magazine", "columns" to "Columns", "collage" to "Collage", "frames" to "Frames",
-    "patchwork" to "Patchwork", "overlap" to "Overlap", "random" to "🎲 Random",
+    "patchwork" to "Patchwork", "overlap" to "Overlap",
 )
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
