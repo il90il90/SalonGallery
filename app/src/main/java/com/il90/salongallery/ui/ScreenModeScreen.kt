@@ -729,16 +729,29 @@ private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, lands
         if (horizontal) Row(m, horizontalArrangement = Arrangement.spacedBy(gap)) { items.forEach { cell(it, Modifier.weight(1f).fillMaxHeight()) } }
         else Column(m, verticalArrangement = Arrangement.spacedBy(gap)) { items.forEach { cell(it, Modifier.weight(1f).fillMaxWidth()) } }
     }
+    // Four or more in one strip makes thin slivers that slice faces in half — fold them into a 2×2
+    // block instead (two strips side by side), so every cell stays close to a normal photo shape.
+    @Composable fun stack(items: List<File>, m: Modifier, horizontal: Boolean) {
+        if (items.size < 4) { strip(items, m, horizontal); return }
+        val half = (items.size + 1) / 2
+        if (horizontal) Column(m, verticalArrangement = Arrangement.spacedBy(gap)) {
+            strip(items.take(half), Modifier.weight(1f).fillMaxWidth(), horizontal = true)
+            strip(items.drop(half), Modifier.weight(1f).fillMaxWidth(), horizontal = true)
+        } else Row(m, horizontalArrangement = Arrangement.spacedBy(gap)) {
+            strip(items.take(half), Modifier.weight(1f).fillMaxHeight(), horizontal = false)
+            strip(items.drop(half), Modifier.weight(1f).fillMaxHeight(), horizontal = false)
+        }
+    }
     // "Hero + strip": one large photo taking ~60% along the main axis, the rest sharing a strip
     // beside it. On a landscape screen the hero sits left/right; on portrait, top/bottom.
     @Composable fun heroAndStrip(heroFirst: Boolean) {
         val hero = f[0]; val rest = f.drop(1)
         if (landscape) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
-            if (heroFirst) { cell(hero, Modifier.weight(1.5f).fillMaxHeight()); strip(rest, Modifier.weight(1f).fillMaxHeight(), horizontal = false) }
-            else { strip(rest, Modifier.weight(1f).fillMaxHeight(), horizontal = false); cell(hero, Modifier.weight(1.5f).fillMaxHeight()) }
+            if (heroFirst) { cell(hero, Modifier.weight(1.5f).fillMaxHeight()); stack(rest, Modifier.weight(1f).fillMaxHeight(), horizontal = false) }
+            else { stack(rest, Modifier.weight(1f).fillMaxHeight(), horizontal = false); cell(hero, Modifier.weight(1.5f).fillMaxHeight()) }
         } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
-            if (heroFirst) { cell(hero, Modifier.weight(1.5f).fillMaxWidth()); strip(rest, Modifier.weight(1f).fillMaxWidth(), horizontal = true) }
-            else { strip(rest, Modifier.weight(1f).fillMaxWidth(), horizontal = true); cell(hero, Modifier.weight(1.5f).fillMaxWidth()) }
+            if (heroFirst) { cell(hero, Modifier.weight(1.5f).fillMaxWidth()); stack(rest, Modifier.weight(1f).fillMaxWidth(), horizontal = true) }
+            else { stack(rest, Modifier.weight(1f).fillMaxWidth(), horizontal = true); cell(hero, Modifier.weight(1.5f).fillMaxWidth()) }
         }
     }
     // "Two bands": the photos split into two rows (landscape) or two columns (portrait).
@@ -1057,10 +1070,14 @@ private fun BoxScope.VignetteOverlay() {
  * matters, measured before any display rotation) so its [focus] — the faces — stays in view instead
  * of the plain centre: horizontally the faces are centred, vertically they sit a little above the
  * middle (natural headroom), each clamped so the crop never runs past the photo's edge. Absolute
- * (not start/end) bias, so an RTL screen doesn't mirror it. No focus → centre.
+ * (not start/end) bias, so an RTL screen doesn't mirror it. No focus (no face found) → centred
+ * across, but leaning to the upper part when trimming top/bottom — that's where heads usually are,
+ * so a tall photo in a wide slot shows faces rather than a belly.
  */
+private val NoFocusAlignment = androidx.compose.ui.BiasAbsoluteAlignment(0f, -0.4f)
+
 internal fun focusAlignment(focus: PhotoFocus?, boxW: Float, boxH: Float): Alignment {
-    if (focus == null || focus.aspect <= 0f || !(boxW > 0f) || !(boxH > 0f) || boxW.isInfinite() || boxH.isInfinite()) return Alignment.Center
+    if (focus == null || focus.aspect <= 0f || !(boxW > 0f) || !(boxH > 0f) || boxW.isInfinite() || boxH.isInfinite()) return NoFocusAlignment
     val boxAr = boxW / boxH
     // Fraction of the picture left visible along each axis once Crop fills the box.
     val vx = if (focus.aspect > boxAr) boxAr / focus.aspect else 1f
