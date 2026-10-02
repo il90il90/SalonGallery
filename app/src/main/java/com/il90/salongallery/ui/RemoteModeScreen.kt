@@ -2,6 +2,7 @@ package com.il90.salongallery.ui
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -714,7 +715,8 @@ private fun ControlPanel(
     var motion by remember { mutableStateOf("off") }
     var stagger by remember { mutableStateOf(false) }
     var spreadMix by remember { mutableStateOf("always") }
-    var mediaMenu by remember { mutableStateOf(false) }   // All / Photos / Videos chooser for "Add"
+    var mediaMenu by remember { mutableStateOf(false) }   // Photos / Videos / Both / folder chooser for "Add"
+    var folderKindMenu by remember { mutableStateOf(false) }  // Photos / Videos / All for the chosen folder
     var folderKind by remember { mutableStateOf("all") }  // which types the chosen folder should send
     var motionSpeed by remember { mutableStateOf("medium") }
     var showFrames by remember { mutableStateOf(false) }
@@ -785,10 +787,11 @@ private fun ControlPanel(
         status = "Added $ok / ${uris.size} ✓"
         onInfoRefresh(scope); refreshLib()
     }
-    // The system file picker, not the Photo Picker: Android's Photo Picker caps a selection at
-    // its own limit (usually 100), which no app can raise — this one takes as many as you pick.
+    // The Android Photo Picker — the familiar gallery grid, filtered to photos / videos / both. It
+    // caps a selection at the system limit (usually 100); for sending a whole camera roll at once
+    // the "Whole folder" option below has no cap.
     val mediaPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
+        ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         // Load the album list BEFORE opening the sheet: it decides its initial layout (chips vs.
@@ -899,12 +902,16 @@ private fun ControlPanel(
                 HomeAction(Modifier.fillMaxWidth(), Icons.Outlined.AddPhotoAlternate, stringResource(R.string.home_photos), NeonCyan, TintClay, !busy) {
                     mediaMenu = true
                 }
-                // One "Add" entry point: pick photos, videos, both, or a whole folder.
+                // One "Add" entry point: pick photos, videos, both (gallery), or a whole folder.
                 AddSourceMenu(
                     mediaMenu, { mediaMenu = false },
-                    onFiles = { kind -> mediaMenu = false; mediaPicker.launch(mediaTypesFor(kind)) },
-                    onFolder = { kind -> mediaMenu = false; folderKind = kind; folderPicker.launch(null) },
+                    onFiles = { kind -> mediaMenu = false; mediaPicker.launch(PickVisualMediaRequest(visualTypeFor(kind))) },
+                    onFolder = { mediaMenu = false; folderKindMenu = true },
                 )
+                // Second step for "Whole folder": which kinds to pull from it.
+                MediaKindMenu(folderKindMenu, { folderKindMenu = false }) { kind ->
+                    folderKindMenu = false; folderKind = kind; folderPicker.launch(null)
+                }
             }
             HomeAction(Modifier.weight(1f), Icons.Outlined.Palette, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.home_music), NeonViolet, TintPlum, !busy) { showMusic = true }
@@ -1289,8 +1296,8 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
         }
         busy = false; refresh()
     }
-    // No selection cap (see the main media picker).
-    val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+    // The gallery Photo Picker for adding into an album.
+    val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         // Inside an album, add straight into it; from "All", ask where these should go.
         if (activeId != "all") scope.launch { uploadMedia(uris, activeId) } else pendingMedia = uris
@@ -1364,7 +1371,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                             if (busy) CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                             else Box {
                                 RoundIconBtn(Icons.Outlined.Add, accent = true) { addMenu = true }
-                                MediaKindMenu(addMenu, { addMenu = false }) { kind -> addMenu = false; addPicker.launch(mediaTypesFor(kind)) }
+                                MediaKindMenu(addMenu, { addMenu = false }) { kind -> addMenu = false; addPicker.launch(PickVisualMediaRequest(visualTypeFor(kind))) }
                             }
                         }
                     }
@@ -2489,11 +2496,11 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showChe
     }
 }
 
-/** The MIME types a picker should offer for the chosen kind: all | photo | video. */
-private fun mediaTypesFor(kind: String): Array<String> = when (kind) {
-    "photo" -> arrayOf("image/*")
-    "video" -> arrayOf("video/*")
-    else -> arrayOf("image/*", "video/*")
+/** Maps a kind (all | photo | video) to a Photo Picker media-type filter. */
+private fun visualTypeFor(kind: String): ActivityResultContracts.PickVisualMedia.VisualMediaType = when (kind) {
+    "photo" -> ActivityResultContracts.PickVisualMedia.ImageOnly
+    "video" -> ActivityResultContracts.PickVisualMedia.VideoOnly
+    else -> ActivityResultContracts.PickVisualMedia.ImageAndVideo
 }
 
 /**
@@ -2502,7 +2509,7 @@ private fun mediaTypesFor(kind: String): Array<String> = when (kind) {
  * file picker for the chosen kind; [onFolder] opens the folder picker.
  */
 @Composable
-private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (String) -> Unit, onFolder: (String) -> Unit) {
+private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (String) -> Unit, onFolder: () -> Unit) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, containerColor = com.il90.salongallery.ui.theme.ElecSurface) {
         DropdownMenuItem(text = { Text(stringResource(R.string.add_photos), color = TextPrimary) }, onClick = { onFiles("photo") },
             leadingIcon = { Icon(Icons.Outlined.Image, null, tint = NeonCyan) })
@@ -2511,7 +2518,7 @@ private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (St
         DropdownMenuItem(text = { Text(stringResource(R.string.add_both), color = TextPrimary) }, onClick = { onFiles("all") },
             leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null, tint = NeonCyan) })
         androidx.compose.material3.HorizontalDivider(color = ElecBorder)
-        DropdownMenuItem(text = { Text(stringResource(R.string.add_folder), color = TextPrimary) }, onClick = { onFolder("all") },
+        DropdownMenuItem(text = { Text(stringResource(R.string.add_folder), color = TextPrimary) }, onClick = { onFolder() },
             leadingIcon = { Icon(Icons.Outlined.Folder, null, tint = NeonTeal) })
     }
 }
