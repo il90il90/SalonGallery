@@ -55,6 +55,13 @@ interface ScreenCommands {
     fun onDuration(photo: String, seconds: Int)
     fun durationJson(photo: String): String
     fun onPin(photo: String, pinned: Boolean)
+    // Screen admin (controlled from the Remote): name, auto-sleep schedule, screen PIN, change role
+    fun onRename(name: String)
+    fun settingsJson(): String
+    fun onSchedule(on: Boolean, start: Int, end: Int)
+    fun onSetScreenPin(code: String)
+    fun screenPinCheckJson(code: String): String
+    fun onResetRole()
 }
 
 /**
@@ -256,6 +263,23 @@ class PhotoServer(
                 val on = session.parameters["on"]?.firstOrNull() == "1"
                 if (photo != null) commands.onPin(photo, on); ok()
             }
+
+            session.method == Method.GET && uri == "/rename" -> {
+                session.parameters["name"]?.firstOrNull()?.let { commands.onRename(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/settings/get" -> json(commands.settingsJson())
+            session.method == Method.GET && uri == "/schedule" -> {
+                val on = session.parameters["on"]?.firstOrNull() == "1"
+                val start = session.parameters["start"]?.firstOrNull()?.toIntOrNull() ?: 1380
+                val end = session.parameters["end"]?.firstOrNull()?.toIntOrNull() ?: 420
+                commands.onSchedule(on, start, end); ok()
+            }
+            session.method == Method.GET && uri == "/screenpin" -> {
+                commands.onSetScreenPin(session.parameters["code"]?.firstOrNull() ?: ""); ok()
+            }
+            session.method == Method.GET && uri == "/screenpin/check" ->
+                json(commands.screenPinCheckJson(session.parameters["code"]?.firstOrNull() ?: ""))
+            session.method == Method.GET && uri == "/resetrole" -> { commands.onResetRole(); ok() }
 
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "not found")
         }

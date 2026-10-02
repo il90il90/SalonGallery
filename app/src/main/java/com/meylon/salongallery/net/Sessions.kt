@@ -55,6 +55,8 @@ class ScreenSession(
     val musicPrevTrigger = MutableStateFlow(0L)
     /** Bumped when the Remote asks the Display to open Android's screensaver settings. */
     val screensaverTrigger = MutableStateFlow(0L)
+    /** Bumped when the Remote asks the Display to drop back to role selection. */
+    val resetRoleTrigger = MutableStateFlow(0L)
     /** Index into the music library that is currently playing (updated by the player). */
     val musicIndex = MutableStateFlow(0)
     val frameId = MutableStateFlow(0)
@@ -298,6 +300,25 @@ class ScreenSession(
     }
 
     override fun onOpenScreensaver() { screensaverTrigger.value = System.currentTimeMillis() }
+
+    override fun onRename(name: String) { renameDevice(name) }
+
+    override fun settingsJson(): String =
+        """{"name":"${esc(prefs.customName)}","hasPin":${prefs.hasPin},""" +
+            """"schedOn":${prefs.scheduleEnabled},"sleepStart":${prefs.sleepStartMin},"sleepEnd":${prefs.sleepEndMin}}"""
+
+    override fun onSchedule(on: Boolean, start: Int, end: Int) {
+        prefs.scheduleEnabled = on
+        prefs.sleepStartMin = start.coerceIn(0, 1439)
+        prefs.sleepEndMin = end.coerceIn(0, 1439)
+    }
+
+    override fun onSetScreenPin(code: String) { prefs.pin = code.filter { it.isDigit() }.take(6) }
+
+    override fun screenPinCheckJson(code: String): String =
+        """{"ok":${!prefs.hasPin || code == prefs.pin}}"""
+
+    override fun onResetRole() { resetRoleTrigger.value = System.currentTimeMillis() }
 
     override fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean) {
         val clean = feeds.map { it.trim() }.filter { it.isNotBlank() }

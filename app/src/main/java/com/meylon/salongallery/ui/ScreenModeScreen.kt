@@ -60,6 +60,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -181,22 +182,17 @@ fun ScreenModeScreen(actions: AppActions) {
     val musicNext by session.musicNextTrigger.collectAsStateWithLifecycle()
     val musicPrev by session.musicPrevTrigger.collectAsStateWithLifecycle()
     val screensaverReq by session.screensaverTrigger.collectAsStateWithLifecycle()
+    val resetRoleReq by session.resetRoleTrigger.collectAsStateWithLifecycle()
 
-    var showSettings by remember { mutableStateOf(false) }
-    var showPinPrompt by remember { mutableStateOf(false) }
-    // Android TV: keep D-pad focus on the display so the remote's OK button opens settings.
+    // Android TV: keep D-pad focus on the display so the remote's arrows flip photos.
     val rootFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(showSettings, showPinPrompt) {
-        if (!showSettings && !showPinPrompt) runCatching { rootFocus.requestFocus() }
-    }
+    LaunchedEffect(Unit) { runCatching { rootFocus.requestFocus() } }
 
     // Auto-sleep schedule: re-evaluate every 30s.
     var sleeping by remember { mutableStateOf(session.prefs.isSleepingNow()) }
     LaunchedEffect(Unit) {
         while (true) { sleeping = session.prefs.isSleepingNow(); delay(30_000) }
     }
-
-    fun openSettings() { if (session.prefs.hasPin) showPinPrompt = true else showSettings = true }
 
     // Keep the display awake permanently.
     DisposableEffect(Unit) {
@@ -239,6 +235,10 @@ fun ScreenModeScreen(actions: AppActions) {
     LaunchedEffect(screensaverReq) {
         if (screensaverReq > 0) openScreensaverSettings(context)
     }
+    // The Remote asked this screen to drop back to role selection.
+    LaunchedEffect(resetRoleReq) {
+        if (resetRoleReq > 0) actions.onChangeRole()
+    }
 
     // Brightness is applied as a software dimming scrim (see below) so it works like real
     // picture brightness on every device, including Android TV where window brightness is ignored.
@@ -249,15 +249,14 @@ fun ScreenModeScreen(actions: AppActions) {
             ScreenOrientation.AUTO -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
-    // Pure fullscreen: hide the system bars entirely; only reveal them while the
-    // settings sheet is open so it is comfortable to use.
-    DisposableEffect(showSettings) {
+    // Pure fullscreen: hide the system bars entirely. The screen shows nothing but the
+    // gallery — all control happens from the Remote.
+    DisposableEffect(Unit) {
         activity?.window?.let { w ->
             val c = WindowCompat.getInsetsController(w, view)
             c.systemBarsBehavior =
                 androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            if (showSettings) c.show(WindowInsetsCompat.Type.systemBars())
-            else c.hide(WindowInsetsCompat.Type.systemBars())
+            c.hide(WindowInsetsCompat.Type.systemBars())
         }
         onDispose {}
     }
@@ -308,16 +307,30 @@ fun ScreenModeScreen(actions: AppActions) {
         }
     }
 
+    // Flip photos with the TV remote's left/right arrows (and wake from sleep on any press/tap).
+    fun step(delta: Int) {
+        val n = files.size
+        if (n > 1) session.currentIndex.value = ((currentIndex + delta) % n + n) % n
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(rootFocus)
             .focusable()
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                if (sleeping) { sleeping = false; return@onKeyEvent true }
+                when (ev.key) {
+                    Key.DirectionLeft, Key.MediaPrevious, Key.MediaRewind -> { step(-1); true }
+                    Key.DirectionRight, Key.MediaNext, Key.MediaFastForward -> { step(1); true }
+                    else -> false
+                }
+            }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-            ) { if (sleeping) sleeping = false else openSettings() },
+            ) { if (sleeping) sleeping = false },
     ) {
         when {
             mode != DisplayMode.WAITING && files.isNotEmpty() ->
@@ -377,34 +390,6 @@ fun ScreenModeScreen(actions: AppActions) {
         }
     }
 
-    if (showSettings) {
-        val w = remember { context.resources.displayMetrics.widthPixels }
-        val h = remember { context.resources.displayMetrics.heightPixels }
-        val stat = remember { runCatching { android.os.StatFs(context.filesDir.path) }.getOrNull() }
-        SettingsSheet(
-            actions = actions,
-            onDismiss = { showSettings = false },
-            extra = {
-                Spacer(Modifier.height(16.dp))
-                ScreenAdminContent(session)
-                Spacer(Modifier.height(20.dp))
-                ScreenInfoContent(
-                    widthPx = w, heightPx = h,
-                    freeBytes = stat?.availableBytes ?: 0L,
-                    totalBytes = stat?.totalBytes ?: 0L,
-                    photoCount = files.size,
-                )
-            },
-        )
-    }
-
-    if (showPinPrompt) {
-        PinPromptDialog(
-            correctPin = session.prefs.pin,
-            onSuccess = { showPinPrompt = false; showSettings = true },
-            onDismiss = { showPinPrompt = false },
-        )
-    }
 }
 
 @Composable
@@ -858,156 +843,6 @@ private fun TvTextField(
     )
 }
 
-@Composable
-private fun ScreenAdminContent(session: ScreenSession) {
-    // Android TV: focus the first control when the settings open so the D-pad can drive it.
-    val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
-    var name by remember { mutableStateOf(session.prefs.customName) }
-    var savedName by remember { mutableStateOf(false) }
-    var pin by remember { mutableStateOf("") }
-    var hasPin by remember { mutableStateOf(session.prefs.hasPin) }
-    var pinMsg by remember { mutableStateOf<String?>(null) }
-    var schedOn by remember { mutableStateOf(session.prefs.scheduleEnabled) }
-    var startMin by remember { mutableIntStateOf(session.prefs.sleepStartMin) }
-    var endMin by remember { mutableIntStateOf(session.prefs.sleepEndMin) }
-
-    val tfColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
-        focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
-    )
-
-    val ctx = LocalContext.current
-    Column(Modifier.fillMaxWidth()) {
-        SectionLabel(stringResource(R.string.admin_section))
-        Spacer(Modifier.height(16.dp))
-
-        // Recommend using the app as the system screensaver (auto-shows photos when idle).
-        Text(stringResource(R.string.admin_screensaver_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-        Spacer(Modifier.height(8.dp))
-        OutlineButton(
-            text = stringResource(R.string.admin_screensaver),
-            leading = Icons.Outlined.Bedtime,
-            onClick = { openScreensaverSettings(ctx) },
-        )
-        Spacer(Modifier.height(22.dp))
-
-        Text(stringResource(R.string.admin_name), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-        Spacer(Modifier.height(8.dp))
-        TvTextField(
-            value = name, onValueChange = { name = it; savedName = false },
-            placeholder = stringResource(R.string.admin_name_hint),
-            colors = tfColors,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(10.dp))
-        GradientButton(
-            text = if (savedName) stringResource(R.string.admin_saved) else stringResource(R.string.admin_save_name),
-            modifier = Modifier.focusRequester(firstFocus),
-            onClick = { session.renameDevice(name); savedName = true },
-        )
-
-        Spacer(Modifier.height(22.dp))
-        Text(stringResource(R.string.admin_pin), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            stringResource(if (hasPin) R.string.admin_pin_on else R.string.admin_pin_off),
-            style = MaterialTheme.typography.bodySmall, color = TextSecondary,
-        )
-        Spacer(Modifier.height(8.dp))
-        TvTextField(
-            value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6); pinMsg = null },
-            placeholder = stringResource(R.string.admin_pin_hint),
-            colors = tfColors,
-            modifier = Modifier.fillMaxWidth(),
-            password = true,
-        )
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) {
-                GradientButton(
-                    text = stringResource(R.string.admin_save_pin),
-                    onClick = {
-                        if (pin.length >= 4) { session.prefs.pin = pin; hasPin = true; pin = ""; pinMsg = "PIN saved ✓" }
-                        else pinMsg = "Use at least 4 digits"
-                    },
-                )
-            }
-            if (hasPin) Box(Modifier.weight(1f)) {
-                OutlineButton(
-                    text = stringResource(R.string.admin_remove_pin),
-                    onClick = { session.prefs.pin = ""; hasPin = false; pin = ""; pinMsg = "PIN removed" },
-                )
-            }
-        }
-        pinMsg?.let { Spacer(Modifier.height(8.dp)); Text(it, style = MaterialTheme.typography.labelMedium, color = NeonCyan) }
-
-        Spacer(Modifier.height(22.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.admin_schedule), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
-            Switch(checked = schedOn, onCheckedChange = { schedOn = it; session.prefs.scheduleEnabled = it })
-        }
-        if (schedOn) {
-            Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.admin_schedule_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-            Spacer(Modifier.height(12.dp))
-            TimeStepper(stringResource(R.string.admin_sleep_at), startMin) { startMin = it; session.prefs.sleepStartMin = it }
-            Spacer(Modifier.height(10.dp))
-            TimeStepper(stringResource(R.string.admin_wake_at), endMin) { endMin = it; session.prefs.sleepEndMin = it }
-        }
-    }
-}
-
-@Composable
-private fun TimeStepper(label: String, minutes: Int, onChange: (Int) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ElecSurface).padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
-        IconButton(onClick = { onChange((minutes - 30 + 1440) % 1440) }) {
-            Icon(Icons.Outlined.Remove, contentDescription = "earlier", tint = NeonCyan)
-        }
-        Text(
-            DisplayPrefs.fmt(minutes),
-            style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary),
-            modifier = Modifier.width(74.dp), textAlign = TextAlign.Center,
-        )
-        IconButton(onClick = { onChange((minutes + 30) % 1440) }) {
-            Icon(Icons.Outlined.Add, contentDescription = "later", tint = NeonCyan)
-        }
-    }
-}
-
-@Composable
-private fun PinPromptDialog(correctPin: String, onSuccess: () -> Unit, onDismiss: () -> Unit) {
-    var pin by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf(false) }
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.clip(RoundedCornerShape(24.dp)).background(ElecBg).border(1.dp, ElecBorder, RoundedCornerShape(24.dp)).padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(stringResource(R.string.admin_enter_pin), style = MaterialTheme.typography.titleLarge, color = TextPrimary)
-            Spacer(Modifier.height(16.dp))
-            TvTextField(
-                value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6); error = false },
-                placeholder = stringResource(R.string.admin_pin_hint),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
-                    focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
-                ),
-                password = true,
-            )
-            if (error) { Spacer(Modifier.height(8.dp)); Text(stringResource(R.string.admin_pin_wrong), style = MaterialTheme.typography.labelMedium, color = Color(0xFFF87171)) }
-            Spacer(Modifier.height(16.dp))
-            GradientButton(text = stringResource(R.string.admin_unlock), onClick = { if (pin == correctPin) onSuccess() else { error = true; pin = "" } })
-            Spacer(Modifier.height(10.dp))
-            OutlineButton(text = stringResource(R.string.cancel), onClick = { onDismiss() })
-        }
-    }
-}
-
 /**
  * Open the device's screensaver settings. `ACTION_DREAM_SETTINGS` is missing on many Android TV /
  * Google TV builds, so try the known TV component too, and if nothing opens, fall back to the main
@@ -1080,21 +915,7 @@ private fun WaitingToPair(deviceName: String, running: Boolean) {
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                stringResource(R.string.screen_tap_hint),
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary, textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(22.dp))
-            // Quick shortcut to make this app the device's system screensaver.
-            val ctx = LocalContext.current
-            OutlineButton(
-                text = stringResource(R.string.admin_screensaver),
-                leading = Icons.Outlined.Bedtime,
-                onClick = { openScreensaverSettings(ctx) },
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.admin_screensaver_hint),
+                stringResource(R.string.screen_remote_hint),
                 style = MaterialTheme.typography.labelMedium,
                 color = TextSecondary, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 24.dp),

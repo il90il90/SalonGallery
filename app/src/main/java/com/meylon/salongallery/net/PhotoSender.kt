@@ -38,6 +38,12 @@ data class RssState(
     val showImage: Boolean, val showSource: Boolean, val showSummary: Boolean,
 )
 
+/** The Display's admin settings, fetched by the Remote so it can edit them remotely. */
+data class ScreenSettings(
+    val name: String, val hasPin: Boolean,
+    val schedOn: Boolean, val sleepStart: Int, val sleepEnd: Int,
+)
+
 data class MusicTrack(val name: String, val title: String)
 data class MusicState(val playing: Boolean, val shuffle: Boolean, val current: Int, val tracks: List<MusicTrack>)
 
@@ -334,6 +340,49 @@ object PhotoSender {
     /** Ask the Display to open Android's screensaver settings on its own screen. */
     suspend fun openScreensaver(host: String, port: Int) =
         get(host, port, "/screensaver")
+
+    // ---- Screen admin, controlled from the Remote ----
+
+    suspend fun getSettings(host: String, port: Int): ScreenSettings? = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/settings/get", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val o = JSONObject(body)
+            ScreenSettings(
+                name = o.optString("name", ""),
+                hasPin = o.optBoolean("hasPin", false),
+                schedOn = o.optBoolean("schedOn", false),
+                sleepStart = o.optInt("sleepStart", 1380),
+                sleepEnd = o.optInt("sleepEnd", 420),
+            )
+        } catch (e: Exception) { null }
+    }
+
+    suspend fun setName(host: String, port: Int, name: String) =
+        get(host, port, "/rename?name=${enc(name)}")
+
+    suspend fun setSchedule(host: String, port: Int, on: Boolean, start: Int, end: Int) =
+        get(host, port, "/schedule?on=${if (on) 1 else 0}&start=$start&end=$end")
+
+    suspend fun setScreenPin(host: String, port: Int, code: String) =
+        get(host, port, "/screenpin?code=${enc(code)}")
+
+    /** Verify a screen PIN. Returns true when the code is right (or no PIN is set). */
+    suspend fun checkScreenPin(host: String, port: Int, code: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/screenpin/check?code=${enc(code)}", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext false }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            JSONObject(body).optBoolean("ok", false)
+        } catch (e: Exception) { false }
+    }
+
+    /** Ask the Display to drop back to role selection (become a Remote, or re-pair). */
+    suspend fun resetRole(host: String, port: Int) =
+        get(host, port, "/resetrole")
 
     private suspend fun get(host: String, port: Int, path: String): Boolean =
         withContext(Dispatchers.IO) {

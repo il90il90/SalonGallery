@@ -63,6 +63,7 @@ import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.FilterFrames
 import androidx.compose.material.icons.outlined.Folder
@@ -197,21 +198,7 @@ fun RemoteModeScreen(actions: AppActions) {
     var selected by remember { mutableStateOf<DiscoveredScreen?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showManual by remember { mutableStateOf(false) }
-    var demo by remember { mutableStateOf(false) }
-    var showPreview by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf<ScreenInfo?>(null) }
-
-    // Demo mode: spin up a local Display on THIS device so the whole flow can be tried
-    // (and previewed) without a second screen.
-    fun startDemo() {
-        val s = com.meylon.salongallery.net.ScreenSessionHolder.getOrCreate(context, "Demo screen", actions.version)
-        selected = DiscoveredScreen("demo", "Demo screen", "127.0.0.1", s.port)
-        demo = true
-    }
-    fun stopDemo() {
-        demo = false
-        com.meylon.salongallery.net.ScreenSessionHolder.stopAll()
-    }
 
     LaunchedEffect(selected?.host, selected?.port) {
         val s = selected
@@ -253,24 +240,10 @@ fun RemoteModeScreen(actions: AppActions) {
                             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { showManual = true }
                             .padding(horizontal = 8.dp, vertical = 6.dp),
                     )
-                    Spacer(Modifier.height(20.dp))
-                    GradientButton(
-                        text = stringResource(R.string.remote_try_demo),
-                        leading = Icons.Outlined.PlayCircle,
-                        onClick = { startDemo() },
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        stringResource(R.string.remote_try_demo_hint),
-                        style = MaterialTheme.typography.bodySmall, color = TextTertiary, textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
                 } else {
                     ControlPanel(
                         screen = target,
-                        demo = demo,
-                        onPreview = { showPreview = true },
-                        onBack = { if (demo) stopDemo(); selected = null; info = null },
+                        onBack = { selected = null; info = null },
                         onInfoRefresh = { scope -> scope.launch { info = PhotoSender.getInfo(target.host, target.port) } },
                         bottomInset = navBottom,
                     )
@@ -286,12 +259,6 @@ fun RemoteModeScreen(actions: AppActions) {
         )
     }
 
-    if (showPreview) {
-        com.meylon.salongallery.net.ScreenSessionHolder.session?.let { s ->
-            DisplayPreview(s, onClose = { showPreview = false })
-        }
-    }
-
     if (showSettings) {
         SettingsSheet(
             actions = actions,
@@ -302,7 +269,12 @@ fun RemoteModeScreen(actions: AppActions) {
                     ScreenInfoContent(it.widthPx, it.heightPx, it.freeBytes, it.totalBytes, it.photoCount)
                 }
                 selected?.let { s ->
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(20.dp))
+                    RemoteScreenAdmin(
+                        screen = s,
+                        onRoleReset = { showSettings = false; selected = null; info = null },
+                    )
+                    Spacer(Modifier.height(22.dp))
                     Text(
                         stringResource(R.string.remote_screensaver_hint),
                         style = MaterialTheme.typography.bodySmall, color = TextSecondary,
@@ -368,14 +340,170 @@ private fun ManualConnectDialog(onConnect: (String, Int) -> Unit, onDismiss: () 
     }
 }
 
+/**
+ * The screen's admin settings, edited entirely from the Remote: device name, auto-sleep
+ * schedule, screen PIN, and a "return to setup" that drops the screen back to role selection.
+ */
+@Composable
+private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var loaded by remember(screen.host, screen.port) { mutableStateOf(false) }
+    var name by remember(screen.host, screen.port) { mutableStateOf("") }
+    var nameSaved by remember(screen.host, screen.port) { mutableStateOf(false) }
+    var pin by remember(screen.host, screen.port) { mutableStateOf("") }
+    var hasPin by remember(screen.host, screen.port) { mutableStateOf(false) }
+    var pinMsg by remember(screen.host, screen.port) { mutableStateOf<String?>(null) }
+    var schedOn by remember(screen.host, screen.port) { mutableStateOf(false) }
+    var sleepStart by remember(screen.host, screen.port) { mutableIntStateOf(1380) }
+    var sleepEnd by remember(screen.host, screen.port) { mutableIntStateOf(420) }
+    var confirmReset by remember { mutableStateOf(false) }
+
+    LaunchedEffect(screen.host, screen.port) {
+        PhotoSender.getSettings(screen.host, screen.port)?.let {
+            name = it.name; hasPin = it.hasPin; schedOn = it.schedOn
+            sleepStart = it.sleepStart; sleepEnd = it.sleepEnd; loaded = true
+        }
+    }
+
+    val tf = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+        focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+    )
+
+    Column(Modifier.fillMaxWidth()) {
+        SectionLabel(stringResource(R.string.admin_section))
+
+        Spacer(Modifier.height(14.dp))
+        Text(stringResource(R.string.admin_name), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = name, onValueChange = { name = it; nameSaved = false }, singleLine = true,
+            modifier = Modifier.fillMaxWidth(), colors = tf,
+            placeholder = { Text(stringResource(R.string.admin_name_hint), color = TextTertiary) },
+        )
+        Spacer(Modifier.height(10.dp))
+        GradientButton(
+            text = if (nameSaved) stringResource(R.string.admin_saved) else stringResource(R.string.admin_save_name),
+            enabled = loaded,
+            onClick = { scope.launch { PhotoSender.setName(screen.host, screen.port, name.trim()); nameSaved = true } },
+        )
+
+        Spacer(Modifier.height(22.dp))
+        Text(stringResource(R.string.admin_pin), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            stringResource(if (hasPin) R.string.admin_pin_on else R.string.admin_pin_off),
+            style = MaterialTheme.typography.bodySmall, color = TextSecondary,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6); pinMsg = null },
+            singleLine = true, modifier = Modifier.fillMaxWidth(), colors = tf,
+            placeholder = { Text(stringResource(R.string.admin_pin_hint), color = TextTertiary) },
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+            ),
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) {
+                GradientButton(text = stringResource(R.string.admin_save_pin), enabled = loaded, onClick = {
+                    if (pin.length >= 4) scope.launch {
+                        PhotoSender.setScreenPin(screen.host, screen.port, pin); hasPin = true; pin = ""; pinMsg = "PIN saved ✓"
+                    } else pinMsg = "Use at least 4 digits"
+                })
+            }
+            if (hasPin) Box(Modifier.weight(1f)) {
+                OutlineButton(text = stringResource(R.string.admin_remove_pin), onClick = {
+                    scope.launch { PhotoSender.setScreenPin(screen.host, screen.port, ""); hasPin = false; pin = ""; pinMsg = "PIN removed" }
+                })
+            }
+        }
+        pinMsg?.let { Spacer(Modifier.height(8.dp)); Text(it, style = MaterialTheme.typography.labelMedium, color = NeonCyan) }
+
+        Spacer(Modifier.height(22.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.admin_schedule), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+            Switch(checked = schedOn, onCheckedChange = {
+                schedOn = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, it, sleepStart, sleepEnd) }
+            })
+        }
+        if (schedOn) {
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.admin_schedule_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            Spacer(Modifier.height(12.dp))
+            RemoteTimeRow(stringResource(R.string.admin_sleep_at), sleepStart) {
+                sleepStart = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, schedOn, it, sleepEnd) }
+            }
+            Spacer(Modifier.height(10.dp))
+            RemoteTimeRow(stringResource(R.string.admin_wake_at), sleepEnd) {
+                sleepEnd = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, schedOn, sleepStart, it) }
+            }
+        }
+
+        Spacer(Modifier.height(22.dp))
+        Text(stringResource(R.string.remote_change_role_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        Spacer(Modifier.height(8.dp))
+        OutlineButton(text = stringResource(R.string.remote_change_role), leading = Icons.Outlined.SwapHoriz, onClick = { confirmReset = true })
+    }
+
+    if (confirmReset) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { confirmReset = false }) {
+            Column(
+                Modifier.clip(RoundedCornerShape(24.dp)).background(com.meylon.salongallery.ui.theme.ElecSurface)
+                    .border(1.dp, ElecBorder, RoundedCornerShape(24.dp)).padding(24.dp),
+            ) {
+                Text(stringResource(R.string.remote_change_role), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.remote_change_role_confirm), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                Spacer(Modifier.height(18.dp))
+                GradientButton(text = stringResource(R.string.remote_change_role), onClick = {
+                    confirmReset = false
+                    scope.launch { PhotoSender.resetRole(screen.host, screen.port); onRoleReset() }
+                })
+                Spacer(Modifier.height(10.dp))
+                OutlineButton(text = stringResource(R.string.cancel), onClick = { confirmReset = false })
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoteTimeRow(label: String, minutes: Int, onChange: (Int) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(com.meylon.salongallery.ui.theme.ElecSurface)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+        RemoteStepBtn("−") { onChange((minutes - 30 + 1440) % 1440) }
+        Text(
+            com.meylon.salongallery.net.DisplayPrefs.fmt(minutes),
+            style = androidx.compose.ui.text.TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary),
+            modifier = Modifier.width(74.dp), textAlign = TextAlign.Center,
+        )
+        RemoteStepBtn("+") { onChange((minutes + 30) % 1440) }
+    }
+}
+
+@Composable
+private fun RemoteStepBtn(symbol: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(40.dp).clip(RoundedCornerShape(50)).background(ElecBorder.copy(alpha = 0.25f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(symbol, style = androidx.compose.ui.text.TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = NeonCyan))
+    }
+}
+
 @Composable
 private fun ControlPanel(
     screen: DiscoveredScreen,
     onBack: () -> Unit,
     onInfoRefresh: (kotlinx.coroutines.CoroutineScope) -> Unit,
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
-    demo: Boolean = false,
-    onPreview: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -476,15 +604,6 @@ private fun ControlPanel(
             current = lib?.let { it.items.getOrNull(it.current) },
             screenName = screen.name,
         )
-
-        if (demo) {
-            Spacer(Modifier.height(12.dp))
-            GradientButton(
-                text = stringResource(R.string.demo_preview),
-                leading = Icons.Outlined.Visibility,
-                onClick = onPreview,
-            )
-        }
 
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

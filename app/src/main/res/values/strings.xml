@@ -28,6 +28,7 @@
     <string name="screen_advertising">Visible on your Wi-Fi</string>
     <string name="screen_starting">Starting…</string>
     <string name="screen_tap_hint">Tap anywhere to open settings</string>
+    <string name="screen_remote_hint">Control everything from your phone — open Salon Gallery as a Remote. Use the TV remote\'s ◀ ▶ to change photos.</string>
 
     <!-- Remote mode -->
     <string name="remote_overline">Remote</string>
@@ -78,9 +79,9 @@
     <string name="remote_connect_ip">Connect by IP</string>
     <string name="remote_connect_ip_hint">Enter the screen\'s address if it isn\'t found automatically.</string>
     <string name="remote_connect">Connect</string>
-    <string name="remote_try_demo">Try a demo</string>
-    <string name="remote_try_demo_hint">No screen? Explore the whole app with a demo screen on this phone.</string>
-    <string name="demo_preview">Preview the screen</string>
+    <string name="remote_change_role">Return screen to setup</string>
+    <string name="remote_change_role_hint">Switch this screen back to the role chooser (to make it a Remote, or re-pair).</string>
+    <string name="remote_change_role_confirm">The screen will drop back to the setup chooser. You can pick Display again there.</string>
     <string name="update_whats_new">WHAT\'S NEW</string>
     <string name="update_download_failed">Couldn\'t download the update</string>
     <string name="rss_title">News</string>
