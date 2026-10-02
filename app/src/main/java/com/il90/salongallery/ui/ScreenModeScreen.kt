@@ -10,6 +10,7 @@ import android.view.WindowManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -122,6 +123,8 @@ import com.il90.salongallery.net.PhotoFit
 import com.il90.salongallery.net.PhotoFilter
 import com.il90.salongallery.net.PhotoTransform
 import com.il90.salongallery.net.LayoutMode
+import com.il90.salongallery.net.MotionMode
+import com.il90.salongallery.net.MotionSpeed
 import com.il90.salongallery.net.ScreenOrientation
 import com.il90.salongallery.net.SlideEffect
 import com.il90.salongallery.net.ScreenSessionHolder
@@ -178,6 +181,8 @@ fun ScreenModeScreen(actions: AppActions) {
     val photoFilter by session.photoFilter.collectAsStateWithLifecycle()
     val collage by session.collage.collectAsStateWithLifecycle()
     val layout by session.layout.collectAsStateWithLifecycle()
+    val motion by session.motion.collectAsStateWithLifecycle()
+    val motionSpeed by session.motionSpeed.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
     val clock by session.clock.collectAsStateWithLifecycle()
     val rssOn by session.rssOn.collectAsStateWithLifecycle()
@@ -378,6 +383,8 @@ fun ScreenModeScreen(actions: AppActions) {
                         volume = volume,
                         collageOn = collage,
                         layout = layout,
+                        motion = motion,
+                        motionSpeed = motionSpeed,
                         orientationMap = orientationMap,
                         transformOf = { session.transformFor(it.name) },
                         durationOf = { session.durationFor(it.name) },
@@ -472,6 +479,8 @@ private fun Slideshow(
     volume: Float,
     collageOn: Boolean,
     layout: LayoutMode = LayoutMode.SINGLE,
+    motion: MotionMode = MotionMode.OFF,
+    motionSpeed: MotionSpeed = MotionSpeed.MEDIUM,
     orientationMap: Map<String, Boolean>,
     transformOf: (File) -> PhotoTransform,
     durationOf: (File) -> Int,
@@ -582,17 +591,24 @@ private fun Slideshow(
         } else if (members.size >= 3 && spreadAt(i) != null) {
             val mf = members.map { files[it] }
             val rotOf: (File) -> Int = { transformOf(it).rotNorm }
-            if (spreadAt(i) == LayoutMode.MOSAIC) MosaicSlide(mf, filter = eff, seed = i, landscape = screenLandscape, rotOf = rotOf)
-            else ScatterSlide(mf, filter = eff, seed = i, rotOf = rotOf)
+            MotionBox(motion, motionSpeed, seed = i) {
+                if (spreadAt(i) == LayoutMode.MOSAIC) MosaicSlide(mf, filter = eff, seed = i, landscape = screenLandscape, rotOf = rotOf)
+                else ScatterSlide(mf, filter = eff, seed = i, rotOf = rotOf)
+            }
         } else if (members.size >= 2) {
-            CollageSlide(members.map { files[it] }, filter = eff, horizontal = screenLandscape, rotOf = { transformOf(it).rotNorm })
+            MotionBox(motion, motionSpeed, seed = i) {
+                CollageSlide(members.map { files[it] }, filter = eff, horizontal = screenLandscape, rotOf = { transformOf(it).rotNorm })
+            }
         } else {
             val kb = if (effAt(i) == SlideEffect.KENBURNS) {
                 val a = remember(i) { Animatable(1f) }
                 LaunchedEffect(i) { a.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
                 a
             } else null
-            PhotoContent(file, fit, transformOf(file), eff) { kb?.value ?: 1f }
+            // Ken Burns already moves the photo — don't stack the ambient motion on top of it.
+            MotionBox(if (kb != null) MotionMode.OFF else motion, motionSpeed, seed = i) {
+                PhotoContent(file, fit, transformOf(file), eff) { kb?.value ?: 1f }
+            }
         }
     }
 }
@@ -640,6 +656,57 @@ private fun AnimatedContentTransitionScope<Int>.transitionFor(e: SlideEffect): C
  * Lays several same-orientation photos side by side as one piece — a clean gallery "multi-aperture
  * mat": a soft mat-coloured separator between photos, each photo recessed by a hairline edge.
  */
+/**
+ * Wraps a still slide in a subtle, endless "living photo" motion while it waits on screen: a slow
+ * breathing ZOOM, a gentle DRIFT across a slightly enlarged frame, or a soft BREATHE that dims and
+ * brightens. MIX picks one per slide from [seed]. Everything stays clipped to the slide so the motion
+ * never spills over the frame/mat, and the animated value is read only in the draw phase (no
+ * per-frame recomposition). Each slide starts its motion from rest, so it eases in with the transition.
+ */
+@Composable
+private fun MotionBox(mode: MotionMode, speed: MotionSpeed, seed: Int, content: @Composable () -> Unit) {
+    val m = if (mode == MotionMode.MIX)
+        listOf(MotionMode.ZOOM, MotionMode.DRIFT, MotionMode.BREATHE)[kotlin.random.Random(seed.toLong() * 131 + 5).nextInt(3)]
+    else mode
+    if (m == MotionMode.OFF) { content(); return }
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "motion")
+    val p = t.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            tween(speed.sweepMs, easing = androidx.compose.animation.core.CubicBezierEasing(0.37f, 0f, 0.63f, 1f)),
+            androidx.compose.animation.core.RepeatMode.Reverse,
+        ),
+        label = "motionP",
+    )
+    // A per-slide drift direction, so consecutive photos don't all slide the same way.
+    val r = remember(seed) { kotlin.random.Random(seed.toLong() * 977 + 3) }
+    val dirX = remember(seed) { if (r.nextBoolean()) 1f else -1f }
+    val dirY = remember(seed) { (r.nextFloat() - 0.5f) * 1.2f }
+    Box(Modifier.fillMaxSize().clipToBounds()) {
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                val v = p.value
+                when (m) {
+                    MotionMode.ZOOM -> { val s = 1f + 0.05f * v; scaleX = s; scaleY = s }
+                    MotionMode.DRIFT -> {
+                        // Enlarged just enough that the ±2% pan never reveals an edge.
+                        scaleX = 1.06f; scaleY = 1.06f
+                        translationX = (v - 0.5f) * 2f * dirX * size.width * 0.02f
+                        translationY = (v - 0.5f) * 2f * dirY * size.height * 0.02f
+                    }
+                    MotionMode.BREATHE -> { val s = 1f + 0.015f * v; scaleX = s; scaleY = s }
+                    else -> {}
+                }
+            },
+        ) { content() }
+        // BREATHE: a soft fade down and back up, as a dark veil (fading the photo itself would let the
+        // cream mat or black backing show through).
+        if (m == MotionMode.BREATHE) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.22f * p.value }.background(Color.Black))
+        }
+    }
+}
+
 /**
  * 3–5 photos in a gutter-separated grid on a warm mat — the gutters are the "divider strips". The
  * template is chosen by [seed] so each slide gets a different but stable arrangement.
@@ -702,7 +769,8 @@ private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotO
     val n = files.size.coerceIn(3, 5)
     val f = files.take(n)
     val density = androidx.compose.ui.platform.LocalDensity.current.density
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF26201B))) {
+    // clipToBounds: a print's shadow/tilt must never spill out over the frame or mat.
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(Color(0xFF26201B))) {
         // Faint table-top vignette so the prints sit "in" the surface rather than float on flat black.
         Box(Modifier.matchParentSize().background(Brush.radialGradient(listOf(Color(0xFF3A312A), Color(0xFF1C1714)), radius = maxWidth.value * density * 0.75f)))
         val w = maxWidth.value; val h = maxHeight.value          // dp
@@ -718,12 +786,19 @@ private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotO
             val rowCount = if (row == rows - 1) n - row * cols else cols
             val rowOffset = (cols - rowCount) * cellW / 2f
             val size = base * (0.9f + r.nextFloat() * 0.2f)
-            val cx = rowOffset + col * cellW + cellW / 2f + (r.nextFloat() - 0.5f) * cellW * 0.22f
-            val cy = row * cellH + cellH / 2f + (r.nextFloat() - 0.5f) * cellH * 0.22f
             val tilt = (r.nextFloat() - 0.5f) * 16f                    // ±8°
+            // Half the tilted print's bounding box, so jitter can't push a print past the edge.
+            val rad = Math.toRadians(kotlin.math.abs(tilt).toDouble())
+            val ext = size / 2f * (kotlin.math.cos(rad) + kotlin.math.sin(rad)).toFloat()
+            val cx = (rowOffset + col * cellW + cellW / 2f + (r.nextFloat() - 0.5f) * cellW * 0.22f).coerceIn(ext, maxOf(ext, w - ext))
+            val cy = (row * cellH + cellH / 2f + (r.nextFloat() - 0.5f) * cellH * 0.22f).coerceIn(ext, maxOf(ext, h - ext))
             val border = size * 0.035f
             Box(
                 Modifier
+                    // Anchor at the physical top-left: the translation below is measured from the
+                    // left edge, but a plain Box child starts at TopStart — the top-RIGHT on an
+                    // RTL (Hebrew) screen — which pushed every print off the right side.
+                    .align(androidx.compose.ui.AbsoluteAlignment.TopLeft)
                     .size(size.dp)
                     .graphicsLayer {
                         translationX = (cx - size / 2f) * density

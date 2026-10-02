@@ -340,6 +340,9 @@ object PhotoSender {
     /** Slide composition: single | mosaic | scatter | random. */
     suspend fun setLayout(host: String, port: Int, mode: String) =
         get(host, port, "/layout?mode=$mode")
+    /** Gentle motion while a photo waits: off | zoom | drift | breathe | mix, at slow | medium | fast. */
+    suspend fun setMotion(host: String, port: Int, mode: String, speed: String) =
+        get(host, port, "/motion?mode=$mode&speed=$speed")
 
     suspend fun setText(host: String, port: Int, content: String, pos: String, size: String, color: String) =
         get(host, port, "/text?content=${enc(content)}&pos=$pos&size=$size&color=$color")

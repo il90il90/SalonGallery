@@ -27,6 +27,24 @@ enum class LayoutMode { SINGLE, MOSAIC, SCATTER, RANDOM;
     }
 }
 
+/**
+ * A subtle "living photo" motion played while a still waits on screen: a slow ZOOM (breathing in
+ * and out), a gentle DRIFT (pan across a slightly enlarged photo), a soft BREATHE (fade down and back
+ * up), or MIX — a seeded pick of the three per slide. OFF keeps the photo perfectly still.
+ */
+enum class MotionMode { OFF, ZOOM, DRIFT, BREATHE, MIX;
+    companion object {
+        fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: OFF
+    }
+}
+
+/** How fast the [MotionMode] runs — the length of one sweep (there and back is twice this). */
+enum class MotionSpeed(val sweepMs: Int) { SLOW(24000), MEDIUM(12000), FAST(6000);
+    companion object {
+        fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: MEDIUM
+    }
+}
+
 /** How a photo is scaled to the screen. */
 enum class PhotoFit { FILL, FIT, BLUR;
     companion object {

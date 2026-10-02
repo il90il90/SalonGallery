@@ -710,6 +710,8 @@ private fun ControlPanel(
     var fit by remember { mutableStateOf("fill") }
     var collage by remember { mutableStateOf(false) }
     var layout by remember { mutableStateOf("single") }
+    var motion by remember { mutableStateOf("off") }
+    var motionSpeed by remember { mutableStateOf("medium") }
     var showFrames by remember { mutableStateOf(false) }
     var showEffects by remember { mutableStateOf(false) }
     var showSlideshow by remember { mutableStateOf(false) }
@@ -942,6 +944,9 @@ private fun ControlPanel(
             shuffle = shuffle, intervalMs = intervalMs, orientation = orientation, fit = fit, collage = collage,
             layout = layout,
             onLayout = { layout = it; scope.launch { PhotoSender.setLayout(screen.host, screen.port, it) } },
+            motion = motion, motionSpeed = motionSpeed,
+            onMotion = { motion = it; scope.launch { PhotoSender.setMotion(screen.host, screen.port, it, motionSpeed) } },
+            onMotionSpeed = { motionSpeed = it; scope.launch { PhotoSender.setMotion(screen.host, screen.port, motion, it) } },
             onShuffle = { shuffle = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, intervalMs, it) } },
             onInterval = { intervalMs = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, it, shuffle) } },
             onOrientation = { orientation = it; scope.launch { PhotoSender.setOrientation(screen.host, screen.port, it) } },
@@ -2454,6 +2459,8 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showChe
 private fun SlideshowSheet(
     shuffle: Boolean, intervalMs: Long, orientation: String, fit: String, collage: Boolean,
     layout: String = "single", onLayout: (String) -> Unit = {},
+    motion: String = "off", motionSpeed: String = "medium",
+    onMotion: (String) -> Unit = {}, onMotionSpeed: (String) -> Unit = {},
     onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
     onFit: (String) -> Unit, onCollage: (Boolean) -> Unit, onDismiss: () -> Unit,
 ) {
@@ -2474,6 +2481,21 @@ private fun SlideshowSheet(
             SegRow(listOf("Single", "Mosaic", "Scatter", "Random"), layouts.indexOf(layout).coerceAtLeast(0)) { onLayout(layouts[it]) }
             Spacer(Modifier.height(6.dp))
             Text(stringResource(R.string.slideshow_layout_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.slideshow_motion), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            val motions = listOf("off", "zoom", "drift", "breathe", "mix")
+            SegRow(listOf("Off", "Zoom", "Drift", "Fade", "Mix"), motions.indexOf(motion).coerceAtLeast(0)) { onMotion(motions[it]) }
+            if (motion != "off") {
+                Spacer(Modifier.height(10.dp))
+                Text(stringResource(R.string.slideshow_motion_speed), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(8.dp))
+                val speeds = listOf("slow", "medium", "fast")
+                SegRow(listOf("Slow", "Medium", "Fast"), speeds.indexOf(motionSpeed).coerceAtLeast(0)) { onMotionSpeed(speeds[it]) }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.slideshow_motion_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
 
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_order), style = MaterialTheme.typography.labelMedium, color = TextSecondary)

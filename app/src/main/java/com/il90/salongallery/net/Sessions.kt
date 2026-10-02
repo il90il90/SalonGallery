@@ -79,6 +79,9 @@ class ScreenSession(
     val collage = MutableStateFlow(false)
     /** Slide composition: single photos, mosaics, scatters, or a random mix. */
     val layout = MutableStateFlow(LayoutMode.SINGLE)
+    /** Subtle motion while a still waits on screen, and how fast it runs. */
+    val motion = MutableStateFlow(MotionMode.OFF)
+    val motionSpeed = MutableStateFlow(MotionSpeed.MEDIUM)
     val textOverlay = MutableStateFlow(TextOverlay())
     val clock = MutableStateFlow(ClockConfig())
     val rssOn = MutableStateFlow(prefs.rssEnabled)
@@ -113,6 +116,7 @@ class ScreenSession(
                 Log.i("SalonScreen", "PhotoServer on port $port as '${effectiveName()}'")
                 runCatching { nsd.register(effectiveName(), port) }
                 running.value = true
+                sweepOrientation()
                 return
             } else runCatching { s.stop() }
         }
@@ -314,6 +318,11 @@ class ScreenSession(
     override fun onCollage(on: Boolean) { collage.value = on }
 
     override fun onLayout(mode: String) { layout.value = LayoutMode.from(mode) }
+
+    override fun onMotion(mode: String, speed: String) {
+        if (mode.isNotBlank()) motion.value = MotionMode.from(mode)
+        if (speed.isNotBlank()) motionSpeed.value = MotionSpeed.from(speed)
+    }
 
     override fun onText(content: String, pos: String, size: String, color: String) {
         textOverlay.value = TextOverlay(content, TextPos.from(pos), size, color)
@@ -579,22 +588,54 @@ class ScreenSession(
     }
 
     /**
-     * Face-aware default orientation: if the people in a freshly added photo only stand upright
-     * after a quarter turn, store that turn as the photo's rotation. Runs off the request thread
-     * so uploads stay snappy; the user's manual rotate always wins over it.
+     * Face-aware default orientation: if the people in a photo only stand upright after a turn
+     * (a quarter turn or upside down), store that turn as the photo's rotation. Runs on one
+     * low-priority background thread so uploads stay snappy; the user's manual rotate always wins.
+     * Each photo is checked once (remembered in orient_checked.txt), so photos that were already in
+     * the library before this existed get straightened too, by [sweepOrientation] at start.
      */
+    private val orientExec = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "salon-orient").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
+    }
+    private val orientFile = File(app.filesDir, "orient_checked.txt")
+    private val orientChecked: MutableSet<String> = java.util.Collections.synchronizedSet(
+        runCatching { orientFile.readLines().filter { it.isNotBlank() }.toMutableSet() }.getOrDefault(mutableSetOf())
+    )
+
     private fun autoOrient(f: File) {
         if (isVideoName(f.name)) return
-        Thread {
-            val r = FaceOrient.detect(f)
-            if (r != 0) {
-                val t = transforms.get(f.name)
-                if (t.rotNorm == 0) {
-                    transforms.set(f.name, t.copy(rot = r))
-                    libraryVersion.value = System.currentTimeMillis()
-                }
+        runCatching { orientExec.execute { orientOne(f) } }
+    }
+
+    /** Queues every not-yet-checked photo in the library for the face-orientation check. */
+    private fun sweepOrientation() {
+        runCatching {
+            orientExec.execute {
+                val photos = library.list().filter { !isVideoName(it.name) }
+                // Forget deleted photos so the checked list doesn't grow forever.
+                val names = photos.map { it.name }.toSet()
+                if (orientChecked.retainAll(names)) saveOrientChecked()
+                photos.filter { it.name !in orientChecked }.forEach { orientOne(it) }
             }
-        }.apply { isDaemon = true }.start()
+        }
+    }
+
+    private fun orientOne(f: File) {
+        if (f.name in orientChecked || !f.exists()) return
+        val r = FaceOrient.detect(f)
+        if (r != 0) {
+            val t = transforms.get(f.name)
+            if (t.rotNorm == 0) {
+                transforms.set(f.name, t.copy(rot = r))
+                libraryVersion.value = System.currentTimeMillis()
+            }
+        }
+        orientChecked.add(f.name)
+        runCatching { orientFile.appendText(f.name + "\n") }
+    }
+
+    private fun saveOrientChecked() {
+        runCatching { orientFile.writeText(synchronized(orientChecked) { orientChecked.joinToString("\n", postfix = "\n") }) }
     }
 
     override fun onDuration(photo: String, seconds: Int) {

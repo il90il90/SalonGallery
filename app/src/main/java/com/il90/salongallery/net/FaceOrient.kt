@@ -17,9 +17,11 @@ import java.io.File
  * clockwise, matching Compose `rotationZ`), or 0 when there is no face or the photo is fine as-is.
  */
 object FaceOrient {
-    private const val SIZE = 480      // detection resolution — small keeps each turn ~100 ms
+    private const val SIZE = 640      // detection resolution — small keeps each turn quick, big enough for kids in a group shot
     private const val MAX_FACES = 4
     private const val MIN_CONFIDENCE = 0.4f
+    /** How much more face confidence a turn needs over the photo as-is before we rotate it. */
+    private const val MARGIN = 0.1f
 
     fun detect(file: File): Int = runCatching {
         val base = decodeAsShown(file) ?: return 0
@@ -30,8 +32,8 @@ object FaceOrient {
                 val turned = Bitmap.createBitmap(base, 0, 0, base.width, base.height, Matrix().apply { postRotate(rot.toFloat()) }, true)
                 val s = score(turned)
                 if (turned !== base) turned.recycle()
-                // Strictly greater: a tie keeps the photo as it is.
-                if (s > bestScore) { bestScore = s; bestRot = rot }
+                // Clearly better only: a tie (or a marginal win) keeps the photo as it is.
+                if (s > bestScore + MARGIN) { bestScore = s; bestRot = rot }
             }
             if (bestScore <= 0f) 0 else bestRot
         } finally {
