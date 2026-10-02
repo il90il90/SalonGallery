@@ -2347,7 +2347,9 @@ private fun FreeMusicSheet(onDownload: (FreeTrack) -> Unit, onDismiss: () -> Uni
 @Composable
 private fun GooglePhotosSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val defaultAlbum = stringResource(R.string.gphotos_album_default)
     var link by remember { mutableStateOf("") }
+    var albumName by remember { mutableStateOf(defaultAlbum) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var ok by remember { mutableStateOf(false) }
@@ -2385,6 +2387,13 @@ private fun GooglePhotosSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
                 placeholder = { Text("https://photos.app.goo.gl/…", color = TextTertiary) },
                 label = { Text(stringResource(R.string.gphotos_link_label), color = TextSecondary) },
             )
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = albumName, onValueChange = { albumName = it }, singleLine = true,
+                modifier = Modifier.fillMaxWidth(), colors = tf,
+                placeholder = { Text(stringResource(R.string.gphotos_album_default), color = TextTertiary) },
+                label = { Text(stringResource(R.string.gphotos_album_label), color = TextSecondary) },
+            )
             status?.let {
                 Spacer(Modifier.height(10.dp))
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = if (ok) GoodGreen else Color(0xFFF2B07A))
@@ -2401,12 +2410,16 @@ private fun GooglePhotosSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
                             urls == null -> { status = errFetch; ok = false }
                             urls.isEmpty() -> { status = errEmpty; ok = false }
                             else -> {
+                                // Put the import in its own album so it's easy to find (and rename).
+                                val name = albumName.trim().ifBlank { defaultAlbum }
+                                val albumId = PhotoSender.createAlbum(screen.host, screen.port, name)
+                                if (albumId != null) PhotoSender.setActiveAlbum(screen.host, screen.port, albumId)
                                 var done = 0
                                 urls.forEach { u ->
                                     if (PhotoSender.downloadPhoto(screen.host, screen.port, u)) done++
                                 }
                                 ok = done > 0
-                                status = String.format(java.util.Locale.getDefault(), doneFmt, done)
+                                status = String.format(java.util.Locale.getDefault(), doneFmt, done) + " · " + name
                             }
                         }
                         busy = false

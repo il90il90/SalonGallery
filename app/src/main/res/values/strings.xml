@@ -56,6 +56,8 @@
     <string name="gphotos_step3">Copy the link (it starts with photos.app.goo.gl).</string>
     <string name="gphotos_step4">Paste it below and tap Import.</string>
     <string name="gphotos_link_label">Shared album link</string>
+    <string name="gphotos_album_label">Album name</string>
+    <string name="gphotos_album_default">Google Photos</string>
     <string name="gphotos_import">Import photos</string>
     <string name="gphotos_importing">Importing…</string>
     <string name="gphotos_done">%1$d photos sent to the screen ✓</string>
