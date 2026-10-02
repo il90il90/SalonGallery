@@ -18,12 +18,15 @@ enum class SlideEffect {
 }
 
 /**
- * How slides are composed: one photo per slide, a MOSAIC (4–5 photos in a gutter-separated grid on a
- * mat), a SCATTER (4–5 photos tossed on a table as tilted prints), or RANDOM — a seeded mix of all three.
+ * How slides are composed: one photo per slide, or a "spread" of 4–5 photos — a MOSAIC grid on a
+ * mat, a SCATTER of tilted prints on a table, and the planned layouts (GRID … COLUMNS, see
+ * ui/SpreadLayouts.kt) — or RANDOM, a seeded per-slide mix of single photos and every spread.
  */
-enum class LayoutMode { SINGLE, MOSAIC, SCATTER, RANDOM;
+enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, POLAROID, FILMSTRIP, STACK, FAN, GALLERY, CLOTHESLINE, BUBBLES, MAGAZINE, COLUMNS, RANDOM;
+    val isSpread get() = this != SINGLE && this != RANDOM
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: SINGLE
+        val SPREADS = entries.filter { it.isSpread }
     }
 }
 

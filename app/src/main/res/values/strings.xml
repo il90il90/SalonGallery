@@ -132,7 +132,9 @@
     <string name="slideshow_effect">Transition</string>
     <string name="slideshow_fit">Photo fit</string>
     <string name="slideshow_layout">Layout</string>
-    <string name="slideshow_layout_hint">Mosaic and Scatter show 4–5 photos per slide (needs at least 4). Random mixes them with single photos.</string>
+    <string name="slideshow_layout_hint">Every layout except Single shows 4–5 photos per slide (needs at least 4). Random mixes all of them with single photos.</string>
+    <string name="slideshow_stagger">Photos appear one by one</string>
+    <string name="slideshow_stagger_hint">Each photo of a multi-photo slide fades in a moment after the one before.</string>
     <string name="slideshow_motion">Motion</string>
     <string name="slideshow_motion_speed">Motion speed</string>
     <string name="slideshow_motion_hint">A gentle movement while each photo waits: a slow zoom, a soft drift, or a fade down and back up. Mix picks one per slide.</string>

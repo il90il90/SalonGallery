@@ -340,6 +340,9 @@ object PhotoSender {
     /** Slide composition: single | mosaic | scatter | random. */
     suspend fun setLayout(host: String, port: Int, mode: String) =
         get(host, port, "/layout?mode=$mode")
+    /** Whether a spread's photos appear one after another instead of all at once. */
+    suspend fun setStagger(host: String, port: Int, on: Boolean) =
+        get(host, port, "/stagger?on=${if (on) 1 else 0}")
     /** Gentle motion while a photo waits: off | zoom | drift | breathe | mix, at slow | medium | fast. */
     suspend fun setMotion(host: String, port: Int, mode: String, speed: String) =
         get(host, port, "/motion?mode=$mode&speed=$speed")

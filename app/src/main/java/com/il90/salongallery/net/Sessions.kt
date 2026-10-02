@@ -82,6 +82,8 @@ class ScreenSession(
     val collage = MutableStateFlow(false)
     /** Slide composition: single photos, mosaics, scatters, or a random mix. */
     val layout = MutableStateFlow(LayoutMode.SINGLE)
+    /** Spread photos appear one by one (a staggered entrance) instead of all at once. */
+    val spreadStagger = MutableStateFlow(false)
     /** Subtle motion while a still waits on screen, and how fast it runs. */
     val motion = MutableStateFlow(MotionMode.OFF)
     val motionSpeed = MutableStateFlow(MotionSpeed.MEDIUM)
@@ -321,6 +323,8 @@ class ScreenSession(
     override fun onCollage(on: Boolean) { collage.value = on }
 
     override fun onLayout(mode: String) { layout.value = LayoutMode.from(mode) }
+
+    override fun onStagger(on: Boolean) { spreadStagger.value = on }
 
     override fun onMotion(mode: String, speed: String) {
         if (mode.isNotBlank()) motion.value = MotionMode.from(mode)

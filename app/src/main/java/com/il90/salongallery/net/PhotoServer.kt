@@ -28,6 +28,7 @@ interface ScreenCommands {
     fun onFilter(filter: String)
     fun onCollage(on: Boolean)
     fun onLayout(mode: String)             // single | mosaic | scatter | random
+    fun onStagger(on: Boolean)             // spread photos appear one by one
     fun onMotion(mode: String, speed: String) // off | zoom | drift | breathe | mix ; slow | medium | fast
     fun onText(content: String, pos: String, size: String, color: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String)
@@ -167,6 +168,9 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/layout" -> {
                 session.parameters["mode"]?.firstOrNull()?.let { commands.onLayout(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/stagger" -> {
+                commands.onStagger(session.parameters["on"]?.firstOrNull() == "1"); ok()
             }
             session.method == Method.GET && uri == "/motion" -> {
                 commands.onMotion(

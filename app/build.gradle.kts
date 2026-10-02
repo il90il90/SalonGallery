@@ -24,8 +24,8 @@ android {
         applicationId = "com.il90.salongallery"
         minSdk = 26
         targetSdk = 35
-        versionCode = 56
-        versionName = "1.49.0"
+        versionCode = 57
+        versionName = "1.50.0"
 
         buildConfigField("String", "GITHUB_OWNER", "\"il90il90\"")
         buildConfigField("String", "GITHUB_REPO", "\"SalonGallery\"")
@@ -93,4 +93,5 @@ dependencies {
     implementation(libs.media3.ui)
     implementation(libs.reorderable)
     debugImplementation(libs.androidx.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
 }

@@ -42,6 +42,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.absoluteOffset
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -95,6 +97,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -183,6 +186,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val collage by session.collage.collectAsStateWithLifecycle()
     val layout by session.layout.collectAsStateWithLifecycle()
     val motion by session.motion.collectAsStateWithLifecycle()
+    val spreadStagger by session.spreadStagger.collectAsStateWithLifecycle()
     val motionSpeed by session.motionSpeed.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
     val clock by session.clock.collectAsStateWithLifecycle()
@@ -385,6 +389,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         collageOn = collage,
                         layout = layout,
                         motion = motion,
+                        stagger = spreadStagger,
                         motionSpeed = motionSpeed,
                         orientationMap = orientationMap,
                         transformOf = { session.transformFor(it.name) },
@@ -482,6 +487,7 @@ private fun Slideshow(
     collageOn: Boolean,
     layout: LayoutMode = LayoutMode.SINGLE,
     motion: MotionMode = MotionMode.OFF,
+    stagger: Boolean = false,
     motionSpeed: MotionSpeed = MotionSpeed.MEDIUM,
     orientationMap: Map<String, Boolean>,
     transformOf: (File) -> PhotoTransform,
@@ -497,17 +503,17 @@ private fun Slideshow(
     // Which items (by index) form the slide starting at [from]: a collage of same-orientation
     // photos that would otherwise leave big side gaps, or just the single item.
     // Which spread (if any) the slide starting at [from] is: fixed by the layout setting, or for
-    // RANDOM a seeded per-slide draw (so a given slide always renders the same way) — roughly a
-    // third singles, a third mosaics, a third scatters. Needs at least 4 photos to be worth it.
+    // RANDOM a seeded per-slide draw (so a given slide always renders the same way) — about a
+    // quarter single photos, the rest spread evenly over every spread layout. Needs at least 4 photos.
     fun spreadAt(from: Int): LayoutMode? {
         if (files.size < 4) return null
         return when (layout) {
             LayoutMode.SINGLE -> null
-            LayoutMode.MOSAIC -> LayoutMode.MOSAIC
-            LayoutMode.SCATTER -> LayoutMode.SCATTER
-            LayoutMode.RANDOM -> when (kotlin.random.Random(from.toLong() * 7919 + 17).nextInt(3)) {
-                0 -> null; 1 -> LayoutMode.MOSAIC; else -> LayoutMode.SCATTER
+            LayoutMode.RANDOM -> {
+                val rr = kotlin.random.Random(from.toLong() * 7919 + 17)
+                if (rr.nextInt(4) == 0) null else LayoutMode.SPREADS[rr.nextInt(LayoutMode.SPREADS.size)]
             }
+            else -> layout
         }
     }
 
@@ -594,9 +600,13 @@ private fun Slideshow(
         } else if (members.size >= 3 && spreadAt(i) != null) {
             val mf = members.map { files[it] }
             val rotOf: (File) -> Int = { transformOf(it).rotNorm }
+            val sp = spreadAt(i)
             MotionBox(motion, motionSpeed, seed = i) {
-                if (spreadAt(i) == LayoutMode.MOSAIC) MosaicSlide(mf, filter = eff, seed = i, landscape = screenLandscape, rotOf = rotOf, focusOf = focusOf)
-                else ScatterSlide(mf, filter = eff, seed = i, rotOf = rotOf, focusOf = focusOf)
+                when (sp) {
+                    LayoutMode.MOSAIC -> MosaicSlide(mf, filter = eff, seed = i, landscape = screenLandscape, rotOf = rotOf, focusOf = focusOf, stagger = stagger)
+                    LayoutMode.SCATTER -> ScatterSlide(mf, filter = eff, seed = i, rotOf = rotOf, focusOf = focusOf, stagger = stagger)
+                    else -> PlannedSpread(mf, SpreadStyle.valueOf(sp!!.name), filter = eff, seed = i, rotOf = rotOf, focusOf = focusOf, stagger = stagger)
+                }
             }
         } else if (members.size >= 2) {
             MotionBox(motion, motionSpeed, seed = i) {
@@ -715,7 +725,7 @@ private fun MotionBox(mode: MotionMode, speed: MotionSpeed, seed: Int, content: 
  * template is chosen by [seed] so each slide gets a different but stable arrangement.
  */
 @Composable
-private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, landscape: Boolean, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }) {
+private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, landscape: Boolean, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }, stagger: Boolean = false) {
     val cf = lookFilter(filter)
     val mat = Color(0xFFEBE4D7)
     val gap = 10.dp
@@ -724,7 +734,10 @@ private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, lands
     val f = files.take(n)
 
     // Building blocks: a row/column of cells sharing space equally.
-    @Composable fun cell(file: File, m: Modifier) = CollageCell(file, cf, m, rot = rotOf(file), focus = focusOf(file))
+    @Composable fun cell(file: File, m: Modifier) {
+        val st = rememberStagger(f.indexOf(file), stagger)
+        CollageCell(file, cf, m.staggered(st), rot = rotOf(file), focus = focusOf(file))
+    }
     @Composable fun strip(items: List<File>, m: Modifier, horizontal: Boolean) {
         if (horizontal) Row(m, horizontalArrangement = Arrangement.spacedBy(gap)) { items.forEach { cell(it, Modifier.weight(1f).fillMaxHeight()) } }
         else Column(m, verticalArrangement = Arrangement.spacedBy(gap)) { items.forEach { cell(it, Modifier.weight(1f).fillMaxWidth()) } }
@@ -779,7 +792,7 @@ private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, lands
  * jittered grid so they read as a casual spread without burying one another. Seeded by [seed].
  */
 @Composable
-private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }) {
+private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }, stagger: Boolean = false) {
     val cf = lookFilter(filter)
     val r = kotlin.random.Random(seed.toLong() * 65537 + 11)
     val n = files.size.coerceIn(3, 5)
@@ -809,6 +822,7 @@ private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotO
             val cx = (rowOffset + col * cellW + cellW / 2f + (r.nextFloat() - 0.5f) * cellW * 0.22f).coerceIn(ext, maxOf(ext, w - ext))
             val cy = (row * cellH + cellH / 2f + (r.nextFloat() - 0.5f) * cellH * 0.22f).coerceIn(ext, maxOf(ext, h - ext))
             val border = size * 0.035f
+            val st = rememberStagger(k, stagger)
             Box(
                 Modifier
                     // Anchor at the physical top-left: the translation below is measured from the
@@ -824,6 +838,7 @@ private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotO
                         shape = androidx.compose.ui.graphics.RectangleShape
                         clip = false
                     }
+                    .staggered(st)
                     .background(Color(0xFFF7F3EC))
                     .padding(start = border.dp, top = border.dp, end = border.dp, bottom = (border * 2.4f).dp),
             ) {
@@ -834,6 +849,158 @@ private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotO
                     alignment = focusAlignment(focusOf(file), 1f, 1f),
                     modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = rot.toFloat() },
                 )
+            }
+        }
+        if (filter == PhotoFilter.VIGNETTE) VignetteOverlay()
+    }
+}
+
+/**
+ * A spread's staggered entrance: photo [k] fades, rises and settles in a beat after the one before
+ * it. Off → already fully shown. Read through [staggered] in the draw phase only.
+ */
+@Composable
+private fun rememberStagger(k: Int, on: Boolean): androidx.compose.runtime.State<Float> {
+    val a = remember { Animatable(if (on) 0f else 1f) }
+    LaunchedEffect(on) {
+        if (on) {
+            a.snapTo(0f)
+            delay(350L + k.coerceAtLeast(0) * 420L)
+            a.animateTo(1f, tween(750, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        } else a.snapTo(1f)
+    }
+    return a.asState()
+}
+
+private fun Modifier.staggered(v: androidx.compose.runtime.State<Float>): Modifier = graphicsLayer {
+    val t = v.value
+    alpha = t
+    val s = 0.9f + 0.1f * t
+    scaleX = s; scaleY = s
+    translationY = (1f - t) * 28.dp.toPx()
+}
+
+/** The surface a planned spread sits on. */
+private fun surfaceBrush(s: SpreadSurface): Brush = when (s) {
+    SpreadSurface.MAT -> SolidColor(Color(0xFFEBE4D7))
+    SpreadSurface.TABLE -> Brush.radialGradient(listOf(Color(0xFF3A312A), Color(0xFF1C1714)))
+    SpreadSurface.CORK -> Brush.radialGradient(listOf(Color(0xFFC79D6E), Color(0xFF9C7149)))
+    SpreadSurface.FILM -> Brush.radialGradient(listOf(Color(0xFF2E2D33), Color(0xFF111114)))
+    SpreadSurface.VELVET -> Brush.radialGradient(listOf(Color(0xFF4A1F2C), Color(0xFF1C0A11)))
+    SpreadSurface.WALL -> Brush.verticalGradient(listOf(Color(0xFFE9E4DC), Color(0xFFD6CFC2)))
+    SpreadSurface.LINEN -> Brush.verticalGradient(listOf(Color(0xFFF1ECE3), Color(0xFFDFD7C8)))
+    SpreadSurface.PAPER -> SolidColor(Color(0xFFF7F5F0))
+    SpreadSurface.BLACK -> SolidColor(Color(0xFF0A0A0A))
+}
+
+/**
+ * Draws one of the planned [SpreadStyle] layouts: positions come from [placeSpread] (pure and
+ * bounds-checked, so no photo can leave the slide), each print drawn in its [PrintStyle], plus the
+ * surface details — the film band with its sprocket holes, the clothesline with a peg per print.
+ */
+@Composable
+private fun PlannedSpread(
+    files: List<File>, style: SpreadStyle, filter: PhotoFilter, seed: Int,
+    rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }, stagger: Boolean = false,
+) {
+    val cf = lookFilter(filter)
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(surfaceBrush(style.surface))) {
+        val w = maxWidth.value; val h = maxHeight.value
+        val plan = remember(style, files.size, w, h, seed) { placeSpread(style, files.size, w, h, seed) }
+        val density = androidx.compose.ui.platform.LocalDensity.current.density
+
+        plan.film?.let { band ->
+            androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                val d = density
+                drawRect(Color(0xFF0B0B0C), Offset(band.x * d, band.y * d), androidx.compose.ui.geometry.Size(band.w * d, band.h * d))
+                // Sprocket holes along both long edges of the band.
+                val across = if (band.horizontal) band.h else band.w
+                val hole = across * 0.07f
+                val step = hole * 2.2f
+                val len = if (band.horizontal) band.w else band.h
+                var a = step / 2f
+                while (a + hole < len) {
+                    for (edge in 0..1) {
+                        val off = if (edge == 0) across * 0.045f else across - across * 0.045f - hole * 0.75f
+                        val (x, y) = if (band.horizontal) (band.x + a) to (band.y + off) else (band.x + off) to (band.y + a)
+                        val (hw, hh) = if (band.horizontal) hole to hole * 0.75f else hole * 0.75f to hole
+                        drawRoundRect(
+                            Color(0xFFEDE6D8).copy(alpha = 0.85f), Offset(x * d, y * d),
+                            androidx.compose.ui.geometry.Size(hw * d, hh * d),
+                            androidx.compose.ui.geometry.CornerRadius(hole * 0.18f * d),
+                        )
+                    }
+                    a += step
+                }
+            }
+        }
+        if (plan.lines.isNotEmpty()) {
+            androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                val d = density
+                plan.lines.forEach { l ->
+                    val path = androidx.compose.ui.graphics.Path()
+                    val steps = 32
+                    for (i in 0..steps) {
+                        val t = i / steps.toFloat()
+                        val x = t * w * d; val y = l.yAt(t) * d
+                        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    }
+                    drawPath(path, Color(0xFF6E6150), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.2f * d))
+                }
+            }
+        }
+
+        plan.items.forEachIndexed { k, p ->
+            val file = files.getOrNull(k) ?: return@forEachIndexed
+            val st = rememberStagger(k, stagger)
+            val circle = p.style == PrintStyle.CIRCLE
+            val shape = if (circle) androidx.compose.foundation.shape.CircleShape else androidx.compose.ui.graphics.RectangleShape
+            val minSide = minOf(p.w, p.h)
+            Box(
+                Modifier
+                    // Absolute placement: offsets are measured from the left even on an RTL screen.
+                    .align(androidx.compose.ui.AbsoluteAlignment.TopLeft)
+                    .absoluteOffset(p.x.dp, p.y.dp)
+                    .size(p.w.dp, p.h.dp)
+                    .graphicsLayer {
+                        rotationZ = p.rot
+                        shadowElevation = if (p.style == PrintStyle.CELL) 0f else 16f * density
+                        this.shape = shape
+                        clip = false
+                    }
+                    .staggered(st),
+            ) {
+                val rot = rotOf(file); val focus = focusOf(file)
+                when (p.style) {
+                    PrintStyle.CELL -> CollageCell(file, cf, Modifier.fillMaxSize(), rot = rot, focus = focus)
+                    PrintStyle.PRINT -> Box(Modifier.fillMaxSize().background(Color(0xFFF7F3EC)).padding((minSide * 0.04f).dp)) {
+                        CollageCell(file, cf, Modifier.fillMaxSize(), rot = rot, focus = focus)
+                    }
+                    PrintStyle.POLAROID -> Box(
+                        Modifier.fillMaxSize().background(Color(0xFFFBF9F4))
+                            .padding(start = (p.w * 0.05f).dp, top = (p.w * 0.05f).dp, end = (p.w * 0.05f).dp, bottom = (p.w * 0.19f).dp),
+                    ) { CollageCell(file, cf, Modifier.fillMaxSize(), rot = rot, focus = focus) }
+                    PrintStyle.FRAMED -> Box(Modifier.fillMaxSize().background(Color(0xFF1E1B18)).padding((minSide * 0.035f).dp)) {
+                        Box(Modifier.fillMaxSize().background(Color(0xFFF5F2EB)).padding((minSide * 0.075f).dp)) {
+                            CollageCell(file, cf, Modifier.fillMaxSize(), rot = rot, focus = focus)
+                        }
+                    }
+                    PrintStyle.CIRCLE -> Box(
+                        Modifier.fillMaxSize().clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(Color(0xFFF7F3EC)).padding((minSide * 0.035f).dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape),
+                    ) { CollageCell(file, cf, Modifier.fillMaxSize(), rot = rot, focus = focus) }
+                }
+                // A wooden peg holding each print to the clothesline.
+                if (style == SpreadStyle.CLOTHESLINE) {
+                    Box(
+                        Modifier.align(Alignment.TopCenter)
+                            .offset(y = (-minSide * 0.06f).dp)
+                            .size((minSide * 0.07f).dp, (minSide * 0.2f).dp)
+                            .clip(RoundedCornerShape((minSide * 0.015f).dp))
+                            .background(Brush.horizontalGradient(listOf(Color(0xFFC9A57A), Color(0xFFA9845A)))),
+                    )
+                }
             }
         }
         if (filter == PhotoFilter.VIGNETTE) VignetteOverlay()

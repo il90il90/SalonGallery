@@ -711,6 +711,7 @@ private fun ControlPanel(
     var collage by remember { mutableStateOf(false) }
     var layout by remember { mutableStateOf("single") }
     var motion by remember { mutableStateOf("off") }
+    var stagger by remember { mutableStateOf(false) }
     var motionSpeed by remember { mutableStateOf("medium") }
     var showFrames by remember { mutableStateOf(false) }
     var showEffects by remember { mutableStateOf(false) }
@@ -945,6 +946,8 @@ private fun ControlPanel(
             layout = layout,
             onLayout = { layout = it; scope.launch { PhotoSender.setLayout(screen.host, screen.port, it) } },
             motion = motion, motionSpeed = motionSpeed,
+            stagger = stagger,
+            onStagger = { stagger = it; scope.launch { PhotoSender.setStagger(screen.host, screen.port, it) } },
             onMotion = { motion = it; scope.launch { PhotoSender.setMotion(screen.host, screen.port, it, motionSpeed) } },
             onMotionSpeed = { motionSpeed = it; scope.launch { PhotoSender.setMotion(screen.host, screen.port, motion, it) } },
             onShuffle = { shuffle = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, intervalMs, it) } },
@@ -2454,12 +2457,21 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showChe
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Slide layouts offered in the Slideshow sheet: key sent to the Display → chip label. */
+private val LAYOUTS = listOf(
+    "single" to "Single", "mosaic" to "Mosaic", "scatter" to "Scatter", "grid" to "Grid",
+    "polaroid" to "Polaroids", "filmstrip" to "Film strip", "stack" to "Stack", "fan" to "Fan",
+    "gallery" to "Gallery wall", "clothesline" to "Clothesline", "bubbles" to "Bubbles",
+    "magazine" to "Magazine", "columns" to "Columns", "random" to "🎲 Random",
+)
+
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun SlideshowSheet(
     shuffle: Boolean, intervalMs: Long, orientation: String, fit: String, collage: Boolean,
     layout: String = "single", onLayout: (String) -> Unit = {},
     motion: String = "off", motionSpeed: String = "medium",
+    stagger: Boolean = false, onStagger: (Boolean) -> Unit = {},
     onMotion: (String) -> Unit = {}, onMotionSpeed: (String) -> Unit = {},
     onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
     onFit: (String) -> Unit, onCollage: (Boolean) -> Unit, onDismiss: () -> Unit,
@@ -2477,10 +2489,21 @@ private fun SlideshowSheet(
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_layout), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
-            val layouts = listOf("single", "mosaic", "scatter", "random")
-            SegRow(listOf("Single", "Mosaic", "Scatter", "Random"), layouts.indexOf(layout).coerceAtLeast(0)) { onLayout(layouts[it]) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LAYOUTS.forEach { (key, label) -> EffectChip(label, selected = key == layout, showCheck = false) { onLayout(key) } }
+            }
             Spacer(Modifier.height(6.dp))
             Text(stringResource(R.string.slideshow_layout_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            if (layout != "single") {
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.slideshow_stagger), style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                        Text(stringResource(R.string.slideshow_stagger_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    }
+                    Switch(checked = stagger, onCheckedChange = onStagger)
+                }
+            }
 
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_motion), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
