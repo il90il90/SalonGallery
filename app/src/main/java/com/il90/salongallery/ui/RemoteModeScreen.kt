@@ -858,7 +858,6 @@ private fun ControlPanel(
             current = lib?.current ?: -1,
             rots = lib?.rots ?: emptyMap(),
             onShow = { name -> scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refreshLib() } },
-            onOpen = { showLibrary = true },
         )
 
         Spacer(Modifier.height(24.dp))
@@ -1107,7 +1106,7 @@ private fun NowShowingHero(
 @Composable
 private fun LibraryStrip(
     screen: DiscoveredScreen, items: List<String>, current: Int,
-    rots: Map<String, Int> = emptyMap(), onShow: (String) -> Unit, onOpen: () -> Unit,
+    rots: Map<String, Int> = emptyMap(), onShow: (String) -> Unit,
 ) {
     if (items.isEmpty()) {
         Box(
@@ -1143,18 +1142,7 @@ private fun LibraryStrip(
                 }
             }
         }
-        Box(
-            Modifier.width(64.dp).height(118.dp).clip(RoundedCornerShape(15.dp))
-                .border(1.dp, ElecBorder, RoundedCornerShape(15.dp))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onOpen() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Outlined.ChevronRight, null, tint = NeonCyan, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.height(4.dp))
-                Text(stringResource(R.string.album_all), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            }
-        }
+        // No trailing "All ›" tile — "See all ›" in the section header already opens the manager.
     }
 }
 
