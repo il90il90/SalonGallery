@@ -229,5 +229,8 @@
     <string name="remote_offline">Offline</string>
     <string name="add_dest_title">Add %1$d items to…</string>
     <string name="add_dest_all">All photos — no album</string>
+    <string name="add_dest_pick_hint">Tap an album to add them there</string>
+    <string name="add_dest_none_hint">No albums yet — name your first one</string>
+    <string name="add_dest_err_create">Couldn\'t create the album — nothing was added. Try again.</string>
     <string name="remote_same_host_hint">Two screens share one address: that device is running two copies of Salon Gallery (usually an older install next to the new one). Pick the newer version here, and remove the old app from that device\'s settings.</string>
 </resources>

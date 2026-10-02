@@ -18,6 +18,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -756,6 +758,10 @@ private fun ControlPanel(
     var destAlbums by remember { mutableStateOf<List<AlbumInfo>>(emptyList()) }
     suspend fun uploadMedia(uris: List<Uri>, album: String?) {
         busy = true; status = null; progress = 0 to uris.size
+        // Activate the album BEFORE uploading, not after: a Display on an older build ignores
+        // ?album= and files uploads into whatever album is active — so activating first makes
+        // the new album receive the photos on every server version, and the wall shows them.
+        if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
         var ok = 0
         uris.forEachIndexed { i, uri ->
             val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true
@@ -767,8 +773,6 @@ private fun ControlPanel(
             }
             progress = (i + 1) to uris.size
         }
-        // Show what was just added: switch the wall to that album.
-        if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
         busy = false
         status = "Added $ok / ${uris.size} ✓"
         onInfoRefresh(scope); refreshLib()
@@ -777,8 +781,12 @@ private fun ControlPanel(
         ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        pendingMedia = uris
-        scope.launch { PhotoSender.getAlbums(screen.host, screen.port)?.let { destAlbums = it.albums } }
+        // Load the album list BEFORE opening the sheet: it decides its initial layout (chips vs.
+        // "name your first album") from that list, so showing it early made it think there were none.
+        scope.launch {
+            destAlbums = PhotoSender.getAlbums(screen.host, screen.port)?.albums ?: emptyList()
+            pendingMedia = uris
+        }
     }
     val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
@@ -943,13 +951,18 @@ private fun ControlPanel(
         LibraryManager(screen = screen, bottomInset = bottomInset, libVersion = libVersion, onClose = { showLibrary = false; onInfoRefresh(scope); refreshLib() })
     }
     // "Where should these go?" — shown right after the media picker returns.
+    val errCreateAlbum = stringResource(R.string.add_dest_err_create)
     pendingMedia?.let { uris ->
         DestinationSheet(
             count = uris.size, albums = destAlbums,
             onPick = { id -> pendingMedia = null; scope.launch { uploadMedia(uris, id) } },
             onCreate = { name ->
                 pendingMedia = null
-                scope.launch { uploadMedia(uris, PhotoSender.createAlbum(screen.host, screen.port, name)) }
+                scope.launch {
+                    // If the album can't be created, say so — never quietly dump the photos into All.
+                    val id = PhotoSender.createAlbum(screen.host, screen.port, name)
+                    if (id == null) status = errCreateAlbum else uploadMedia(uris, id)
+                }
             },
             onDismiss = { pendingMedia = null },
         )
@@ -1222,6 +1235,8 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     var pendingMedia by remember { mutableStateOf<List<Uri>?>(null) }
     suspend fun uploadMedia(uris: List<Uri>, album: String?) {
         busy = true
+        // Activate first so an older Display (which ignores ?album=) still files these correctly.
+        if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
         uris.forEach { u ->
             val isVideo = context.contentResolver.getType(u)?.startsWith("video") == true
             val b = withContext(Dispatchers.IO) {
@@ -1232,7 +1247,6 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                 else PhotoSender.sendPhoto(screen.host, screen.port, b, album)
             }
         }
-        if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
         busy = false; refresh()
     }
     val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
@@ -1473,7 +1487,13 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
         DestinationSheet(
             count = uris.size, albums = albums,
             onPick = { id -> pendingMedia = null; scope.launch { uploadMedia(uris, id) } },
-            onCreate = { name -> pendingMedia = null; scope.launch { uploadMedia(uris, PhotoSender.createAlbum(screen.host, screen.port, name)) } },
+            onCreate = { name ->
+                pendingMedia = null
+                scope.launch {
+                    val id = PhotoSender.createAlbum(screen.host, screen.port, name)
+                    if (id != null) uploadMedia(uris, id) else refresh()
+                }
+            },
             onDismiss = { pendingMedia = null },
         )
     }
@@ -1801,56 +1821,66 @@ private fun NewAlbumDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
     )
 }
 
-/** After picking media: which album should it go to — an existing one, a new one, or none ("All"). */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+/**
+ * After picking media: which album should it go to. The albums are chips (same look as the
+ * Library's album bar) — tap one and the upload starts; "+ New album" reveals a name field.
+ * With no albums yet the name field is open from the start, since that's the only useful move.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun DestinationSheet(
     count: Int, albums: List<AlbumInfo>,
     onPick: (String?) -> Unit, onCreate: (String) -> Unit, onDismiss: () -> Unit,
 ) {
+    // Re-derive if the list flips between empty/non-empty while open (late fetch), so a stale
+    // "no albums" guess can't pin the name field open once albums exist.
+    var creating by remember(albums.isEmpty()) { mutableStateOf(albums.isEmpty()) }
     var newName by remember { mutableStateOf("") }
     val createReq = rememberRevealRequester()
+    val nameFocus = remember { FocusRequester() }
+    fun submit() { if (newName.isNotBlank()) onCreate(newName.trim()) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.il90.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(24.dp)) {
             Text(stringResource(R.string.add_dest_title, count), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
-            Spacer(Modifier.height(14.dp))
-            albums.forEach { al -> DestRow(NeonTeal, "${al.name} · ${al.count}") { onPick(al.id) } }
-            DestRow(TextTertiary, stringResource(R.string.add_dest_all)) { onPick(null) }
-            Spacer(Modifier.height(18.dp))
-            Text(stringResource(R.string.album_new), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = newName, onValueChange = { newName = it }, singleLine = true,
-                modifier = Modifier.fillMaxWidth().revealOnFocus(createReq),
-                placeholder = { Text(stringResource(R.string.album_name_hint), color = TextTertiary) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
-                    focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
-                ),
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(if (albums.isEmpty()) R.string.add_dest_none_hint else R.string.add_dest_pick_hint),
+                style = MaterialTheme.typography.bodySmall, color = TextSecondary,
             )
-            Spacer(Modifier.height(10.dp))
-            GradientButton(
-                modifier = Modifier.bringIntoViewRequester(createReq),
-                text = stringResource(R.string.album_create), enabled = newName.isNotBlank(),
-                onClick = { onCreate(newName.trim()) },
-            )
+            Spacer(Modifier.height(16.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                albums.forEach { al -> AlbumChip("${al.name} · ${al.count}", active = false) { onPick(al.id) } }
+                AlbumChip(stringResource(R.string.add_dest_all), active = false) { onPick(null) }
+                if (!creating) NewAlbumChip { creating = true }
+            }
+            androidx.compose.animation.AnimatedVisibility(visible = creating) {
+                Column {
+                    Spacer(Modifier.height(18.dp))
+                    Text(stringResource(R.string.album_new), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newName, onValueChange = { newName = it }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth().focusRequester(nameFocus).revealOnFocus(createReq),
+                        placeholder = { Text(stringResource(R.string.album_name_hint), color = TextTertiary) },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { submit() }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+                            focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+                        ),
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    GradientButton(
+                        modifier = Modifier.bringIntoViewRequester(createReq),
+                        text = stringResource(R.string.album_create), enabled = newName.isNotBlank(),
+                        onClick = { submit() },
+                    )
+                }
+            }
+            // Put the cursor in the name field as soon as it appears (first album, or "+ New album").
+            LaunchedEffect(creating) { if (creating) { delay(150); runCatching { nameFocus.requestFocus() } } }
             Spacer(Modifier.height(12.dp))
         }
-    }
-}
-
-@Composable
-private fun DestRow(tint: Color, label: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(14.dp))
-            .border(1.dp, ElecBorder, RoundedCornerShape(14.dp))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Outlined.Folder, null, tint = tint, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.size(12.dp))
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
     }
 }
 
