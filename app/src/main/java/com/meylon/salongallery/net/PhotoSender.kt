@@ -16,6 +16,8 @@ data class ScreenInfo(
     val photoCount: Int,
     val brightness: Float = 1f,
     val volume: Float = 1f,
+    /** Bumped by the Display on any library change; the Remote refreshes its lists when it moves. */
+    val libVersion: Long = 0L,
 )
 
 /** The Display's current (active-album) library, as seen by the Remote. */
@@ -29,11 +31,12 @@ data class LibraryList(
     val durations: Map<String, Int> = emptyMap(),
     val bytes: Map<String, Long> = emptyMap(),   // file size per item
     val dims: Map<String, String> = emptyMap(),  // "W×H" per item (photos only)
+    val rots: Map<String, Int> = emptyMap(),     // display rotation (0/90/180/270) per item
 )
 
 data class AlbumInfo(val id: String, val name: String, val count: Int)
 data class AlbumList(val activeId: String, val activeName: String, val albums: List<AlbumInfo>)
-data class RemoteTransform(val scale: Float, val x: Float, val y: Float)
+data class RemoteTransform(val scale: Float, val x: Float, val y: Float, val rot: Int = 0)
 
 data class RssState(
     val on: Boolean, val feeds: List<String>, val pos: String,
@@ -67,12 +70,15 @@ object PhotoSender {
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             conn.disconnect()
             val o = JSONObject(body)
-            RemoteTransform(o.optDouble("s", 1.0).toFloat(), o.optDouble("x", 0.0).toFloat(), o.optDouble("y", 0.0).toFloat())
+            RemoteTransform(o.optDouble("s", 1.0).toFloat(), o.optDouble("x", 0.0).toFloat(), o.optDouble("y", 0.0).toFloat(), o.optInt("r", 0))
         } catch (e: Exception) { null }
     }
 
     suspend fun setTransform(host: String, port: Int, photo: String, scale: Float, x: Float, y: Float) =
         get(host, port, "/transform?photo=$photo&scale=$scale&x=$x&y=$y")
+    /** Turn a photo a quarter turn clockwise (or by any ±90 multiple). */
+    suspend fun rotatePhoto(host: String, port: Int, photo: String, by: Int = 90) =
+        get(host, port, "/rotate?photo=$photo&by=$by")
 
     suspend fun getList(host: String, port: Int): LibraryList? = withContext(Dispatchers.IO) {
         try {
@@ -99,9 +105,15 @@ object PhotoSender {
                     val d = diarr.optString(i); if (d.isNotBlank()) put(items[i], d)
                 }
             }
+            val rarr = o.optJSONArray("rots")
+            val rmap = buildMap {
+                if (rarr != null) for (i in 0 until minOf(rarr.length(), items.size)) {
+                    val r = rarr.optInt(i); if (r != 0) put(items[i], r)
+                }
+            }
             LibraryList(
                 o.optInt("current", 0), o.optString("mode", ""),
-                o.optString("albumId", "all"), o.optString("album", "All"), items, pins, durs, bmap, dmap,
+                o.optString("albumId", "all"), o.optString("album", "All"), items, pins, durs, bmap, dmap, rmap,
             )
         } catch (e: Exception) { null }
     }
@@ -141,6 +153,9 @@ object PhotoSender {
     suspend fun removeFromAlbum(host: String, port: Int, id: String, photo: String) = get(host, port, "/album/remove?id=$id&photo=$photo")
 
     suspend fun deletePhoto(host: String, port: Int, name: String) = get(host, port, "/delete?id=$name")
+    /** Delete several photos in one request (multi-select). */
+    suspend fun deletePhotos(host: String, port: Int, names: Collection<String>) =
+        if (names.isEmpty()) true else get(host, port, "/delete?id=${names.joinToString(",")}")
     suspend fun showNow(host: String, port: Int, name: String) = get(host, port, "/shownow?id=$name")
     suspend fun setDuration(host: String, port: Int, name: String, seconds: Int) = get(host, port, "/duration?photo=$name&sec=$seconds")
     suspend fun setPinned(host: String, port: Int, name: String, pinned: Boolean) = get(host, port, "/pin?photo=$name&on=${if (pinned) 1 else 0}")
@@ -156,10 +171,14 @@ object PhotoSender {
     suspend fun reorder(host: String, port: Int, names: List<String>) =
         get(host, port, "/reorder?names=${names.joinToString(",")}")
 
-    /** Fetches resolution + storage from the screen, or null if unreachable. */
-    suspend fun getInfo(host: String, port: Int): ScreenInfo? = withContext(Dispatchers.IO) {
+    /**
+     * Fetches resolution + storage from the screen, or null if unreachable. [timeoutMs] lets the
+     * connection watchdog probe with a short LAN-appropriate timeout instead of the 8s transfer
+     * default — otherwise each missed ping blocks 8s and an outage takes ~20s to show.
+     */
+    suspend fun getInfo(host: String, port: Int, timeoutMs: Int = TIMEOUT): ScreenInfo? = withContext(Dispatchers.IO) {
         try {
-            val conn = open("http://$host:$port/ping", "GET")
+            val conn = open("http://$host:$port/ping", "GET", timeoutMs)
             if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             conn.disconnect()
@@ -173,6 +192,7 @@ object PhotoSender {
                 photoCount = o.optInt("count", 0),
                 brightness = o.optDouble("brightness", 1.0).toFloat(),
                 volume = o.optDouble("volume", 1.0).toFloat(),
+                libVersion = o.optLong("lib", 0L),
             )
         } catch (e: Exception) {
             null
@@ -446,10 +466,10 @@ object PhotoSender {
             }
         }
 
-    private fun open(url: String, method: String): HttpURLConnection =
+    private fun open(url: String, method: String, timeoutMs: Int = TIMEOUT): HttpURLConnection =
         (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
-            connectTimeout = TIMEOUT
-            readTimeout = TIMEOUT
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
         }
 }

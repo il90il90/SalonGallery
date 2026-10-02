@@ -25,6 +25,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -821,29 +823,39 @@ private fun BoxScope.VignetteOverlay() {
 @Composable
 fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: PhotoFilter = PhotoFilter.NONE, kb: () -> Float = { 1f }) {
     val cf = lookFilter(filter)
-    val cropMod = Modifier.fillMaxSize().graphicsLayer {
-        val s = transform.scale * kb()
-        scaleX = s; scaleY = s
-        translationX = transform.offX * size.width
-        translationY = transform.offY * size.height
-    }
+    val rot = transform.rotNorm
+    val swapped = rot == 90 || rot == 270
     // Black backing (never the cream mat) so a not-yet-decoded photo shows black, not a white
-    // flash; clipToBounds so the per-photo zoom / Ken-Burns never spills over the frame.
-    Box(Modifier.fillMaxSize().clipToBounds().background(Color.Black)) {
+    // flash; clipToBounds so the per-photo zoom / Ken-Burns / rotation never spills over the frame.
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(Color.Black), contentAlignment = Alignment.Center) {
+        // When rotated a quarter turn, lay the image out with width/height swapped so that after the
+        // 90°/270° turn it lands back filling the frame (a portrait rotated to landscape still fills).
+        val w = if (swapped) maxHeight else maxWidth
+        val h = if (swapped) maxWidth else maxHeight
+        // requiredSize, not size: the parent clamps a plain size() to its own constraints, which
+        // would squash the swapped (tall) layout back to a square before the quarter turn.
+        fun imgMod(extraScale: Float = 1f) = Modifier.requiredSize(w, h).graphicsLayer {
+            rotationZ = rot.toFloat()
+            val s = transform.scale * kb() * extraScale
+            scaleX = s; scaleY = s
+            // Pan is applied in screen space (after rotation) so the controls stay intuitive.
+            translationX = transform.offX * size.width
+            translationY = transform.offY * size.height
+        }
         when (fit) {
             PhotoFit.FILL -> AsyncImage(
-                model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf, modifier = cropMod,
+                model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf, modifier = imgMod(),
             )
             PhotoFit.FIT -> AsyncImage(
-                model = file, contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = cropMod,
+                model = file, contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = imgMod(),
             )
-            PhotoFit.BLUR -> Box(Modifier.fillMaxSize()) {
+            PhotoFit.BLUR -> {
                 AsyncImage(
                     model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
-                    modifier = Modifier.fillMaxSize().blur(28.dp).graphicsLayer { scaleX = 1.1f; scaleY = 1.1f },
+                    modifier = imgMod(1.1f).blur(28.dp),
                 )
                 AsyncImage(
-                    model = file, contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = cropMod,
+                    model = file, contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = imgMod(),
                 )
             }
         }

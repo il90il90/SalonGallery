@@ -7,6 +7,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.outlined.RotateRight
+import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -17,6 +22,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -204,6 +210,21 @@ fun RemoteModeScreen(actions: AppActions) {
 
     val screens by session.screens.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<DiscoveredScreen?>(null) }
+
+    // Rejoin the last screen on launch instead of making the user pick (or re-type an IP) again.
+    val prefs = remember { com.meylon.salongallery.data.RolePreferences(context) }
+    val lastScreen by prefs.lastScreen.collectAsStateWithLifecycle(initialValue = null)
+    var autoJoined by remember { mutableStateOf(false) }
+    // Remember whatever we're controlling (including an address the watchdog recovered).
+    LaunchedEffect(selected) { selected?.let { prefs.setLastScreen(it) } }
+    LaunchedEffect(lastScreen, screens) {
+        val last = lastScreen ?: return@LaunchedEffect
+        if (autoJoined || selected != null) return@LaunchedEffect
+        // Prefer the live discovery entry (fresh address); otherwise the saved address if it answers.
+        val found = screens.firstOrNull { it.key == last.key || it.name == last.name }
+        val target = found ?: last.takeIf { PhotoSender.getInfo(it.host, it.port, timeoutMs = 2500) != null }
+        if (target != null) { autoJoined = true; selected = target }
+    }
     var showSettings by remember { mutableStateOf(false) }
     var showManual by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf<ScreenInfo?>(null) }
@@ -220,9 +241,12 @@ fun RemoteModeScreen(actions: AppActions) {
     }
     fun openSettings() { if (screenHasPin && !settingsUnlocked) showPinGate = true else showSettings = true }
 
+    // The Display's library version as last seen on /ping; every change re-lists the Remote's photos.
+    var libVersion by remember { mutableStateOf(0L) }
     LaunchedEffect(selected?.host, selected?.port) {
         val s = selected
         info = if (s != null) PhotoSender.getInfo(s.host, s.port) else null
+        info?.let { libVersion = it.libVersion }
     }
 
     // Connection watchdog: the Display's HTTP port changes when its app restarts, so a cached
@@ -234,10 +258,16 @@ fun RemoteModeScreen(actions: AppActions) {
         var fails = 0
         while (true) {
             val s = selected ?: break
-            val ok = PhotoSender.ping(s.host, s.port) != null
-            if (ok) {
+            // One /ping is both the liveness check and the change detector: it carries the
+            // Display's library version, so an add/delete/clear from anywhere (this Remote, the TV
+            // remote, an import) refreshes what we show instead of the UI guessing after each action.
+            val pinged = PhotoSender.getInfo(s.host, s.port, timeoutMs = 2500)
+            val ok = pinged != null
+            if (pinged != null) {
                 fails = 0
                 connected = true; lostScreen = false
+                info = pinged
+                if (pinged.libVersion != libVersion) libVersion = pinged.libVersion
             } else {
                 fails++
                 // Recover the address: (a) the fixed port at the same host (the Display restarted
@@ -258,7 +288,7 @@ fun RemoteModeScreen(actions: AppActions) {
                 if (fails >= 2) connected = false
                 if (fails >= 24) lostScreen = true
             }
-            kotlinx.coroutines.delay(if (ok) 4000 else 1200)
+            kotlinx.coroutines.delay(if (ok) 3000 else 1200)
         }
     }
 
@@ -302,7 +332,9 @@ fun RemoteModeScreen(actions: AppActions) {
                         screen = target,
                         connected = connected,
                         lostScreen = lostScreen,
-                        onBack = { selected = null; info = null },
+                        libVersion = libVersion,
+                        // Leaving on purpose: forget the screen so we don't jump straight back into it.
+                        onBack = { selected = null; info = null; autoJoined = true; remoteScope.launch { prefs.setLastScreen(null) } },
                         onInfoRefresh = { scope -> scope.launch { info = PhotoSender.getInfo(target.host, target.port) } },
                         bottomInset = navBottom,
                     )
@@ -624,6 +656,7 @@ private fun ControlPanel(
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
     connected: Boolean = true,
     lostScreen: Boolean = false,
+    libVersion: Long = 0L,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -668,6 +701,8 @@ private fun ControlPanel(
         refreshLib()
         PhotoSender.getInfo(screen.host, screen.port)?.let { screenBrightness = it.brightness; screenVolume = it.volume }
     }
+    // Re-list whenever the Display reports its library changed (fixes "cleared photos still shown").
+    LaunchedEffect(libVersion) { if (libVersion != 0L) refreshLib() }
 
     suspend fun readBytes(uri: Uri): ByteArray? = withContext(Dispatchers.IO) {
         runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
@@ -725,10 +760,14 @@ private fun ControlPanel(
             ConnectionBanner(lostScreen = lostScreen, onChoose = onBack)
             Spacer(Modifier.height(14.dp))
         }
+        val nowName = lib?.let { it.items.getOrNull(it.current) }
         NowShowingHero(
             screen = screen,
-            current = lib?.let { it.items.getOrNull(it.current) },
+            current = nowName,
+            rot = nowName?.let { lib?.rots?.get(it) } ?: 0,
+            onRotate = { nowName?.let { n -> scope.launch { PhotoSender.rotatePhoto(screen.host, screen.port, n); refreshLib() } } },
             screenName = screen.name,
+            connected = connected, lost = lostScreen,
             onSwipe = { delta ->
                 val items = lib?.items ?: emptyList()
                 if (items.size > 1) {
@@ -778,6 +817,7 @@ private fun ControlPanel(
             screen = screen,
             items = lib?.items ?: emptyList(),
             current = lib?.current ?: -1,
+            rots = lib?.rots ?: emptyMap(),
             onShow = { name -> scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refreshLib() } },
             onOpen = { showLibrary = true },
         )
@@ -862,7 +902,7 @@ private fun ControlPanel(
         )
     }
     if (showLibrary) {
-        LibraryManager(screen = screen, bottomInset = bottomInset, onClose = { showLibrary = false; onInfoRefresh(scope); refreshLib() })
+        LibraryManager(screen = screen, bottomInset = bottomInset, libVersion = libVersion, onClose = { showLibrary = false; onInfoRefresh(scope); refreshLib() })
     }
     if (showText) {
         TextSheet(
@@ -927,7 +967,11 @@ private fun ConnectionBanner(lostScreen: Boolean, onChoose: () -> Unit) {
 }
 
 @Composable
-private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenName: String, onSwipe: (Int) -> Unit = {}) {
+private fun NowShowingHero(
+    screen: DiscoveredScreen, current: String?, screenName: String,
+    rot: Int = 0, onRotate: () -> Unit = {}, onSwipe: (Int) -> Unit = {},
+    connected: Boolean = true, lost: Boolean = false,
+) {
     Column(Modifier.fillMaxWidth()) {
         Box(
             Modifier.fillMaxWidth()
@@ -952,11 +996,20 @@ private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenNam
                     },
             ) {
                 if (current != null) {
-                    AsyncImage(
-                        model = PhotoSender.fullUrl(screen.host, screen.port, current),
-                        contentDescription = null, contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    // Preview turns the same way the wall does; swap the laid-out size for a quarter
+                    // turn so the rotated image still fills the card.
+                    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        val swapped = rot == 90 || rot == 270
+                        AsyncImage(
+                            model = PhotoSender.fullUrl(screen.host, screen.port, current),
+                            contentDescription = null, contentScale = ContentScale.Crop,
+                            // requiredSize: a plain size() is clamped to the parent's constraints, which would
+                            // collapse the swapped (tall) layout back to a square before the turn.
+                            modifier = Modifier
+                                .requiredSize(if (swapped) maxHeight else maxWidth, if (swapped) maxWidth else maxHeight)
+                                .graphicsLayer { rotationZ = rot.toFloat() },
+                        )
+                    }
                 }
                 Box(
                     Modifier.align(Alignment.BottomStart).fillMaxWidth()
@@ -969,23 +1022,42 @@ private fun NowShowingHero(screen: DiscoveredScreen, current: String?, screenNam
                         color = if (current != null) Color.White.copy(alpha = 0.94f) else TextSecondary,
                     )
                 }
+                // Quarter-turn the photo that's on the wall right now.
+                if (current != null) {
+                    Box(
+                        Modifier.align(Alignment.TopEnd).padding(10.dp).size(38.dp).clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.45f))
+                            .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape)
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onRotate() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Outlined.RotateRight, contentDescription = stringResource(R.string.rotate), tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                }
             }
         }
         Spacer(Modifier.height(13.dp))
+        // Status line tracks the real link state — it must never say "Connected" while the
+        // watchdog is showing the reconnecting banner above.
+        val statusColor = when { lost -> Color(0xFFF87171); !connected -> Color(0xFFF2B07A); else -> GoodGreen }
+        val statusText = stringResource(when { lost -> R.string.remote_offline; !connected -> R.string.remote_reconnecting; else -> R.string.remote_connected })
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(9.dp).clip(CircleShape).background(GoodGreen))
+            Box(Modifier.size(9.dp).clip(CircleShape).background(statusColor))
             Spacer(Modifier.width(9.dp))
             Text(stringResource(R.string.home_on_wall) + " ", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
             Text(screenName, style = MaterialTheme.typography.bodyMedium, fontFamily = com.meylon.salongallery.ui.theme.ContentFont, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1)
             Spacer(Modifier.weight(1f))
-            Text(stringResource(R.string.remote_connected), style = MaterialTheme.typography.labelMedium, color = GoodGreen, fontWeight = FontWeight.SemiBold)
+            Text(statusText, style = MaterialTheme.typography.labelMedium, color = statusColor, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 /** Horizontal strip of library thumbnails; tap to show one now, or open the manager. */
 @Composable
-private fun LibraryStrip(screen: DiscoveredScreen, items: List<String>, current: Int, onShow: (String) -> Unit, onOpen: () -> Unit) {
+private fun LibraryStrip(
+    screen: DiscoveredScreen, items: List<String>, current: Int,
+    rots: Map<String, Int> = emptyMap(), onShow: (String) -> Unit, onOpen: () -> Unit,
+) {
     if (items.isEmpty()) {
         Box(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ElecSurface)
@@ -999,16 +1071,23 @@ private fun LibraryStrip(screen: DiscoveredScreen, items: List<String>, current:
             Box(
                 Modifier.width(94.dp).height(118.dp).clip(RoundedCornerShape(15.dp)).background(ElecSurfaceElevated)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onShow(name) },
+                contentAlignment = Alignment.Center,
             ) {
+                // Match the wall: a quarter-turned photo is laid out 118×94, then rotated to fill 94×118.
+                val rot = rots[name] ?: 0
+                val swapped = rot == 90 || rot == 270
                 AsyncImage(
                     model = PhotoSender.thumbUrl(screen.host, screen.port, name),
-                    contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+                    contentDescription = null, contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .requiredSize(if (swapped) 118.dp else 94.dp, if (swapped) 94.dp else 118.dp)
+                        .graphicsLayer { rotationZ = rot.toFloat() },
                 )
                 if (i == current) {
                     Text(
                         stringResource(R.string.badge_now),
                         style = MaterialTheme.typography.labelSmall, color = Color.White,
-                        modifier = Modifier.padding(7.dp).clip(RoundedCornerShape(50)).background(GoodGreen).padding(horizontal = 8.dp, vertical = 3.dp),
+                        modifier = Modifier.align(Alignment.TopStart).padding(7.dp).clip(RoundedCornerShape(50)).background(GoodGreen).padding(horizontal = 8.dp, vertical = 3.dp),
                     )
                 }
             }
@@ -1052,9 +1131,9 @@ private fun HomeAction(modifier: Modifier, icon: ImageVector, label: String, tin
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compose.ui.unit.Dp = 0.dp, onClose: () -> Unit) {
+private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compose.ui.unit.Dp = 0.dp, libVersion: Long = 0L, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var items by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -1068,20 +1147,38 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var showNew by remember { mutableStateOf(false) }
-    var addTarget by remember { mutableStateOf<String?>(null) }
+    var addTarget by remember { mutableStateOf<List<String>?>(null) }
     var studioPhoto by remember { mutableStateOf<String?>(null) }
     var durationTarget by remember { mutableStateOf<String?>(null) }
+    var rotMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    // Multi-select: long-press a row to start, tap rows to toggle, then act on all of them at once.
+    var selecting by remember { mutableStateOf(false) }
+    val picked = remember { mutableStateListOf<String>() }
+    var confirmDelete by remember { mutableStateOf(false) }
+    fun exitSelect() { selecting = false; picked.clear() }
+    fun toggle(name: String) {
+        if (name in picked) picked.remove(name) else picked.add(name)
+        if (picked.isEmpty()) selecting = false
+    }
 
     fun refresh() {
         scope.launch {
             val l = PhotoSender.getList(screen.host, screen.port)
-            if (l != null) { items = l.items; current = l.current; activeId = l.albumId; pinned = l.pinned; durations = l.durations; byteMap = l.bytes; dimMap = l.dims }
+            if (l != null) {
+                items = l.items; current = l.current; activeId = l.albumId; pinned = l.pinned
+                durations = l.durations; byteMap = l.bytes; dimMap = l.dims; rotMap = l.rots
+                // Drop selections for photos that no longer exist (deleted elsewhere / album switched).
+                picked.retainAll { it in l.items }
+                if (picked.isEmpty()) selecting = false
+            }
             val a = PhotoSender.getAlbums(screen.host, screen.port)
             if (a != null) albums = a.albums
             loading = false
         }
     }
     LaunchedEffect(Unit) { refresh() }
+    // Follow the Display: if photos are added/removed/cleared while this is open, re-list.
+    LaunchedEffect(libVersion) { if (libVersion != 0L) refresh() }
 
     val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
@@ -1107,18 +1204,43 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     }
     val isAll = activeId == "all"
 
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    // Back while selecting just leaves selection mode; a second back closes the manager.
+    Dialog(onDismissRequest = { if (selecting) exitSelect() else onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(com.meylon.salongallery.ui.theme.ElecBg)) {
             SalonBackground {
                 Column(Modifier.fillMaxSize().safeDrawingPadding().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 16.dp + bottomInset)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        RoundIconBtn(Icons.AutoMirrored.Outlined.ArrowBack) { onClose() }
-                        Spacer(Modifier.size(14.dp))
-                        Text("${stringResource(R.string.library_title)} · ${items.size}", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
-                        Spacer(Modifier.weight(1f))
-                        if (busy) CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
-                        else RoundIconBtn(Icons.Outlined.Add, accent = true) {
-                            addPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                        if (selecting) {
+                            // Selection header: count + bulk actions (select all · add to album · delete).
+                            RoundIconBtn(Icons.Outlined.Close, desc = stringResource(R.string.cancel)) { exitSelect() }
+                            Spacer(Modifier.size(14.dp))
+                            Text(stringResource(R.string.selected_count, picked.size), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                            Spacer(Modifier.weight(1f))
+                            RoundIconBtn(Icons.Outlined.SelectAll, accent = picked.size == items.size, desc = stringResource(R.string.select_all)) {
+                                if (picked.size == items.size) picked.clear() else { picked.clear(); picked.addAll(items) }
+                            }
+                            Spacer(Modifier.size(8.dp))
+                            RoundIconBtn(Icons.Outlined.Folder, desc = stringResource(R.string.album_add_to)) {
+                                if (picked.isNotEmpty()) addTarget = picked.toList()
+                            }
+                            Spacer(Modifier.size(8.dp))
+                            val red = Color(0xFFF87171)
+                            Box(
+                                Modifier.size(42.dp).clip(RoundedCornerShape(50)).border(1.dp, red.copy(alpha = 0.6f), RoundedCornerShape(50))
+                                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                        if (picked.isNotEmpty()) confirmDelete = true
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(Icons.Outlined.DeleteSweep, stringResource(R.string.delete), tint = red, modifier = Modifier.size(22.dp)) }
+                        } else {
+                            RoundIconBtn(Icons.AutoMirrored.Outlined.ArrowBack) { onClose() }
+                            Spacer(Modifier.size(14.dp))
+                            Text("${stringResource(R.string.library_title)} · ${items.size}", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                            Spacer(Modifier.weight(1f))
+                            if (busy) CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                            else RoundIconBtn(Icons.Outlined.Add, accent = true) {
+                                addPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                            }
                         }
                     }
 
@@ -1156,6 +1278,9 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
 
                     Spacer(Modifier.height(10.dp))
                     Text(stringResource(R.string.library_hint), style = MaterialTheme.typography.labelMedium, color = TextTertiary)
+                    if (!selecting && items.size > 1) {
+                        Text(stringResource(R.string.library_hint_select), style = MaterialTheme.typography.labelSmall, color = TextTertiary)
+                    }
                     Spacer(Modifier.height(12.dp))
                     when {
                         loading -> Box(Modifier.fillMaxWidth().padding(40.dp), Alignment.Center) { CircularProgressIndicator(color = NeonCyan) }
@@ -1170,30 +1295,48 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                     val isNext = items.size > 1 && i == (current + 1) % items.size
                                     val isPinned = name in pinned
                                     val isVideo = name.startsWith("v_")
+                                    val isPicked = name in picked
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(16.dp))
                                             .border(
-                                                if (isNow || isDragging) 1.5.dp else 1.dp,
-                                                if (isDragging) NeonViolet else if (isNow) NeonCyan else ElecBorder,
+                                                if (isNow || isDragging || isPicked) 1.5.dp else 1.dp,
+                                                if (isPicked) NeonCyan else if (isDragging) NeonViolet else if (isNow) NeonCyan else ElecBorder,
                                                 RoundedCornerShape(16.dp),
                                             )
-                                            .background(ElecSurface)
+                                            .background(if (isPicked) NeonCyan.copy(alpha = 0.10f) else ElecSurface)
+                                            // Long-press starts multi-select; while selecting, a tap toggles the row.
+                                            .combinedClickable(
+                                                interactionSource = remember { MutableInteractionSource() }, indication = null,
+                                                onClick = { if (selecting) toggle(name) },
+                                                onLongClick = { selecting = true; if (name !in picked) picked.add(name) },
+                                            )
                                             .padding(10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
+                                        if (selecting) {
+                                            Icon(
+                                                if (isPicked) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                                                contentDescription = null,
+                                                tint = if (isPicked) NeonCyan else TextTertiary, modifier = Modifier.size(22.dp),
+                                            )
+                                            Spacer(Modifier.size(10.dp))
+                                        }
                                         Box(
                                             Modifier.size(58.dp).clip(RoundedCornerShape(10.dp)).background(ElecSurfaceElevated)
                                                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                                    scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refresh() }
+                                                    if (selecting) toggle(name)
+                                                    else scope.launch { PhotoSender.showNow(screen.host, screen.port, name); refresh() }
                                                 },
                                             contentAlignment = Alignment.Center,
                                         ) {
+                                            // Square thumb, so a quarter turn still fills it.
+                                            val rot = rotMap[name] ?: 0
                                             AsyncImage(
                                                 model = PhotoSender.thumbUrl(screen.host, screen.port, name),
                                                 contentDescription = null, contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize(),
+                                                modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = rot.toFloat() },
                                             )
                                             if (isVideo) Box(
                                                 Modifier.size(24.dp).clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.5f)),
@@ -1232,7 +1375,10 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                                 }
                                                 Row(
                                                     Modifier.clip(RoundedCornerShape(50)).border(1.dp, ElecBorder, RoundedCornerShape(50))
-                                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { durationTarget = name }
+                                                        // In select mode every control on the row must toggle selection, not open its own sheet.
+                                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                                            if (selecting) toggle(name) else durationTarget = name
+                                                        }
                                                         .padding(horizontal = 9.dp, vertical = 3.dp),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1242,31 +1388,34 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                                 }
                                             }
                                         }
-                                        Icon(
-                                            Icons.Outlined.DragIndicator, contentDescription = "Drag to reorder",
-                                            tint = TextSecondary,
-                                            modifier = Modifier
-                                                .size(38.dp).padding(8.dp)
-                                                .draggableHandle(
-                                                    onDragStopped = { scope.launch { PhotoSender.reorder(screen.host, screen.port, items) } },
-                                                ),
-                                        )
-                                        RowOverflow(
-                                            isAll = isAll,
-                                            isPinned = isPinned,
-                                            onEdit = { studioPhoto = name },
-                                            onDuration = { durationTarget = name },
-                                            onPin = { scope.launch { PhotoSender.setPinned(screen.host, screen.port, name, !isPinned); refresh() } },
-                                            onAddAlbum = { addTarget = name },
-                                            onDelete = {
-                                                items = items.filterIndexed { j, _ -> j != i }
-                                                scope.launch {
-                                                    if (isAll) PhotoSender.deletePhoto(screen.host, screen.port, name)
-                                                    else PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, name)
-                                                    refresh()
-                                                }
-                                            },
-                                        )
+                                        if (!selecting) {
+                                            Icon(
+                                                Icons.Outlined.DragIndicator, contentDescription = "Drag to reorder",
+                                                tint = TextSecondary,
+                                                modifier = Modifier
+                                                    .size(38.dp).padding(8.dp)
+                                                    .draggableHandle(
+                                                        onDragStopped = { scope.launch { PhotoSender.reorder(screen.host, screen.port, items) } },
+                                                    ),
+                                            )
+                                            RowOverflow(
+                                                isAll = isAll,
+                                                isPinned = isPinned,
+                                                onEdit = { studioPhoto = name },
+                                                onRotate = { scope.launch { PhotoSender.rotatePhoto(screen.host, screen.port, name); refresh() } },
+                                                onDuration = { durationTarget = name },
+                                                onPin = { scope.launch { PhotoSender.setPinned(screen.host, screen.port, name, !isPinned); refresh() } },
+                                                onAddAlbum = { addTarget = listOf(name) },
+                                                onDelete = {
+                                                    items = items.filterIndexed { j, _ -> j != i }
+                                                    scope.launch {
+                                                        if (isAll) PhotoSender.deletePhoto(screen.host, screen.port, name)
+                                                        else PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, name)
+                                                        refresh()
+                                                    }
+                                                },
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1290,12 +1439,40 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
             onDismiss = { showNew = false },
         )
     }
-    addTarget?.let { photo ->
+    addTarget?.let { photos ->
         AddToAlbumSheet(
             albums = albums,
-            onPick = { id -> addTarget = null; scope.launch { PhotoSender.addToAlbum(screen.host, screen.port, id, photo); refresh() } },
+            onPick = { id ->
+                addTarget = null
+                scope.launch {
+                    photos.forEach { PhotoSender.addToAlbum(screen.host, screen.port, id, it) }
+                    exitSelect(); refresh()
+                }
+            },
             onNew = { addTarget = null; showNew = true },
             onDismiss = { addTarget = null },
+        )
+    }
+    if (confirmDelete) {
+        val n = picked.size
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            containerColor = com.meylon.salongallery.ui.theme.ElecSurface,
+            title = { Text(stringResource(if (isAll) R.string.delete else R.string.album_remove_from), color = TextPrimary) },
+            text = { Text(stringResource(R.string.delete_selected_confirm, n), color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    val names = picked.toList()
+                    items = items.filter { it !in names }   // optimistic, so the list reacts instantly
+                    scope.launch {
+                        if (isAll) PhotoSender.deletePhotos(screen.host, screen.port, names)
+                        else names.forEach { PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, it) }
+                        exitSelect(); refresh()
+                    }
+                }) { Text(stringResource(if (isAll) R.string.delete else R.string.album_remove_from), color = Color(0xFFF87171)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel), color = TextSecondary) } },
         )
     }
     studioPhoto?.let { photo ->
@@ -1315,7 +1492,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
 @Composable
 private fun RowOverflow(
     isAll: Boolean, isPinned: Boolean,
-    onEdit: () -> Unit, onDuration: () -> Unit, onPin: () -> Unit,
+    onEdit: () -> Unit, onRotate: () -> Unit, onDuration: () -> Unit, onPin: () -> Unit,
     onAddAlbum: () -> Unit, onDelete: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -1326,6 +1503,11 @@ private fun RowOverflow(
                 text = { Text(stringResource(R.string.studio_edit), color = TextPrimary) },
                 leadingIcon = { Icon(Icons.Outlined.Tune, null, tint = NeonCyan) },
                 onClick = { open = false; onEdit() },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.rotate), color = TextPrimary) },
+                leadingIcon = { Icon(Icons.Outlined.RotateRight, null, tint = NeonCyan) },
+                onClick = { open = false; onRotate() },
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.duration_title), color = TextPrimary) },

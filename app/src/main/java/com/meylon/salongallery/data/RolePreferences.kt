@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.meylon.salongallery.net.DiscoveredScreen
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -29,6 +31,32 @@ class RolePreferences(private val context: Context) {
     suspend fun setRole(role: DeviceRole) {
         context.dataStore.edit { prefs ->
             prefs[roleKey] = role.name
+        }
+    }
+
+    // The screen the Remote last controlled, so reopening the app rejoins it instead of making
+    // the user pick (or re-type an IP) every time.
+    private val lastKeyKey = stringPreferencesKey("last_screen_key")
+    private val lastNameKey = stringPreferencesKey("last_screen_name")
+    private val lastHostKey = stringPreferencesKey("last_screen_host")
+    private val lastPortKey = intPreferencesKey("last_screen_port")
+
+    val lastScreen: Flow<DiscoveredScreen?> = context.dataStore.data.map { prefs ->
+        val host = prefs[lastHostKey]
+        val port = prefs[lastPortKey]
+        if (host.isNullOrBlank() || port == null) null
+        else DiscoveredScreen(key = prefs[lastKeyKey] ?: "manual", name = prefs[lastNameKey] ?: host, host = host, port = port)
+    }
+
+    /** Pass null to forget (the user explicitly left the screen). */
+    suspend fun setLastScreen(screen: DiscoveredScreen?) {
+        context.dataStore.edit { prefs ->
+            if (screen == null) {
+                prefs.remove(lastKeyKey); prefs.remove(lastNameKey); prefs.remove(lastHostKey); prefs.remove(lastPortKey)
+            } else {
+                prefs[lastKeyKey] = screen.key; prefs[lastNameKey] = screen.name
+                prefs[lastHostKey] = screen.host; prefs[lastPortKey] = screen.port
+            }
         }
     }
 }

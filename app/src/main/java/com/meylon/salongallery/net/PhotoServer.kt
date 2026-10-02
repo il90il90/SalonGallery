@@ -52,6 +52,8 @@ interface ScreenCommands {
     fun fullPhoto(name: String): ByteArray?
     fun onTransform(photo: String, scale: Float, x: Float, y: Float)
     fun transformJson(photo: String): String
+    /** Turn a photo by [by] degrees (±90 steps) on top of its current rotation. */
+    fun onRotate(photo: String, by: Int)
     // Per-item duration + pin
     fun onDuration(photo: String, seconds: Int)
     fun durationJson(photo: String): String
@@ -204,7 +206,10 @@ class PhotoServer(
                 ))
             }
             session.method == Method.GET && uri == "/delete" -> {
-                session.parameters["id"]?.firstOrNull()?.let { commands.deletePhoto(it) }; ok()
+                // Accepts one id or a comma-separated batch (multi-select delete from the Remote).
+                session.parameters["id"]?.firstOrNull()?.split(",")?.filter { it.isNotBlank() }
+                    ?.forEach { commands.deletePhoto(it) }
+                ok()
             }
             session.method == Method.GET && uri == "/shownow" -> {
                 session.parameters["id"]?.firstOrNull()?.let { commands.showNow(it) }; ok()
@@ -260,7 +265,13 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/transform/get" -> {
                 val photo = session.parameters["photo"]?.firstOrNull()
-                json(if (photo != null) commands.transformJson(photo) else """{"s":1,"x":0,"y":0}""")
+                json(if (photo != null) commands.transformJson(photo) else """{"s":1,"x":0,"y":0,"r":0}""")
+            }
+            session.method == Method.GET && uri == "/rotate" -> {
+                val photo = session.parameters["photo"]?.firstOrNull()
+                val by = session.parameters["by"]?.firstOrNull()?.toIntOrNull() ?: 90
+                if (photo != null) commands.onRotate(photo, by)
+                ok()
             }
             session.method == Method.GET && uri == "/duration" -> {
                 val photo = session.parameters["photo"]?.firstOrNull()

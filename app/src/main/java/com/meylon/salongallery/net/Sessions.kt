@@ -45,7 +45,9 @@ class ScreenSession(
     fun durationFor(name: String): Int = durations.get(name)
 
     val mode = MutableStateFlow(if (library.count() > 0) DisplayMode.SLIDESHOW else DisplayMode.WAITING)
-    val libraryVersion = MutableStateFlow(0L)
+    // Seeded with the boot time (not 0) so every process start presents a fresh version: a Remote
+    // that was connected across a Display restart sees a change and re-lists.
+    val libraryVersion = MutableStateFlow(System.currentTimeMillis())
     val videoVersion = MutableStateFlow(0L)
     val musicVersion = MutableStateFlow(0L)
     // Resume background music automatically when the frame boots with a playlist.
@@ -139,7 +141,9 @@ class ScreenSession(
         val b = if (brightness.value < 0f) 1f else brightness.value
         return """{"name":"${esc(effectiveName())}","version":"${esc(versionName)}",""" +
             """"w":$screenW,"h":$screenH,"free":$free,"total":$total,"count":${library.count()},""" +
-            """"brightness":$b,"volume":${volume.value}}"""
+            // "lib" changes on every library mutation (add/delete/clear/rotate/reorder) so the Remote can
+            // refresh what it shows from a single poll instead of guessing after each of its own actions.
+            """"brightness":$b,"volume":${volume.value},"lib":${libraryVersion.value}}"""
     }
 
     // ---- ScreenCommands (called on server threads) ----
@@ -150,6 +154,7 @@ class ScreenSession(
             if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
             mode.value = DisplayMode.SLIDESHOW
             libraryVersion.value = System.currentTimeMillis()
+            autoOrient(f)
         }
     }
 
@@ -176,6 +181,7 @@ class ScreenSession(
                     if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
                     mode.value = DisplayMode.SLIDESHOW
                     libraryVersion.value = System.currentTimeMillis()
+                    autoOrient(f)
                 }
             }
         }.start()
@@ -393,8 +399,10 @@ class ScreenSession(
         val durs = names.joinToString(",") { durations.get(it).toString() }
         val bytes = names.joinToString(",") { (library.fileFor(it)?.length() ?: 0L).toString() }
         val dims = names.joinToString(",") { "\"${dimsOf(it)}\"" }
+        // Per-item display rotation so the Remote's previews turn the same way the wall does.
+        val rots = names.joinToString(",") { transforms.get(it).rotNorm.toString() }
         return """{"current":$cur,"mode":"${mode.value.name}","album":"${esc(albums.activeName())}",""" +
-            """"albumId":"${esc(albums.activeId)}","pinned":[$pinned],"durs":[$durs],"bytes":[$bytes],"dims":[$dims],"items":[$items]}"""
+            """"albumId":"${esc(albums.activeId)}","pinned":[$pinned],"durs":[$durs],"bytes":[$bytes],"dims":[$dims],"rots":[$rots],"items":[$items]}"""
     }
 
     override fun thumbnail(name: String): ByteArray? {
@@ -553,7 +561,32 @@ class ScreenSession(
 
     override fun transformJson(photo: String): String {
         val t = transforms.get(photo)
-        return """{"s":${t.scale},"x":${t.offX},"y":${t.offY}}"""
+        return """{"s":${t.scale},"x":${t.offX},"y":${t.offY},"r":${t.rotNorm}}"""
+    }
+
+    override fun onRotate(photo: String, by: Int) {
+        val t = transforms.get(photo)
+        transforms.set(photo, t.copy(rot = t.rotNorm + by))
+        libraryVersion.value = System.currentTimeMillis()
+    }
+
+    /**
+     * Face-aware default orientation: if the people in a freshly added photo only stand upright
+     * after a quarter turn, store that turn as the photo's rotation. Runs off the request thread
+     * so uploads stay snappy; the user's manual rotate always wins over it.
+     */
+    private fun autoOrient(f: File) {
+        if (isVideoName(f.name)) return
+        Thread {
+            val r = FaceOrient.detect(f)
+            if (r != 0) {
+                val t = transforms.get(f.name)
+                if (t.rotNorm == 0) {
+                    transforms.set(f.name, t.copy(rot = r))
+                    libraryVersion.value = System.currentTimeMillis()
+                }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     override fun onDuration(photo: String, seconds: Int) {
