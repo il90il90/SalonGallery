@@ -148,10 +148,14 @@ class ScreenSession(
 
     // ---- ScreenCommands (called on server threads) ----
 
-    override fun onPhoto(bytes: ByteArray) {
+    /** The album an upload should land in: an explicit target, else the active album (none for "All"). */
+    private fun targetAlbum(album: String?): String? =
+        album?.takeIf { it.isNotBlank() && it != "all" } ?: albums.activeId.takeIf { !albums.isAllActive() }
+
+    override fun onPhoto(bytes: ByteArray, album: String?) {
         runCatching {
             val f = library.add(bytes)
-            if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
+            targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
             mode.value = DisplayMode.SLIDESHOW
             libraryVersion.value = System.currentTimeMillis()
             autoOrient(f)
@@ -199,12 +203,12 @@ class ScreenSession(
         return """{"urls":[$arr]}"""
     }
 
-    override fun onVideo(bytes: ByteArray) {
+    override fun onVideo(bytes: ByteArray, album: String?) {
         runCatching {
             // Videos now live in the unified library and play inline in the slideshow,
             // so photos and clips can be mixed on the wall.
             val f = library.addVideo(bytes)
-            if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
+            targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
             mode.value = DisplayMode.SLIDESHOW
             videoVersion.value = System.currentTimeMillis()
             libraryVersion.value = System.currentTimeMillis()

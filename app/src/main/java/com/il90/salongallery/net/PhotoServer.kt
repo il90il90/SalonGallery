@@ -4,11 +4,11 @@ import fi.iki.elonen.NanoHTTPD
 
 /** Commands the Display device reacts to when the server receives a request. */
 interface ScreenCommands {
-    fun onPhoto(bytes: ByteArray)          // append to the library
+    fun onPhoto(bytes: ByteArray, album: String? = null)   // append to the library (into [album] when given)
     fun onPhotoUrl(url: String)            // download an image and append to the library
     fun removeByUrl(url: String)           // remove library items that came from this url
     fun sourcesJson(): String              // {"urls":[...]} of source urls currently on the wall
-    fun onVideo(bytes: ByteArray)          // play this video
+    fun onVideo(bytes: ByteArray, album: String? = null)   // add this clip (into [album] when given)
     fun onMusic(bytes: ByteArray, title: String) // add to the music library
     // Music library
     fun musicListJson(): String
@@ -89,7 +89,9 @@ class PhotoServer(
             session.method == Method.GET && uri == "/ping" -> json(pingBody())
 
             session.method == Method.POST && uri == "/photo" -> {
-                readBody(session)?.let { commands.onPhoto(it) }; ok()
+                // Optional ?album=<id> files the upload into that album instead of the active one.
+                val album = session.parameters["album"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                readBody(session)?.let { commands.onPhoto(it, album) }; ok()
             }
             session.method == Method.GET && uri == "/photo/download" -> {
                 session.parameters["url"]?.firstOrNull()?.let { commands.onPhotoUrl(it) }; ok()
@@ -99,7 +101,8 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/sources" -> json(commands.sourcesJson())
             session.method == Method.POST && uri == "/video" -> {
-                readBody(session)?.let { commands.onVideo(it) }; ok()
+                val album = session.parameters["album"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                readBody(session)?.let { commands.onVideo(it, album) }; ok()
             }
             session.method == Method.POST && uri == "/music" -> {
                 val title = session.parameters["name"]?.firstOrNull().orEmpty()

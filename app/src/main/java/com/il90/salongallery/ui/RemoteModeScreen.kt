@@ -217,13 +217,18 @@ fun RemoteModeScreen(actions: AppActions) {
     var autoJoined by remember { mutableStateOf(false) }
     // Remember whatever we're controlling (including an address the watchdog recovered).
     LaunchedEffect(selected) { selected?.let { prefs.setLastScreen(it) } }
-    LaunchedEffect(lastScreen, screens) {
+    LaunchedEffect(lastScreen) {
         val last = lastScreen ?: return@LaunchedEffect
-        if (autoJoined || selected != null) return@LaunchedEffect
-        // Prefer the live discovery entry (fresh address); otherwise the saved address if it answers.
-        val found = screens.firstOrNull { it.key == last.key || it.name == last.name }
-        val target = found ?: last.takeIf { PhotoSender.getInfo(it.host, it.port, timeoutMs = 2500) != null }
-        if (target != null) { autoJoined = true; selected = target }
+        // Keep trying until we're in: the screen is often still booting (or Wi-Fi still settling)
+        // when the Remote opens, so a single probe would give up and leave the user on "Searching…".
+        // Stops as soon as something is selected (by us or by the user) or the user backed out.
+        while (selected == null && !autoJoined) {
+            // Prefer the live discovery entry (fresh address); otherwise the saved address if it answers.
+            val found = session.screens.value.firstOrNull { it.key == last.key || it.name == last.name }
+            val target = found ?: last.takeIf { PhotoSender.getInfo(it.host, it.port, timeoutMs = 2500) != null }
+            if (target != null && selected == null && !autoJoined) { autoJoined = true; selected = target; break }
+            kotlinx.coroutines.delay(3000)
+        }
     }
     var showSettings by remember { mutableStateOf(false) }
     var showManual by remember { mutableStateOf(false) }
@@ -744,27 +749,36 @@ private fun ControlPanel(
     }
 
     // One picker for photos AND videos together — each item is routed to the right endpoint.
+    // Picking doesn't upload yet: a destination sheet first asks which album these go to (an
+    // existing one, a new one, or none), so the library stays organized instead of everything
+    // landing in "All".
+    var pendingMedia by remember { mutableStateOf<List<Uri>?>(null) }
+    var destAlbums by remember { mutableStateOf<List<AlbumInfo>>(emptyList()) }
+    suspend fun uploadMedia(uris: List<Uri>, album: String?) {
+        busy = true; status = null; progress = 0 to uris.size
+        var ok = 0
+        uris.forEachIndexed { i, uri ->
+            val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true
+            val bytes = readBytes(uri)
+            if (bytes != null) {
+                val err = if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, bytes, album)
+                    else PhotoSender.sendPhoto(screen.host, screen.port, bytes, album)
+                if (err == null) ok++
+            }
+            progress = (i + 1) to uris.size
+        }
+        // Show what was just added: switch the wall to that album.
+        if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
+        busy = false
+        status = "Added $ok / ${uris.size} ✓"
+        onInfoRefresh(scope); refreshLib()
+    }
     val mediaPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        busy = true; status = null; progress = 0 to uris.size
-        scope.launch {
-            var ok = 0
-            uris.forEachIndexed { i, uri ->
-                val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true
-                val bytes = readBytes(uri)
-                if (bytes != null) {
-                    val err = if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, bytes)
-                        else PhotoSender.sendPhoto(screen.host, screen.port, bytes)
-                    if (err == null) ok++
-                }
-                progress = (i + 1) to uris.size
-            }
-            busy = false
-            status = "Added $ok / ${uris.size} ✓"
-            onInfoRefresh(scope); refreshLib()
-        }
+        pendingMedia = uris
+        scope.launch { PhotoSender.getAlbums(screen.host, screen.port)?.let { destAlbums = it.albums } }
     }
     val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
@@ -928,6 +942,18 @@ private fun ControlPanel(
     }
     if (showLibrary) {
         LibraryManager(screen = screen, bottomInset = bottomInset, libVersion = libVersion, onClose = { showLibrary = false; onInfoRefresh(scope); refreshLib() })
+    }
+    // "Where should these go?" — shown right after the media picker returns.
+    pendingMedia?.let { uris ->
+        DestinationSheet(
+            count = uris.size, albums = destAlbums,
+            onPick = { id -> pendingMedia = null; scope.launch { uploadMedia(uris, id) } },
+            onCreate = { name ->
+                pendingMedia = null
+                scope.launch { uploadMedia(uris, PhotoSender.createAlbum(screen.host, screen.port, name)) }
+            },
+            onDismiss = { pendingMedia = null },
+        )
     }
     if (showText) {
         TextSheet(
@@ -1205,22 +1231,26 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     // Follow the Display: if photos are added/removed/cleared while this is open, re-list.
     LaunchedEffect(libVersion) { if (libVersion != 0L) refresh() }
 
+    var pendingMedia by remember { mutableStateOf<List<Uri>?>(null) }
+    suspend fun uploadMedia(uris: List<Uri>, album: String?) {
+        busy = true
+        uris.forEach { u ->
+            val isVideo = context.contentResolver.getType(u)?.startsWith("video") == true
+            val b = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(u)?.use { it.readBytes() } }.getOrNull()
+            }
+            if (b != null) {
+                if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, b, album)
+                else PhotoSender.sendPhoto(screen.host, screen.port, b, album)
+            }
+        }
+        if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
+        busy = false; refresh()
+    }
     val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        busy = true
-        scope.launch {
-            uris.forEach { u ->
-                val isVideo = context.contentResolver.getType(u)?.startsWith("video") == true
-                val b = withContext(Dispatchers.IO) {
-                    runCatching { context.contentResolver.openInputStream(u)?.use { it.readBytes() } }.getOrNull()
-                }
-                if (b != null) {
-                    if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, b)
-                    else PhotoSender.sendPhoto(screen.host, screen.port, b)
-                }
-            }
-            busy = false; refresh()
-        }
+        // Inside an album, add straight into it; from "All", ask where these should go.
+        if (activeId != "all") scope.launch { uploadMedia(uris, activeId) } else pendingMedia = uris
     }
 
     val lazyState = rememberLazyListState()
@@ -1451,6 +1481,14 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
         }
     }
 
+    pendingMedia?.let { uris ->
+        DestinationSheet(
+            count = uris.size, albums = albums,
+            onPick = { id -> pendingMedia = null; scope.launch { uploadMedia(uris, id) } },
+            onCreate = { name -> pendingMedia = null; scope.launch { uploadMedia(uris, PhotoSender.createAlbum(screen.host, screen.port, name)) } },
+            onDismiss = { pendingMedia = null },
+        )
+    }
     if (showNew) {
         NewAlbumDialog(
             onCreate = { nm ->
@@ -1773,6 +1811,59 @@ private fun NewAlbumDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
         confirmButton = { TextButton(onClick = { if (name.isNotBlank()) onCreate(name.trim()) }) { Text(stringResource(R.string.album_create), color = NeonCyan) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel), color = TextSecondary) } },
     )
+}
+
+/** After picking media: which album should it go to — an existing one, a new one, or none ("All"). */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun DestinationSheet(
+    count: Int, albums: List<AlbumInfo>,
+    onPick: (String?) -> Unit, onCreate: (String) -> Unit, onDismiss: () -> Unit,
+) {
+    var newName by remember { mutableStateOf("") }
+    val createReq = rememberRevealRequester()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.il90.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(24.dp)) {
+            Text(stringResource(R.string.add_dest_title, count), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(14.dp))
+            albums.forEach { al -> DestRow(NeonTeal, "${al.name} · ${al.count}") { onPick(al.id) } }
+            DestRow(TextTertiary, stringResource(R.string.add_dest_all)) { onPick(null) }
+            Spacer(Modifier.height(18.dp))
+            Text(stringResource(R.string.album_new), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = newName, onValueChange = { newName = it }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().revealOnFocus(createReq),
+                placeholder = { Text(stringResource(R.string.album_name_hint), color = TextTertiary) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+                    focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+                ),
+            )
+            Spacer(Modifier.height(10.dp))
+            GradientButton(
+                modifier = Modifier.bringIntoViewRequester(createReq),
+                text = stringResource(R.string.album_create), enabled = newName.isNotBlank(),
+                onClick = { onCreate(newName.trim()) },
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun DestRow(tint: Color, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(14.dp))
+            .border(1.dp, ElecBorder, RoundedCornerShape(14.dp))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Folder, null, tint = tint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.size(12.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

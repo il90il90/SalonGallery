@@ -219,8 +219,10 @@ object PhotoSender {
     }
 
     /** POSTs a photo. Returns null on success, or a short error string. */
-    suspend fun sendPhoto(host: String, port: Int, bytes: ByteArray) =
-        sendMedia(host, port, "/photo", bytes, "image/jpeg")
+    suspend fun sendPhoto(host: String, port: Int, bytes: ByteArray, album: String? = null) =
+        sendMedia(host, port, "/photo" + albumQuery(album), bytes, "image/jpeg")
+
+    private fun albumQuery(album: String?) = if (album.isNullOrBlank()) "" else "?album=$album"
 
     /** Tells the Display to download an image (e.g. a gallery artwork) into its library. */
     suspend fun downloadPhoto(host: String, port: Int, url: String) =
@@ -243,8 +245,8 @@ object PhotoSender {
     }
 
     /** POSTs a video. Returns null on success, or a short error string. */
-    suspend fun sendVideo(host: String, port: Int, bytes: ByteArray) =
-        sendMedia(host, port, "/video", bytes, "video/mp4")
+    suspend fun sendVideo(host: String, port: Int, bytes: ByteArray, album: String? = null) =
+        sendMedia(host, port, "/video" + albumQuery(album), bytes, "video/mp4")
 
     /** POSTs a track to the music library. Returns null on success, or a short error string. */
     suspend fun sendMusic(host: String, port: Int, bytes: ByteArray, title: String) =
