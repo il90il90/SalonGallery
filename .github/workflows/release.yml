@@ -1,0 +1,123 @@
+name: Release
+
+# Builds the signed release APK and publishes it as a GitHub Release of this repo
+# (the in-app updater reads this repo's releases.atom and downloads
+# SalonGallery-<version>.apk from the v<version> release).
+#
+# Runs on every push to main and on demand. The version comes from
+# app/build.gradle.kts (versionName); a version that already has a v<version>
+# tag is skipped, so pushes without a version bump don't re-release.
+#
+# Needs these repository secrets (Settings → Secrets and variables → Actions):
+#   SALON_KEYSTORE_BASE64   base64 of the release keystore (.jks) — the SAME key
+#                           earlier releases were signed with, or the update
+#                           won't install over the existing app
+#   SALON_KEYSTORE_PASSWORD
+#   SALON_KEY_ALIAS
+#   SALON_KEY_PASSWORD
+#   PEXELS_API_KEY          optional — enables the Pexels art source
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: ver
+        run: |
+          v=$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' app/build.gradle.kts | head -1)
+          [ -n "$v" ] || { echo "::error::versionName not found in app/build.gradle.kts"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "v$v is already released — nothing to do."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check signing secrets
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          KS: ${{ secrets.SALON_KEYSTORE_BASE64 }}
+          KSP: ${{ secrets.SALON_KEYSTORE_PASSWORD }}
+          KA: ${{ secrets.SALON_KEY_ALIAS }}
+          KP: ${{ secrets.SALON_KEY_PASSWORD }}
+        run: |
+          missing=""
+          [ -n "$KS" ]  || missing="$missing SALON_KEYSTORE_BASE64"
+          [ -n "$KSP" ] || missing="$missing SALON_KEYSTORE_PASSWORD"
+          [ -n "$KA" ]  || missing="$missing SALON_KEY_ALIAS"
+          [ -n "$KP" ]  || missing="$missing SALON_KEY_PASSWORD"
+          # Never publish a debug-signed APK: it would not install over the real app.
+          if [ -n "$missing" ]; then echo "::error::Missing repository secrets:$missing"; exit 1; fi
+
+      - name: Set up JDK 17
+        if: steps.ver.outputs.skip == 'false'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Write signing config
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          KS: ${{ secrets.SALON_KEYSTORE_BASE64 }}
+          KSP: ${{ secrets.SALON_KEYSTORE_PASSWORD }}
+          KA: ${{ secrets.SALON_KEY_ALIAS }}
+          KP: ${{ secrets.SALON_KEY_PASSWORD }}
+          PEXELS: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          echo "$KS" | base64 -d > release.jks
+          {
+            echo "storeFile=release.jks"
+            echo "storePassword=$KSP"
+            echo "keyAlias=$KA"
+            echo "keyPassword=$KP"
+          } > keystore.properties
+          [ -z "$PEXELS" ] || echo "PEXELS_API_KEY=$PEXELS" >> local.properties
+
+      - name: Build release APK
+        if: steps.ver.outputs.skip == 'false'
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          chmod +x ./gradlew
+          ./gradlew :app:testDebugUnitTest :app:assembleRelease --stacktrace
+
+      - name: Verify signature
+        if: steps.ver.outputs.skip == 'false'
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          [ -f "$apk" ] || { echo "::error::$apk not built"; exit 1; }
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$bt/apksigner" verify --print-certs "$apk" | tee certs.txt
+          if grep -q "CN=Android Debug" certs.txt; then echo "::error::APK is debug-signed"; exit 1; fi
+          cp "$apk" "SalonGallery-${{ steps.ver.outputs.version }}.apk"
+
+      - name: Publish GitHub Release
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          notes="release-notes/$V.md"
+          if [ ! -f "$notes" ]; then git log -1 --format=%B > notes.md; notes=notes.md; fi
+          gh release create "v$V" "SalonGallery-$V.apk" --target "$GITHUB_SHA" --title "v$V" --notes-file "$notes"
+
+      - name: Clean up signing files
+        if: always()
+        run: rm -f release.jks keystore.properties local.properties
