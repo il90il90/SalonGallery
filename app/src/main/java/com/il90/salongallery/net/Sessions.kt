@@ -603,16 +603,28 @@ class ScreenSession(
      * Face-aware default orientation (and crop focus): if the people in a photo only stand upright after a turn
      * (a quarter turn or upside down), store that turn as the photo's rotation. Runs on one
      * low-priority background thread so uploads stay snappy; the user's manual rotate always wins.
-     * Each photo is checked once (remembered in orient_checked_v3.txt), so photos that were already in
+     * Each photo is checked once (remembered in orient_checked_v4.txt), so photos that were already in
      * the library before this existed get straightened too, by [sweepOrientation] at start.
      */
     private val orientExec = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "salon-orient").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
     }
-    private val orientFile = File(app.filesDir, "orient_checked_v3.txt")
+    private val orientFile = File(app.filesDir, "orient_checked_v4.txt")
     private val orientChecked: MutableSet<String> = java.util.Collections.synchronizedSet(
         runCatching { orientFile.readLines().filter { it.isNotBlank() }.toMutableSet() }.getOrDefault(mutableSetOf())
     )
+    // The rotation WE auto-applied to each photo, so a re-check with a better detector can correct its
+    // own earlier mistake — but never a rotation the user set by hand in the app.
+    private val autoRotFile = File(app.filesDir, "auto_oriented.json")
+    private val autoRot: MutableMap<String, Int> = java.util.Collections.synchronizedMap(
+        runCatching {
+            val o = org.json.JSONObject(autoRotFile.readText())
+            HashMap<String, Int>().apply { o.keys().forEach { put(it, o.getInt(it)) } }
+        }.getOrDefault(HashMap())
+    )
+    private fun saveAutoRot() {
+        runCatching { autoRotFile.writeText(org.json.JSONObject(synchronized(autoRot) { HashMap(autoRot) } as Map<*, *>).toString()) }
+    }
 
     private fun autoOrient(f: File) {
         if (isVideoName(f.name)) return
@@ -627,6 +639,7 @@ class ScreenSession(
                 // Forget deleted photos so the checked list doesn't grow forever.
                 val names = photos.map { it.name }.toSet()
                 if (orientChecked.retainAll(names)) saveOrientChecked()
+                if (autoRot.keys.retainAll(names)) saveAutoRot()
                 photos.filter { it.name !in orientChecked }.forEach { orientOne(it) }
             }
         }
@@ -636,15 +649,17 @@ class ScreenSession(
         if (f.name in orientChecked || !f.exists()) return
         val res = FaceOrient.analyze(f)
         res.focus?.let { focus.set(f.name, it) }
-        val r = res.rot
-        if (r != 0 || res.focus != null) libraryVersion.value = System.currentTimeMillis()
-        if (r != 0) {
-            val t = transforms.get(f.name)
-            if (t.rotNorm == 0) {
-                transforms.set(f.name, t.copy(rot = r))
-                libraryVersion.value = System.currentTimeMillis()
-            }
+        val t = transforms.get(f.name)
+        val cur = t.rotNorm
+        // The user owns the rotation only if it isn't the one we last applied automatically. That lets
+        // this better detector fix a photo an earlier version turned the wrong way, without ever
+        // undoing a hand rotation.
+        val userSet = cur != 0 && cur != autoRot[f.name]
+        if (!userSet && res.rot != cur) {
+            transforms.set(f.name, t.copy(rot = res.rot))
         }
+        if (!userSet) { autoRot[f.name] = res.rot; saveAutoRot() }
+        libraryVersion.value = System.currentTimeMillis()
         orientChecked.add(f.name)
         runCatching { orientFile.appendText(f.name + "\n") }
     }

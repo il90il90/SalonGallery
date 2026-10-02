@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit
  * Compose `rotationZ`), or 0 when there is no face or the photo is already upright.
  */
 object FaceOrient {
-    private const val SIZE = 640      // detection resolution — small keeps each turn quick, big enough for kids in a group shot
+    private const val SIZE = 1280     // detection resolution — big enough that a small child's face in a 4000px photo is still found
     private const val MAX_FACES = 4
     private const val MIN_CONFIDENCE = 0.4f
     /** A turn must beat the current best by this ratio before we rotate — avoids flip-flopping on ties. */
@@ -77,9 +77,12 @@ object FaceOrient {
     private val mlDetector by lazy {
         FaceDetection.getClient(
             FaceDetectorOptions.Builder()
-                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+                // ACCURATE + a small min face size: these are family photos where the face we need to
+                // find is often a single small child far from the camera — recall matters more than speed
+                // (detection runs on a low-priority background thread, so it never janks the app).
+                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
                 .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
-                .setMinFaceSize(0.08f)
+                .setMinFaceSize(0.04f)
                 .build()
         )
     }
@@ -103,6 +106,13 @@ object FaceOrient {
                         val b = f.boundingBox
                         val w = b.width().toFloat(); val h = b.height().toFloat()
                         if (w <= 0f || h <= 0f) continue
+                        // Only count a face that is genuinely upright in THIS orientation: eyes above the
+                        // mouth. This is what tells "the right way up" from a merely-detected face, so a
+                        // correct photo of an upside-down child doesn't get flipped.
+                        val le = f.getLandmark(com.google.mlkit.vision.face.FaceLandmark.LEFT_EYE)?.position
+                        val re = f.getLandmark(com.google.mlkit.vision.face.FaceLandmark.RIGHT_EYE)?.position
+                        val mo = f.getLandmark(com.google.mlkit.vision.face.FaceLandmark.MOUTH_BOTTOM)?.position
+                        if (le != null && re != null && mo != null && (le.y + re.y) / 2f >= mo.y) continue
                         val weight = (w * h) / area               // bigger faces count more
                         total += weight
                         sx += b.exactCenterX() * weight
