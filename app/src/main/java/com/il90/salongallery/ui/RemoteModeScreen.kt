@@ -1258,9 +1258,30 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
         if (activeId != "all") scope.launch { uploadMedia(uris, activeId) } else pendingMedia = uris
     }
 
+    // Media-type filter: "all" (default) | "photo" | "video". Purely a view over `items` — the
+    // library order, reorder and server calls always use the full list.
+    var mediaFilter by remember { mutableStateOf("all") }
+    val shown = remember(items, mediaFilter) {
+        when (mediaFilter) {
+            "photo" -> items.filterNot { it.startsWith("v_") }
+            "video" -> items.filter { it.startsWith("v_") }
+            else -> items
+        }
+    }
+    val nPhotos = items.count { !it.startsWith("v_") }
+    val nVideos = items.size - nPhotos
+
     val lazyState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(lazyState) { from, to ->
-        items = items.toMutableList().apply { add(to.index, removeAt(from.index)) }
+        // Dragging within a filtered view: move the dragged item next to its visible neighbour
+        // in the FULL list, so the library order stays consistent with what the user saw.
+        val dragged = shown.getOrNull(from.index) ?: return@rememberReorderableLazyListState
+        val anchor = shown.getOrNull(to.index) ?: return@rememberReorderableLazyListState
+        items = items.toMutableList().apply {
+            remove(dragged)
+            val at = indexOf(anchor).let { if (to.index > from.index) it + 1 else it }
+            add(at.coerceIn(0, size), dragged)
+        }
     }
     val isAll = activeId == "all"
 
@@ -1276,8 +1297,9 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                             Spacer(Modifier.size(14.dp))
                             Text(stringResource(R.string.selected_count, picked.size), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                             Spacer(Modifier.weight(1f))
-                            RoundIconBtn(Icons.Outlined.SelectAll, accent = picked.size == items.size, desc = stringResource(R.string.select_all)) {
-                                if (picked.size == items.size) picked.clear() else { picked.clear(); picked.addAll(items) }
+                            // Select-all acts on what's visible, so "Videos → select all → delete" can't touch photos.
+                            RoundIconBtn(Icons.Outlined.SelectAll, accent = shown.isNotEmpty() && picked.containsAll(shown), desc = stringResource(R.string.select_all)) {
+                                if (picked.containsAll(shown)) picked.removeAll(shown) else { picked.removeAll(shown); picked.addAll(shown) }
                             }
                             Spacer(Modifier.size(8.dp))
                             RoundIconBtn(Icons.Outlined.Folder, desc = stringResource(R.string.album_add_to)) {
@@ -1295,7 +1317,10 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                         } else {
                             RoundIconBtn(Icons.AutoMirrored.Outlined.ArrowBack) { onClose() }
                             Spacer(Modifier.size(14.dp))
-                            Text("${stringResource(R.string.library_title)} · ${items.size}", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                            Text(
+                                "${stringResource(R.string.library_title)} · " + if (mediaFilter == "all") "${items.size}" else "${shown.size}/${items.size}",
+                                style = MaterialTheme.typography.headlineSmall, color = TextPrimary,
+                            )
                             Spacer(Modifier.weight(1f))
                             if (busy) CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                             else RoundIconBtn(Icons.Outlined.Add, accent = true) {
@@ -1321,6 +1346,15 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                         }
                         NewAlbumChip { showNew = true }
                     }
+                    // Photos / videos / everything — only worth showing once both kinds exist.
+                    if (nPhotos > 0 && nVideos > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AlbumChip(stringResource(R.string.filter_all), mediaFilter == "all") { mediaFilter = "all" }
+                            AlbumChip("${stringResource(R.string.filter_photos)} · $nPhotos", mediaFilter == "photo") { mediaFilter = "photo" }
+                            AlbumChip("${stringResource(R.string.filter_videos)} · $nVideos", mediaFilter == "video") { mediaFilter = "video" }
+                        }
+                    }
                     if (!isAll) {
                         Spacer(Modifier.height(6.dp))
                         Text(
@@ -1338,7 +1372,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
 
                     Spacer(Modifier.height(10.dp))
                     Text(stringResource(R.string.library_hint), style = MaterialTheme.typography.labelMedium, color = TextTertiary)
-                    if (!selecting && items.size > 1) {
+                    if (!selecting && shown.size > 1) {
                         Text(stringResource(R.string.library_hint_select), style = MaterialTheme.typography.labelSmall, color = TextTertiary)
                     }
                     Spacer(Modifier.height(12.dp))
@@ -1348,9 +1382,15 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                             stringResource(if (isAll) R.string.library_empty else R.string.album_empty),
                             style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
                         )
+                        shown.isEmpty() -> Text(
+                            stringResource(if (mediaFilter == "video") R.string.filter_none_videos else R.string.filter_none_photos),
+                            style = MaterialTheme.typography.bodyMedium, color = TextSecondary,
+                        )
                         else -> LazyColumn(state = lazyState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            itemsIndexed(items, key = { _, n -> n }) { i, name ->
+                            itemsIndexed(shown, key = { _, n -> n }) { _, name ->
                                 ReorderableItem(reorderState, key = name) { isDragging ->
+                                    // Position in the FULL library — "#n", NOW/NEXT and delete all refer to it.
+                                    val i = items.indexOf(name)
                                     val isNow = i == current
                                     val isNext = items.size > 1 && i == (current + 1) % items.size
                                     val isPinned = name in pinned
