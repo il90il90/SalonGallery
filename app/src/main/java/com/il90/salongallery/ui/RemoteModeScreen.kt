@@ -316,8 +316,33 @@ fun RemoteModeScreen(actions: AppActions) {
                     )
                     Spacer(Modifier.height(24.dp))
                     if (screens.isEmpty()) Searching()
-                    else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        screens.forEach { s -> ScreenRow(s) { selected = s } }
+                    else {
+                        // Ping each screen once for its app version so an old install is obvious. When two
+                        // screens answer from one address (two installs on one device, each on its own
+                        // port) the address alone looks like a duplicate — show the ports and say why.
+                        var versions by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+                        LaunchedEffect(screens) {
+                            screens.forEach { s ->
+                                val k = "${s.host}:${s.port}"
+                                if (k !in versions) {
+                                    PhotoSender.getInfo(s.host, s.port, timeoutMs = 2500)?.let { versions = versions + (k to it.version) }
+                                }
+                            }
+                        }
+                        val sharedHosts = screens.groupBy { it.host }.filterValues { it.size > 1 }.keys
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            screens.forEach { s ->
+                                ScreenRow(
+                                    s,
+                                    subtitle = if (s.host in sharedHosts) "${s.host}:${s.port}" else s.host,
+                                    version = versions["${s.host}:${s.port}"],
+                                ) { selected = s }
+                            }
+                        }
+                        if (sharedHosts.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(stringResource(R.string.remote_same_host_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                     Text(
@@ -2837,7 +2862,7 @@ private fun Searching() {
 }
 
 @Composable
-private fun ScreenRow(screen: DiscoveredScreen, onClick: () -> Unit) {
+private fun ScreenRow(screen: DiscoveredScreen, subtitle: String = screen.host, version: String? = null, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2855,7 +2880,15 @@ private fun ScreenRow(screen: DiscoveredScreen, onClick: () -> Unit) {
         Spacer(Modifier.size(14.dp))
         Column(Modifier.weight(1f)) {
             Text(screen.name, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
-            Text(screen.host, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        }
+        // Which build that screen runs — tells an old install from the current one at a glance.
+        if (!version.isNullOrBlank()) {
+            Text(
+                "v$version", style = MaterialTheme.typography.labelMedium, color = TextTertiary,
+                modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, ElecBorder, RoundedCornerShape(50))
+                    .padding(horizontal = 9.dp, vertical = 3.dp),
+            )
         }
     }
 }

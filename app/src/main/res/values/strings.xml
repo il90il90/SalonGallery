@@ -227,4 +227,5 @@
     <string name="library_hint_select">Long-press a photo to select several at once</string>
     <string name="remote_reconnecting">Reconnecting…</string>
     <string name="remote_offline">Offline</string>
+    <string name="remote_same_host_hint">Two screens share one address: that device is running two copies of Salon Gallery (usually an older install next to the new one). Pick the newer version here, and remove the old app from that device\'s settings.</string>
 </resources>

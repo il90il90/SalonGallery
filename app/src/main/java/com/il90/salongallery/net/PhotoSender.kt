@@ -18,6 +18,8 @@ data class ScreenInfo(
     val volume: Float = 1f,
     /** Bumped by the Display on any library change; the Remote refreshes its lists when it moves. */
     val libVersion: Long = 0L,
+    /** The Display app's versionName — shown in the screen list so an old install is obvious. */
+    val version: String = "",
 )
 
 /** The Display's current (active-album) library, as seen by the Remote. */
@@ -193,6 +195,7 @@ object PhotoSender {
                 brightness = o.optDouble("brightness", 1.0).toFloat(),
                 volume = o.optDouble("volume", 1.0).toFloat(),
                 libVersion = o.optLong("lib", 0L),
+                version = o.optString("version", ""),
             )
         } catch (e: Exception) {
             null
