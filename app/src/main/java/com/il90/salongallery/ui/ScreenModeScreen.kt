@@ -572,15 +572,34 @@ private fun Slideshow(
         delay(if (sec > 0) sec * 1000L else intervalMs)
         advanceFrom(idx)
     }
-    // Warm the next photo into Coil's cache so the transition doesn't flash before it decodes.
+    // Warm the WHOLE next slide into Coil's cache ahead of time, decoded at screen size, so a spread
+    // (or a big photo) never shows its empty mat/frame first and then pops the pictures in a second
+    // later. We warm every member of the slide that follows the current one — and, for good measure,
+    // the slide after that — at the display resolution, so the bitmaps are ready the instant the
+    // transition starts. (Shuffle can't be predicted, so there we just warm a few upcoming files.)
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(idx, files.size) {
+    val dm = remember { ctx.resources.displayMetrics }
+    LaunchedEffect(idx, files.size, layout, shuffle, spreadMix) {
         if (files.size <= 1) return@LaunchedEffect
-        val next = files[(idx + 1) % files.size]
-        if (!isVideoName(next.name)) {
+        fun warm(f: File) {
+            if (isVideoName(f.name)) return
             coil.Coil.imageLoader(ctx).enqueue(
-                coil.request.ImageRequest.Builder(ctx).data(next).build()
+                coil.request.ImageRequest.Builder(ctx).data(f)
+                    .size(dm.widthPixels, dm.heightPixels)
+                    .precision(coil.size.Precision.INEXACT)
+                    .build()
             )
+        }
+        if (shuffle) {
+            repeat(6) { warm(files[(idx + 1 + it) % files.size]) }
+            return@LaunchedEffect
+        }
+        var start = (idx + membersAt(idx).size) % files.size
+        // Two slides ahead, so there's always a ready buffer even on fast intervals.
+        repeat(2) {
+            val m = membersAt(start)
+            m.forEach { warm(files[it]) }
+            start = (start + m.size) % files.size
         }
     }
     val poolEnums = remember(effectPool) { effectPool.map { SlideEffect.from(it) }.filter { it != SlideEffect.RANDOM } }

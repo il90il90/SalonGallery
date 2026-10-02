@@ -90,6 +90,7 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
@@ -2548,6 +2549,69 @@ private fun mediaInTree(context: android.content.Context, tree: Uri, kind: Strin
 /** What the add-media pickers offer: every photo and video type. */
 private val MEDIA_TYPES = arrayOf("image/*", "video/*")
 
+/**
+ * A tappable thumbnail that SHOWS what a layout looks like — little white prints arranged the way
+ * the wall will arrange the photos — instead of just its name, so the picker reads at a glance.
+ * Built from the exact same [placeSpread] geometry the TV uses, so the preview matches the result.
+ */
+@Composable
+private fun LayoutPreviewTile(key: String, label: String, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(96.dp)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
+    ) {
+        Box(
+            Modifier.size(96.dp, 62.dp).clip(RoundedCornerShape(12.dp))
+                .background(if (key == "single" || key == "mosaic") Color(0xFF2A2017) else Color(0xFF1C1712))
+                .border(if (selected) 2.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (key == "random") {
+                Text("🎲", style = MaterialTheme.typography.headlineSmall)
+            } else {
+                val vw = 100f; val vh = 64f
+                val items = remember(key) { layoutPreviewItems(key, vw, vh) }
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(5.dp)) {
+                    val sx = size.width / vw; val sy = size.height / vh
+                    items.forEach { p ->
+                        val cx = p.cx * sx; val cy = p.cy * sy
+                        val w = p.w * sx; val h = p.h * sy
+                        withTransform({ rotate(p.rot, androidx.compose.ui.geometry.Offset(cx, cy)) }) {
+                            val topLeft = androidx.compose.ui.geometry.Offset(cx - w / 2f, cy - h / 2f)
+                            val sz = androidx.compose.ui.geometry.Size(w, h)
+                            if (p.style == PrintStyle.CIRCLE) {
+                                drawOval(Color(0xFFF2EEE6), topLeft, sz)
+                            } else {
+                                drawRoundRect(Color(0xFFF2EEE6), topLeft, sz, androidx.compose.ui.geometry.CornerRadius(2f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(5.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = if (selected) NeonCyan else TextSecondary, maxLines = 1, textAlign = TextAlign.Center)
+    }
+}
+
+/** The shapes to sketch for a layout's preview tile (same geometry the wall renders). */
+private fun layoutPreviewItems(key: String, w: Float, h: Float): List<Placement> = when (key) {
+    "single" -> listOf(Placement(w * 0.06f, h * 0.08f, w * 0.88f, h * 0.84f, 0f, PrintStyle.CELL))
+    "mosaic" -> {
+        val g = minOf(w, h) * 0.05f
+        val colW = w * 0.4f - g
+        val cellH = (h - 3 * g) / 2f
+        listOf(
+            Placement(g, g, w * 0.6f - 1.5f * g, h - 2 * g, 0f, PrintStyle.CELL),
+            Placement(w * 0.6f + 0.5f * g, g, colW, cellH, 0f, PrintStyle.CELL),
+            Placement(w * 0.6f + 0.5f * g, g * 2 + cellH, colW, cellH, 0f, PrintStyle.CELL),
+        )
+    }
+    "scatter" -> placeSpread(SpreadStyle.POLAROID, 5, w, h, 4).items
+    else -> runCatching { placeSpread(SpreadStyle.valueOf(key.uppercase()), 5, w, h, 3).items }.getOrDefault(emptyList())
+}
+
 /** Slide layouts offered in the Slideshow sheet: key sent to the Display → chip label. */
 private val LAYOUTS = listOf(
     "single" to "Single", "mosaic" to "Mosaic", "scatter" to "Scatter", "grid" to "Grid",
@@ -2582,8 +2646,8 @@ private fun SlideshowSheet(
             Spacer(Modifier.height(18.dp))
             Text(stringResource(R.string.slideshow_layout), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LAYOUTS.forEach { (key, label) -> EffectChip(label, selected = key == layout, showCheck = false) { onLayout(key) } }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LAYOUTS.forEach { (key, label) -> LayoutPreviewTile(key, label, selected = key == layout) { onLayout(key) } }
             }
             Spacer(Modifier.height(6.dp))
             Text(stringResource(R.string.slideshow_layout_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
