@@ -275,4 +275,25 @@
     <string name="weather_city">Search a city…</string>
     <string name="weather_searching">Searching…</string>
     <string name="weather_units">Units</string>
+    <string name="slideshow_sub">How your photos play on the wall.</string>
+    <string name="slideshow_fit_eyebrow">Photo fit</string>
+    <string name="slideshow_fit_title">How a photo fills the frame</string>
+    <string name="slideshow_fit_explain">Photos aren\'t all the same shape. This decides the empty space around one.</string>
+    <string name="slideshow_layout_eyebrow">Layout</string>
+    <string name="slideshow_layout_title">How many photos per slide</string>
+    <string name="slideshow_freq_eyebrow">Collage frequency</string>
+    <string name="slideshow_freq_title">How often a collage shows</string>
+    <string name="slideshow_freq_explain">The slides in between show a single photo.</string>
+    <string name="slideshow_reveal_eyebrow">Reveal</string>
+    <string name="slideshow_motion_eyebrow">Motion</string>
+    <string name="slideshow_motion_title">Gentle movement while a photo waits</string>
+    <string name="slideshow_order_eyebrow">Order</string>
+    <string name="slideshow_order_title">The order photos play in</string>
+    <string name="slideshow_order_explain">Sequential follows your library; Shuffle mixes them up.</string>
+    <string name="slideshow_timing_eyebrow">Timing</string>
+    <string name="slideshow_timing_title">Change the slide every</string>
+    <string name="slideshow_timing_explain">How long each slide stays on screen.</string>
+    <string name="slideshow_orient_eyebrow">Screen orientation</string>
+    <string name="slideshow_orient_explain">Auto follows how the screen is mounted; lock it if your frame doesn\'t rotate.</string>
+    <string name="slideshow_framing_eyebrow">Framing</string>
 </resources>

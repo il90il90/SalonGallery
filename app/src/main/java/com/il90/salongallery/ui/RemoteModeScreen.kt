@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.outlined.RotateRight
+import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -26,11 +27,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -142,6 +145,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.absoluteOffset
@@ -2815,80 +2819,188 @@ private fun SlideshowSheet(
     onFit: (String) -> Unit, onCollage: (Boolean) -> Unit, onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.il90.salongallery.ui.theme.ElecBg) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
-            Text(stringResource(R.string.tile_slideshow), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
-
-            Spacer(Modifier.height(16.dp))
-            Text(stringResource(R.string.slideshow_fit), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            val fits = listOf("fill", "fit", "blur")
-            SegRow(listOf("Fill", "Fit", "Blur"), fits.indexOf(fit).coerceAtLeast(0)) { onFit(fits[it]) }
-
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(top = 8.dp, bottom = 28.dp)) {
+            Text(stringResource(R.string.tile_slideshow), style = MaterialTheme.typography.headlineMedium, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display)
+            Text(stringResource(R.string.slideshow_sub), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
             Spacer(Modifier.height(18.dp))
-            Text(stringResource(R.string.slideshow_layout), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                LAYOUTS.forEach { (key, label) -> LayoutPreviewTile(key, label, selected = key == layout) { onLayout(key) } }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.slideshow_layout_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-            if (layout != "single") {
-                Spacer(Modifier.height(12.dp))
-                Text(stringResource(R.string.slideshow_spread_mix), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                Spacer(Modifier.height(8.dp))
-                val mixes = listOf("always", "often", "sometimes", "rarely")
-                SegRow(listOf("Every slide", "Often", "Sometimes", "Rarely"), mixes.indexOf(spreadMix).coerceAtLeast(0)) { onSpreadMix(mixes[it]) }
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(R.string.slideshow_stagger), style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                        Text(stringResource(R.string.slideshow_stagger_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+            // PHOTO FIT
+            SettingsCard(stringResource(R.string.slideshow_fit_eyebrow), stringResource(R.string.slideshow_fit_title), stringResource(R.string.slideshow_fit_explain)) {
+                val fits = listOf("fill", "fit", "blur")
+                val labels = listOf("Fill", "Fit", "Blur")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    fits.forEachIndexed { i, key ->
+                        OptionTile(labels[i], selected = fit == key, modifier = Modifier.weight(1f), onClick = { onFit(key) }) { FitIllustration(key) }
                     }
-                    Switch(checked = stagger, onCheckedChange = onStagger)
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
-            Text(stringResource(R.string.slideshow_motion), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            val motions = listOf("off", "zoom", "drift", "breathe", "mix")
-            SegRow(listOf("Off", "Zoom", "Drift", "Fade", "Mix"), motions.indexOf(motion).coerceAtLeast(0)) { onMotion(motions[it]) }
-            if (motion != "off") {
-                Spacer(Modifier.height(10.dp))
-                Text(stringResource(R.string.slideshow_motion_speed), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                Spacer(Modifier.height(8.dp))
-                val speeds = listOf("slow", "medium", "fast")
-                SegRow(listOf("Slow", "Medium", "Fast"), speeds.indexOf(motionSpeed).coerceAtLeast(0)) { onMotionSpeed(speeds[it]) }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.slideshow_motion_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-
-            Spacer(Modifier.height(18.dp))
-            Text(stringResource(R.string.slideshow_order), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            SegRow(listOf("Sequential", "Shuffle"), if (shuffle) 1 else 0) { onShuffle(it == 1) }
-
-            Spacer(Modifier.height(18.dp))
-            Text(stringResource(R.string.slideshow_interval), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            val intervals = listOf(10000L, 30000L, 60000L, 300000L, 900000L, 3600000L)
-            SegRow(listOf("10s", "30s", "1m", "5m", "15m", "1h"), intervals.indexOf(intervalMs).coerceAtLeast(0)) { onInterval(intervals[it]) }
-
-            Spacer(Modifier.height(18.dp))
-            Text(stringResource(R.string.slideshow_orientation), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            val orients = listOf("auto", "portrait", "landscape")
-            SegRow(listOf("Auto", "Portrait", "Landscape"), orients.indexOf(orientation).coerceAtLeast(0)) { onOrientation(orients[it]) }
-
-            Spacer(Modifier.height(18.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.slideshow_autofill), style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                    Text(stringResource(R.string.slideshow_autofill_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            // LAYOUT
+            SettingsCard(stringResource(R.string.slideshow_layout_eyebrow), stringResource(R.string.slideshow_layout_title), stringResource(R.string.slideshow_layout_hint)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LAYOUTS.forEach { (key, label) -> LayoutPreviewTile(key, label, selected = key == layout) { onLayout(key) } }
                 }
-                Switch(checked = collage, onCheckedChange = onCollage)
             }
-            Spacer(Modifier.height(20.dp))
+
+            // COLLAGE FREQUENCY (only meaningful for a multi-photo layout)
+            if (layout != "single") {
+                SettingsCard(stringResource(R.string.slideshow_freq_eyebrow), stringResource(R.string.slideshow_freq_title), stringResource(R.string.slideshow_freq_explain)) {
+                    val mixes = listOf("always", "often", "sometimes", "rarely")
+                    SegRow(listOf("Every slide", "Often", "Sometimes", "Rarely"), mixes.indexOf(spreadMix).coerceAtLeast(0)) { onSpreadMix(mixes[it]) }
+                }
+                SettingsToggleCard(stringResource(R.string.slideshow_reveal_eyebrow), stringResource(R.string.slideshow_stagger), stringResource(R.string.slideshow_stagger_hint), stagger, onStagger)
+            }
+
+            // MOTION
+            SettingsCard(stringResource(R.string.slideshow_motion_eyebrow), stringResource(R.string.slideshow_motion_title), stringResource(R.string.slideshow_motion_hint)) {
+                val motions = listOf("off", "zoom", "drift", "breathe", "mix")
+                val labels = listOf("Off", "Zoom", "Drift", "Fade", "Mix")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    motions.forEachIndexed { i, key ->
+                        OptionTile(labels[i], selected = motion == key, modifier = Modifier.width(88.dp), onClick = { onMotion(key) }) { MotionIllustration(key) }
+                    }
+                }
+                if (motion != "off") {
+                    Spacer(Modifier.height(12.dp))
+                    FieldLabel(stringResource(R.string.slideshow_motion_speed))
+                    val speeds = listOf("slow", "medium", "fast")
+                    SegRow(listOf("Slow", "Medium", "Fast"), speeds.indexOf(motionSpeed).coerceAtLeast(0)) { onMotionSpeed(speeds[it]) }
+                }
+            }
+
+            // ORDER
+            SettingsCard(stringResource(R.string.slideshow_order_eyebrow), stringResource(R.string.slideshow_order_title), stringResource(R.string.slideshow_order_explain)) {
+                SegRow(listOf("↓  Sequential", "⤬  Shuffle"), if (shuffle) 1 else 0) { onShuffle(it == 1) }
+            }
+
+            // TIMING
+            SettingsCard(stringResource(R.string.slideshow_timing_eyebrow), stringResource(R.string.slideshow_timing_title), stringResource(R.string.slideshow_timing_explain)) {
+                val intervals = listOf(10000L, 30000L, 60000L, 300000L, 900000L, 3600000L)
+                SegRow(listOf("10s", "30s", "1m", "5m", "15m", "1h"), intervals.indexOf(intervalMs).coerceAtLeast(0)) { onInterval(intervals[it]) }
+            }
+
+            // ORIENTATION
+            SettingsCard(stringResource(R.string.slideshow_orient_eyebrow), stringResource(R.string.slideshow_orientation), stringResource(R.string.slideshow_orient_explain)) {
+                val orients = listOf("auto", "portrait", "landscape")
+                val labels = listOf("Auto", "Portrait", "Landscape")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    orients.forEachIndexed { i, key ->
+                        OptionTile(labels[i], selected = orientation == key, modifier = Modifier.weight(1f), onClick = { onOrientation(key) }) { OrientIllustration(key) }
+                    }
+                }
+            }
+
+            // AUTO-FILL
+            SettingsToggleCard(stringResource(R.string.slideshow_framing_eyebrow), stringResource(R.string.slideshow_autofill), stringResource(R.string.slideshow_autofill_hint), collage, onCollage)
+        }
+    }
+}
+
+/** A settings card: an accent eyebrow, a serif title, a plain-language explanation, then its control. */
+@Composable
+private fun SettingsCard(eyebrow: String, title: String, explain: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(bottom = 14.dp).clip(RoundedCornerShape(18.dp))
+            .background(ElecSurface).border(1.dp, ElecBorder, RoundedCornerShape(18.dp)).padding(16.dp),
+    ) {
+        Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = AccentWarm, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(3.dp))
+        Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        Text(explain, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        Spacer(Modifier.height(14.dp))
+        content()
+    }
+}
+
+/** A card whose control is a single on/off switch. */
+@Composable
+private fun SettingsToggleCard(eyebrow: String, title: String, explain: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 14.dp).clip(RoundedCornerShape(18.dp))
+            .background(ElecSurface).border(1.dp, ElecBorder, RoundedCornerShape(18.dp)).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = AccentWarm, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(3.dp))
+            Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(explain, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+/** A selectable tile with a small illustration above a label (used for fit / motion / orientation). */
+@Composable
+private fun OptionTile(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit, illustration: @Composable () -> Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp))
+            .background(if (selected) NeonCyan.copy(alpha = 0.14f) else Color(0xFF241C15))
+            .border(if (selected) 1.5.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(14.dp))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.height(44.dp).fillMaxWidth(), contentAlignment = Alignment.Center) { illustration() }
+        Spacer(Modifier.height(7.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (selected) NeonCyan else TextPrimary, maxLines = 1)
+    }
+}
+
+private val CreamTile = Color(0xFFF2EEE6)
+private val AccentWarm = Color(0xFFD8763A)
+
+/** Fill / Fit / Blur illustrations. */
+@Composable
+private fun FitIllustration(key: String) {
+    Box(Modifier.size(58.dp, 38.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF0F0A07)), contentAlignment = Alignment.Center) {
+        when (key) {
+            "fit" -> Box(Modifier.fillMaxHeight().fillMaxWidth(0.6f).background(Brush.horizontalGradient(listOf(CreamTile, Color(0xFFD8CAB4)))))
+            "blur" -> {
+                Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(NeonCyan.copy(0.5f), Color(0xFFD8CAB4)))).blur(6.dp))
+                Box(Modifier.fillMaxHeight().fillMaxWidth(0.58f).background(Brush.horizontalGradient(listOf(CreamTile, Color(0xFFD8CAB4)))))
+            }
+            else -> Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(CreamTile, Color(0xFFD8CAB4)))))
+        }
+    }
+}
+
+/** Off / Zoom / Drift / Fade / Mix — a tiny tile that actually performs the motion. */
+@Composable
+private fun MotionIllustration(key: String) {
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "m")
+    val v by t.animateFloat(
+        0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(1700, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            androidx.compose.animation.core.RepeatMode.Reverse,
+        ), label = "mv",
+    )
+    Box(
+        Modifier.size(32.dp).clip(RoundedCornerShape(7.dp)).background(Brush.linearGradient(listOf(CreamTile, Color(0xFFD8CAB4))))
+            .graphicsLayer {
+                when (key) {
+                    "zoom" -> { val s = 0.82f + 0.3f * v; scaleX = s; scaleY = s }
+                    "drift" -> { translationX = (v - 0.5f) * 20f }
+                    "breathe" -> { alpha = 0.3f + 0.7f * v }
+                    "mix" -> { val s = 0.86f + 0.22f * v; scaleX = s; scaleY = s; alpha = 0.5f + 0.5f * v }
+                    else -> {}
+                }
+            },
+    )
+}
+
+/** Auto / Portrait / Landscape frame illustrations. */
+@Composable
+private fun OrientIllustration(key: String) {
+    when (key) {
+        "portrait" -> Box(Modifier.size(24.dp, 36.dp).clip(RoundedCornerShape(4.dp)).background(CreamTile))
+        "landscape" -> Box(Modifier.size(40.dp, 26.dp).clip(RoundedCornerShape(4.dp)).background(CreamTile))
+        else -> Box(Modifier.size(28.dp, 34.dp).clip(RoundedCornerShape(4.dp)).border(2.dp, CreamTile, RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Outlined.ScreenRotation, null, tint = NeonCyan, modifier = Modifier.size(16.dp))
         }
     }
 }
