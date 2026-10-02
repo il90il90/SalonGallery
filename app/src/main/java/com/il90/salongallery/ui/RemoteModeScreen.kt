@@ -2,7 +2,6 @@ package com.il90.salongallery.ui
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -781,8 +780,10 @@ private fun ControlPanel(
         status = "Added $ok / ${uris.size} ✓"
         onInfoRefresh(scope); refreshLib()
     }
+    // The system file picker, not the Photo Picker: Android's Photo Picker caps a selection at
+    // its own limit (usually 100), which no app can raise — this one takes as many as you pick.
     val mediaPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
+        ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         // Load the album list BEFORE opening the sheet: it decides its initial layout (chips vs.
@@ -877,7 +878,7 @@ private fun ControlPanel(
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HomeAction(Modifier.weight(1f), Icons.Outlined.AddPhotoAlternate, stringResource(R.string.home_photos), NeonCyan, TintClay, !busy) {
-                mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                mediaPicker.launch(MEDIA_TYPES)
             }
             HomeAction(Modifier.weight(1f), Icons.Outlined.Palette, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.home_music), NeonViolet, TintPlum, !busy) { showMusic = true }
@@ -1260,7 +1261,8 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
         }
         busy = false; refresh()
     }
-    val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+    // No selection cap (see the main media picker).
+    val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         // Inside an album, add straight into it; from "All", ask where these should go.
         if (activeId != "all") scope.launch { uploadMedia(uris, activeId) } else pendingMedia = uris
@@ -1332,7 +1334,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                             Spacer(Modifier.weight(1f))
                             if (busy) CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                             else RoundIconBtn(Icons.Outlined.Add, accent = true) {
-                                addPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                                addPicker.launch(MEDIA_TYPES)
                             }
                         }
                     }
@@ -2456,6 +2458,9 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showChe
         }
     }
 }
+
+/** What the add-media pickers offer: every photo and video type. */
+private val MEDIA_TYPES = arrayOf("image/*", "video/*")
 
 /** Slide layouts offered in the Slideshow sheet: key sent to the Display → chip label. */
 private val LAYOUTS = listOf(
