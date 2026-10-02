@@ -301,6 +301,9 @@ object PhotoSender {
     suspend fun setEffectPool(host: String, port: Int, names: List<String>) =
         get(host, port, "/effectpool?names=${names.joinToString(",")}")
 
+    suspend fun setFilterPool(host: String, port: Int, names: List<String>) =
+        get(host, port, "/filterpool?names=${names.joinToString(",")}")
+
     suspend fun setFit(host: String, port: Int, fit: String) =
         get(host, port, "/fit?f=$fit")
 

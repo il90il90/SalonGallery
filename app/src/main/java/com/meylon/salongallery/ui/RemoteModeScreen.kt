@@ -233,16 +233,23 @@ fun RemoteModeScreen(actions: AppActions) {
                 connected = true; lostScreen = false
             } else {
                 fails++
-                // Re-resolve from live NSD first (handles the Display restarting on a new port).
+                // Recover the address: (a) the fixed port at the same host (the Display restarted
+                // and now listens there), or (b) a fresh NSD entry (same service, new address).
+                val viaFixed = if (s.port != com.meylon.salongallery.net.PhotoServer.FIXED_PORT &&
+                    PhotoSender.ping(s.host, com.meylon.salongallery.net.PhotoServer.FIXED_PORT) != null)
+                    s.copy(port = com.meylon.salongallery.net.PhotoServer.FIXED_PORT) else null
                 val fresh = session.screens.value.firstOrNull { it.key == s.key || it.name == s.name }
-                if (fresh != null && (fresh.host != s.host || fresh.port != s.port)) {
-                    selected = fresh
-                    kotlinx.coroutines.delay(300)
-                    continue  // retry immediately against the fresh address
+                    ?.takeIf { it.host != s.host || it.port != s.port }
+                val candidate = viaFixed ?: fresh
+                if (candidate != null) {
+                    selected = candidate
+                    kotlinx.coroutines.delay(200)
+                    continue  // retry immediately against the recovered address
                 }
-                // Tolerate brief blips (e.g. the screen re-laying out after an orientation change):
-                // only flag "reconnecting" after a few misses, and "offline" only when sustained.
-                if (fails >= 3) { connected = false; lostScreen = fails >= 8 }
+                // Stay in a reassuring "reconnecting" state for a long time; only declare the
+                // screen truly offline after a sustained outage (~30s), never on a brief blip.
+                if (fails >= 2) connected = false
+                if (fails >= 24) lostScreen = true
             }
             kotlinx.coroutines.delay(if (ok) 4000 else 1200)
         }
@@ -410,11 +417,10 @@ private fun ScreenPinGate(screen: DiscoveredScreen, onSuccess: () -> Unit, onDis
 @Composable
 private fun ManualConnectDialog(onConnect: (String, Int) -> Unit, onDismiss: () -> Unit) {
     var host by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("") }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier.clip(RoundedCornerShape(24.dp)).background(com.meylon.salongallery.ui.theme.ElecSurface)
-                .border(1.dp, ElecBorder, RoundedCornerShape(24.dp)).padding(24.dp),
+                .border(1.dp, ElecBorder, RoundedCornerShape(24.dp)).padding(24.dp).imePadding(),
         ) {
             Text(stringResource(R.string.remote_connect_ip), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
             Spacer(Modifier.height(6.dp))
@@ -427,17 +433,13 @@ private fun ManualConnectDialog(onConnect: (String, Int) -> Unit, onDismiss: () 
             OutlinedTextField(
                 value = host, onValueChange = { host = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("192.168.1.42", color = TextTertiary) }, label = { Text("IP address", color = TextSecondary) }, colors = tf,
-            )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = port, onValueChange = { port = it.filter { c -> c.isDigit() } }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Port", color = TextTertiary) }, label = { Text("Port", color = TextSecondary) }, colors = tf,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
             )
             Spacer(Modifier.height(18.dp))
             GradientButton(
                 text = stringResource(R.string.remote_connect),
-                enabled = host.isNotBlank() && port.toIntOrNull() != null,
-                onClick = { port.toIntOrNull()?.let { onConnect(host.trim(), it) } },
+                enabled = host.isNotBlank(),
+                onClick = { onConnect(host.trim(), com.meylon.salongallery.net.PhotoServer.FIXED_PORT) },
             )
             Spacer(Modifier.height(10.dp))
             OutlineButton(text = stringResource(R.string.cancel), onClick = onDismiss)
@@ -628,6 +630,7 @@ private fun ControlPanel(
     var effect by remember { mutableStateOf("fade") }
     var effectPool by remember { mutableStateOf(setOf("fade", "slide", "zoom", "dissolve")) }
     var filter by remember { mutableStateOf("none") }
+    var filterPool by remember { mutableStateOf(setOf("none", "mono", "sepia", "warm", "cool", "vignette")) }
     var fit by remember { mutableStateOf("fill") }
     var collage by remember { mutableStateOf(false) }
     var showFrames by remember { mutableStateOf(false) }
@@ -814,10 +817,11 @@ private fun ControlPanel(
     }
     if (showEffects) {
         EffectsSheet(
-            effect = effect, filter = filter, pool = effectPool,
+            effect = effect, filter = filter, pool = effectPool, filterPool = filterPool,
             onEffect = { effect = it; scope.launch { PhotoSender.setEffect(screen.host, screen.port, it) } },
             onFilter = { filter = it; scope.launch { PhotoSender.setFilter(screen.host, screen.port, it) } },
             onPool = { effectPool = it; scope.launch { PhotoSender.setEffectPool(screen.host, screen.port, it.toList()) } },
+            onFilterPool = { filterPool = it; scope.launch { PhotoSender.setFilterPool(screen.host, screen.port, it.toList()) } },
             onDismiss = { showEffects = false },
         )
     }
@@ -1796,8 +1800,9 @@ private val TRANSITIONS = listOf(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun EffectsSheet(
-    effect: String, filter: String, pool: Set<String>,
-    onEffect: (String) -> Unit, onFilter: (String) -> Unit, onPool: (Set<String>) -> Unit, onDismiss: () -> Unit,
+    effect: String, filter: String, pool: Set<String>, filterPool: Set<String>,
+    onEffect: (String) -> Unit, onFilter: (String) -> Unit, onPool: (Set<String>) -> Unit,
+    onFilterPool: (Set<String>) -> Unit, onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
@@ -1829,18 +1834,27 @@ private fun EffectsSheet(
             Spacer(Modifier.height(20.dp))
             Text(stringResource(R.string.effects_look), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
             Spacer(Modifier.height(10.dp))
-            EffectChip("🎲 " + stringResource(R.string.effects_random), selected = filter == "random", showCheck = false) {
-                onFilter(if (filter == "random") "none" else "random")
+            val lookRandom = filter == "random"
+            EffectChip("🎲 " + stringResource(R.string.effects_random), selected = lookRandom, showCheck = false) {
+                onFilter(if (lookRandom) "none" else "random")
             }
-            if (filter == "random") {
+            if (lookRandom) {
                 Spacer(Modifier.height(6.dp))
-                Text(stringResource(R.string.look_random_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Text(stringResource(R.string.look_random_pick_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             }
             Spacer(Modifier.height(12.dp))
-            val looks = listOf("none", "mono", "sepia", "warm", "cool", "vignette")
-            val labels = listOf("Original", "Mono", "Sepia", "Warm", "Cool", "Vignette")
+            val looks = listOf("none", "mono", "sepia", "warm", "cool", "vignette", "vivid", "noir", "fade", "cinema", "golden", "dusk", "frost", "pop", "matte", "rose")
+            val labels = listOf("Original", "Mono", "Sepia", "Warm", "Cool", "Vignette", "Vivid", "Noir", "Fade", "Cinema", "Golden", "Dusk", "Frost", "Pop", "Matte", "Rose")
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                looks.forEachIndexed { i, key -> LookChip(labels[i], key, key == filter) { onFilter(key) } }
+                looks.forEachIndexed { i, key ->
+                    val sel = if (lookRandom) key in filterPool else key == filter
+                    LookChip(labels[i], key, sel, showCheck = lookRandom) {
+                        if (lookRandom) {
+                            val np = if (key in filterPool) filterPool - key else filterPool + key
+                            if (np.isNotEmpty()) onFilterPool(np)
+                        } else onFilter(key)
+                    }
+                }
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -1866,7 +1880,7 @@ private fun EffectChip(label: String, selected: Boolean, showCheck: Boolean, onC
 
 /** A small preview chip for a photo "look" (approximate; the real look renders on the wall). */
 @Composable
-private fun LookChip(label: String, key: String, selected: Boolean, onClick: () -> Unit) {
+private fun LookChip(label: String, key: String, selected: Boolean, showCheck: Boolean = false, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.width(80.dp)
@@ -1879,9 +1893,16 @@ private fun LookChip(label: String, key: String, selected: Boolean, onClick: () 
         ) {
             val tint = when (key) {
                 "mono" -> Color(0xFF8A8A8A).copy(alpha = 0.5f)
+                "noir" -> Color(0xFF000000).copy(alpha = 0.35f)
                 "sepia" -> Color(0xFF6E4A1E).copy(alpha = 0.42f)
                 "warm" -> Color(0xFFFF8A3D).copy(alpha = 0.26f)
-                "cool" -> Color(0xFF3D7AFF).copy(alpha = 0.26f)
+                "golden" -> Color(0xFFFFB03A).copy(alpha = 0.3f)
+                "cool", "frost" -> Color(0xFF3D7AFF).copy(alpha = 0.26f)
+                "cinema" -> Color(0xFF1FA8A0).copy(alpha = 0.26f)
+                "dusk" -> Color(0xFF9B5DE5).copy(alpha = 0.28f)
+                "rose" -> Color(0xFFFF6FA5).copy(alpha = 0.24f)
+                "vivid", "pop" -> Color(0xFFFF3D7F).copy(alpha = 0.2f)
+                "fade", "matte" -> Color(0xFFEDE7DB).copy(alpha = 0.28f)
                 else -> Color.Transparent
             }
             if (tint != Color.Transparent) Box(Modifier.matchParentSize().background(tint))
@@ -1890,6 +1911,10 @@ private fun LookChip(label: String, key: String, selected: Boolean, onClick: () 
                     Brush.radialGradient(0.0f to Color.Transparent, 0.6f to Color.Transparent, 1.0f to Color.Black.copy(alpha = 0.6f))
                 )
             )
+            if (showCheck && selected) Box(
+                Modifier.align(Alignment.TopEnd).padding(4.dp).size(20.dp).clip(RoundedCornerShape(50)).background(NeonCyan),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Outlined.Check, null, tint = Color(0xFF1A1510), modifier = Modifier.size(13.dp)) }
         }
         Spacer(Modifier.height(6.dp))
         Text(label, style = MaterialTheme.typography.labelSmall, color = if (selected) NeonCyan else TextSecondary, maxLines = 1)

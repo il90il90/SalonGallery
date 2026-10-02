@@ -23,6 +23,7 @@ interface ScreenCommands {
     fun onSlideshow(intervalMs: Long, shuffle: Boolean)
     fun onEffect(effect: String)
     fun onEffectPool(names: List<String>)
+    fun onFilterPool(names: List<String>)
     fun onFit(fit: String)
     fun onFilter(filter: String)
     fun onCollage(on: Boolean)
@@ -72,7 +73,13 @@ interface ScreenCommands {
 class PhotoServer(
     private val pingBody: () -> String,
     private val commands: ScreenCommands,
-) : NanoHTTPD(0) {
+    port: Int = FIXED_PORT,
+) : NanoHTTPD(port) {
+
+    companion object {
+        /** A fixed, well-known port so the Remote can connect by IP alone (no port needed). */
+        const val FIXED_PORT = 50505
+    }
 
     override fun serve(session: IHTTPSession): Response = try {
         val uri = session.uri
@@ -137,6 +144,10 @@ class PhotoServer(
             session.method == Method.GET && uri == "/effectpool" -> {
                 val names = session.parameters["names"]?.firstOrNull()?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
                 commands.onEffectPool(names); ok()
+            }
+            session.method == Method.GET && uri == "/filterpool" -> {
+                val names = session.parameters["names"]?.firstOrNull()?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+                commands.onFilterPool(names); ok()
             }
             session.method == Method.GET && uri == "/fit" -> {
                 session.parameters["f"]?.firstOrNull()?.let { commands.onFit(it) }; ok()

@@ -25,7 +25,10 @@ enum class PhotoFit { FILL, FIT, BLUR;
 }
 
 /** A colour "look" applied over the media. */
-enum class PhotoFilter { NONE, MONO, SEPIA, WARM, COOL, VIGNETTE, RANDOM;
+enum class PhotoFilter {
+    NONE, MONO, SEPIA, WARM, COOL, VIGNETTE,
+    VIVID, NOIR, FADE, CINEMA, GOLDEN, DUSK, FROST, POP, MATTE, ROSE,
+    RANDOM;
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: NONE
     }

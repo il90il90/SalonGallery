@@ -69,6 +69,7 @@
     <string name="effects_random">Random</string>
     <string name="effects_random_hint">Shuffles between the checked styles on each photo.</string>
     <string name="look_random_hint">A different tasteful look on each photo — hands-free.</string>
+    <string name="look_random_pick_hint">Tap looks to add them to the shuffle — a different one on each photo.</string>
     <string name="duration_title">Duration</string>
     <string name="art_on_wall">On the wall ·\ntap to remove</string>
     <string name="media_photo">Photo</string>

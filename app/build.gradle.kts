@@ -24,8 +24,8 @@ android {
         applicationId = "com.meylon.salongallery"
         minSdk = 26
         targetSdk = 35
-        versionCode = 40
-        versionName = "1.35.0"
+        versionCode = 42
+        versionName = "1.36.0"
 
         buildConfigField("String", "GITHUB_OWNER", "\"il90il90\"")
         buildConfigField("String", "GITHUB_REPO", "\"SalonGallery\"")

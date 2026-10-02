@@ -69,6 +69,8 @@ class ScreenSession(
     val effect = MutableStateFlow(SlideEffect.FADE)
     /** Transitions to shuffle among when effect == RANDOM. */
     val effectPool = MutableStateFlow(listOf("fade", "slide", "zoom", "dissolve"))
+    /** Which looks the "Random" look shuffles between (per-photo). */
+    val filterPool = MutableStateFlow(listOf("none", "mono", "sepia", "warm", "cool", "vignette"))
     val photoFit = MutableStateFlow(PhotoFit.FILL)
     val photoFilter = MutableStateFlow(PhotoFilter.NONE)
     /** Auto-fill the screen with a tasteful collage when a photo's orientation leaves big gaps. */
@@ -96,14 +98,19 @@ class ScreenSession(
 
     fun start() {
         if (server != null) return
-        val s = PhotoServer({ pingBody() }, this)
-        runCatching {
-            s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
-            server = s
-            port = s.listeningPort
-            Log.i("SalonScreen", "PhotoServer on port $port as '${effectiveName()}'")
-            nsd.register(effectiveName(), port)
-            running.value = true
+        // Prefer a fixed, well-known port so the Remote can connect by IP alone; fall back to a
+        // random free port if it's taken (NSD auto-discovery still works either way).
+        for (p in listOf(PhotoServer.FIXED_PORT, 0)) {
+            val s = PhotoServer({ pingBody() }, this, p)
+            val ok = runCatching { s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false) }.isSuccess
+            if (ok) {
+                server = s
+                port = s.listeningPort
+                Log.i("SalonScreen", "PhotoServer on port $port as '${effectiveName()}'")
+                runCatching { nsd.register(effectiveName(), port) }
+                running.value = true
+                return
+            } else runCatching { s.stop() }
         }
     }
 
@@ -274,6 +281,10 @@ class ScreenSession(
 
     override fun onEffect(effect: String) {
         this.effect.value = SlideEffect.from(effect)
+    }
+
+    override fun onFilterPool(names: List<String>) {
+        if (names.isNotEmpty()) filterPool.value = names
     }
 
     override fun onEffectPool(names: List<String>) {

@@ -137,6 +137,68 @@ val FRAMES = listOf(
         moldingFrac = 0.045f, bevelOuter = Color(0xFF5E4838), bevelInner = Color(0xFF0E0906),
         matColor = Color(0xFF1A1510), matFrac = 0.024f, lipColor = Color(0xFF3A2C22),
     ),
+    FrameStyle(
+        19, "Charcoal", "Modern",
+        moldingColors = listOf(Color(0xFF4E5157), Color(0xFF303236), Color(0xFF17181A)),
+        moldingFrac = 0.04f, bevelOuter = Color(0xFF5E6168), bevelInner = Color(0xFF0C0D0E),
+        matColor = Color(0xFF131416), matFrac = 0.026f, lipColor = Color(0xFF3A3C40),
+    ),
+    FrameStyle(
+        20, "Slate", "Modern",
+        moldingColors = listOf(Color(0xFF6E7B8A), Color(0xFF47515E), Color(0xFF2A313A)),
+        moldingFrac = 0.042f, bevelOuter = Color(0xFF8795A4), bevelInner = Color(0xFF1C222A),
+        matColor = Color(0xFFEDEFF2), matFrac = 0.03f, lipColor = Color(0xFF55606D),
+    ),
+    // ---- More Metal ----
+    FrameStyle(
+        21, "Brass", "Metal",
+        moldingColors = listOf(Color(0xFFF2DC8E), Color(0xFFCBA84F), Color(0xFF86692A), Color(0xFFC4A24A)),
+        moldingFrac = 0.044f, bevelOuter = Color(0xFFFBEFBF), bevelInner = Color(0xFF4F3C12),
+        matColor = Color(0xFFF4EEDD), matFrac = 0.03f, lipColor = Color(0xFF86692A),
+    ),
+    FrameStyle(
+        22, "Copper", "Metal",
+        moldingColors = listOf(Color(0xFFF2B48C), Color(0xFFC1703F), Color(0xFF7E4322), Color(0xFFBE7446)),
+        moldingFrac = 0.044f, bevelOuter = Color(0xFFF9D3B6), bevelInner = Color(0xFF55260F),
+        matColor = Color(0xFFF4E8DF), matFrac = 0.03f, lipColor = Color(0xFF7E4322),
+    ),
+    FrameStyle(
+        23, "Platinum", "Metal",
+        moldingColors = listOf(Color(0xFFFCFDFE), Color(0xFFD6DADF), Color(0xFFA7ADB5), Color(0xFFE6E9EC)),
+        moldingFrac = 0.036f, bevelOuter = Color(0xFFFFFFFF), bevelInner = Color(0xFF888E96),
+        matColor = Color(0xFFFBFCFD), matFrac = 0.028f, lipColor = Color(0xFFB4BAC2),
+    ),
+    // ---- More Wood ----
+    FrameStyle(
+        24, "Driftwood", "Wood",
+        moldingColors = listOf(Color(0xFFBFB3A2), Color(0xFF938876), Color(0xFF675E4F)),
+        moldingFrac = 0.046f, bevelOuter = Color(0xFFD6CBBB), bevelInner = Color(0xFF4A4336),
+        matColor = Color(0xFFF3EFE6), matFrac = 0.028f, lipColor = Color(0xFF675E4F),
+    ),
+    FrameStyle(
+        25, "Teak", "Wood",
+        moldingColors = listOf(Color(0xFFC68B4E), Color(0xFF9A6530), Color(0xFF66401C)),
+        moldingFrac = 0.046f, bevelOuter = Color(0xFFDDA869), bevelInner = Color(0xFF4A2D12),
+        matColor = Color(0xFFF2E9DC), matFrac = 0.028f, lipColor = Color(0xFF66401C),
+    ),
+    // ---- More Classic ----
+    FrameStyle(
+        26, "Baroque", "Classic",
+        moldingColors = listOf(Color(0xFFF6E0A0), Color(0xFFC79B42), Color(0xFF7E5E22), Color(0xFFBE954A)),
+        moldingFrac = 0.078f, bevelOuter = Color(0xFFFFF2CC), bevelInner = Color(0xFF3E2C0E),
+        matColor = Color(0xFFF2EAD6), matFrac = 0.042f, lipColor = Color(0xFF7E5E22),
+    ),
+    FrameStyle(
+        27, "Ivory", "Classic",
+        moldingColors = listOf(Color(0xFFFBF7EE), Color(0xFFE6DECB), Color(0xFFC9BFA6)),
+        moldingFrac = 0.05f, bevelOuter = Color(0xFFFFFFFA), bevelInner = Color(0xFFB0A588),
+        matColor = Color(0xFFF7F2E7), matFrac = 0.034f, lipColor = Color(0xFFC9BFA6),
+    ),
+    // ---- More Minimal ----
+    FrameStyle(
+        28, "Black Mat", "Minimal",
+        matColor = Color(0xFF0A0A0C), matFrac = 0.075f, lipColor = Color(0xFF2E2E34),
+    ),
 )
 
 fun frameById(id: Int): FrameStyle = FRAMES.firstOrNull { it.id == id } ?: FRAMES[0]

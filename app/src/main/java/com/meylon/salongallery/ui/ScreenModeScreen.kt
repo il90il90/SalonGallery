@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material.icons.outlined.Lan
 import androidx.compose.material.icons.outlined.Bedtime
@@ -166,6 +167,8 @@ fun ScreenModeScreen(actions: AppActions) {
     val shuffle by session.shuffle.collectAsStateWithLifecycle()
     val effect by session.effect.collectAsStateWithLifecycle()
     val effectPool by session.effectPool.collectAsStateWithLifecycle()
+    val filterPoolNames by session.filterPool.collectAsStateWithLifecycle()
+    val filterPool = remember(filterPoolNames) { filterPoolNames.map { PhotoFilter.from(it) } }
     val photoFit by session.photoFit.collectAsStateWithLifecycle()
     val photoFilter by session.photoFilter.collectAsStateWithLifecycle()
     val collage by session.collage.collectAsStateWithLifecycle()
@@ -315,6 +318,22 @@ fun ScreenModeScreen(actions: AppActions) {
         val n = files.size
         if (n > 1) session.currentIndex.value = ((currentIndex + delta) % n + n) % n
     }
+    // Up/Down browse frames on the screen (local preview only — not saved). Shows the frame name.
+    var browseFrame by remember { mutableStateOf<Int?>(null) }
+    var browseTick by remember { mutableStateOf(0L) }
+    // The Remote taking control of the frame clears the local browse override.
+    LaunchedEffect(frameId, frameRandom) { browseFrame = null }
+    fun browse(delta: Int) {
+        val ids = FRAMES.map { it.id }
+        val cur = ids.indexOf(browseFrame ?: activeFrameId).coerceAtLeast(0)
+        browseFrame = ids[((cur + delta) % ids.size + ids.size) % ids.size]
+        browseTick = System.currentTimeMillis()
+    }
+    val shownFrame = browseFrame ?: activeFrameId
+    var showBrowseLabel by remember { mutableStateOf(false) }
+    LaunchedEffect(browseTick) {
+        if (browseTick > 0L) { showBrowseLabel = true; delay(3000); showBrowseLabel = false }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -327,6 +346,8 @@ fun ScreenModeScreen(actions: AppActions) {
                 when (ev.key) {
                     Key.DirectionLeft, Key.MediaPrevious, Key.MediaRewind -> { step(-1); true }
                     Key.DirectionRight, Key.MediaNext, Key.MediaFastForward -> { step(1); true }
+                    Key.DirectionUp -> { browse(-1); true }
+                    Key.DirectionDown -> { browse(1); true }
                     else -> false
                 }
             }
@@ -337,7 +358,7 @@ fun ScreenModeScreen(actions: AppActions) {
     ) {
         when {
             mode != DisplayMode.WAITING && files.isNotEmpty() ->
-                FramedContent(activeFrameId, frameWidth, adaptiveColor, Modifier.fillMaxSize()) {
+                FramedContent(shownFrame, frameWidth, adaptiveColor, Modifier.fillMaxSize()) {
                     Slideshow(
                         files = files,
                         currentIndex = currentIndex,
@@ -345,6 +366,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         shuffle = shuffle,
                         effect = effect,
                         effectPool = effectPool,
+                        filterPool = filterPool,
                         fit = photoFit,
                         filter = photoFilter,
                         volume = volume,
@@ -363,6 +385,26 @@ fun ScreenModeScreen(actions: AppActions) {
                     running = running,
                     ssid = net.first,
                     address = net.second,
+                )
+            }
+        }
+
+        // Frame name while browsing frames with the TV remote's up/down (top-right).
+        androidx.compose.animation.AnimatedVisibility(
+            visible = browseFrame != null && showBrowseLabel,
+            enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut(),
+            modifier = Modifier.align(androidx.compose.ui.AbsoluteAlignment.TopRight).safeDrawingPadding().padding(22.dp),
+        ) {
+            Row(
+                Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.55f))
+                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(50))
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Outlined.Image, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(16.dp))
+                Text(
+                    frameById(browseFrame ?: 0).name,
+                    style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.ContentFont, fontSize = 18.sp, color = Color.White),
                 )
             }
         }
@@ -416,6 +458,7 @@ private fun Slideshow(
     shuffle: Boolean,
     effect: SlideEffect,
     effectPool: List<String>,
+    filterPool: List<PhotoFilter> = emptyList(),
     fit: PhotoFit,
     filter: PhotoFilter,
     volume: Float,
@@ -466,6 +509,17 @@ private fun Slideshow(
         delay(if (sec > 0) sec * 1000L else intervalMs)
         advanceFrom(idx)
     }
+    // Warm the next photo into Coil's cache so the transition doesn't flash before it decodes.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(idx, files.size) {
+        if (files.size <= 1) return@LaunchedEffect
+        val next = files[(idx + 1) % files.size]
+        if (!isVideoName(next.name)) {
+            coil.Coil.imageLoader(ctx).enqueue(
+                coil.request.ImageRequest.Builder(ctx).data(next).build()
+            )
+        }
+    }
     val poolEnums = remember(effectPool) { effectPool.map { SlideEffect.from(it) }.filter { it != SlideEffect.RANDOM } }
     // Resolve the effect for a given slide: a seeded random from the pool when RANDOM.
     fun effAt(i: Int): SlideEffect =
@@ -481,7 +535,7 @@ private fun Slideshow(
         val file = files[i.coerceIn(0, files.size - 1)]
         val members = membersAt(i.coerceIn(0, files.size - 1))
         // The "Random" look shuffles a different tasteful filter onto each photo.
-        val eff = resolveLook(filter, i)
+        val eff = resolveLook(filter, i, filterPool)
         if (isVideoName(file.name)) {
             VideoSlide(
                 file = file, volume = volume, fit = fit, vignette = eff == PhotoFilter.VIGNETTE,
@@ -639,11 +693,13 @@ internal fun dominantColor(f: java.io.File): Color? = runCatching {
 }.getOrNull()
 
 /** A ColorFilter for the colour-matrix "looks" (null = leave the image untouched). */
-/** Resolves the "Random" look to a tasteful per-photo filter (seeded by slide index). */
+/** Resolves the "Random" look to a per-photo filter from [pool] (seeded by slide index). */
 private val RANDOM_LOOK_POOL = listOf(PhotoFilter.NONE, PhotoFilter.MONO, PhotoFilter.SEPIA, PhotoFilter.WARM, PhotoFilter.COOL, PhotoFilter.VIGNETTE)
-private fun resolveLook(filter: PhotoFilter, index: Int): PhotoFilter =
-    if (filter == PhotoFilter.RANDOM) RANDOM_LOOK_POOL[kotlin.random.Random(index.toLong() * 2654435761L).nextInt(RANDOM_LOOK_POOL.size)]
-    else filter
+private fun resolveLook(filter: PhotoFilter, index: Int, pool: List<PhotoFilter> = emptyList()): PhotoFilter {
+    if (filter != PhotoFilter.RANDOM) return filter
+    val p = pool.ifEmpty { RANDOM_LOOK_POOL }
+    return p[kotlin.random.Random(index.toLong() * 2654435761L).nextInt(p.size)]
+}
 
 private fun lookFilter(filter: PhotoFilter): androidx.compose.ui.graphics.ColorFilter? = when (filter) {
     PhotoFilter.MONO -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
@@ -673,6 +729,76 @@ private fun lookFilter(filter: PhotoFilter): androidx.compose.ui.graphics.ColorF
             0f, 0f, 0f, 1f, 0f,
         ))
     )
+    PhotoFilter.VIVID -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(1.45f) }
+    )
+    PhotoFilter.POP -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(1.8f) }
+    )
+    PhotoFilter.NOIR -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            0.404f, 0.793f, 0.154f, 0f, -45f,
+            0.404f, 0.793f, 0.154f, 0f, -45f,
+            0.404f, 0.793f, 0.154f, 0f, -45f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    PhotoFilter.FADE -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            0.82f, 0f, 0f, 0f, 28f,
+            0f, 0.82f, 0f, 0f, 26f,
+            0f, 0f, 0.82f, 0f, 30f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    PhotoFilter.CINEMA -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            1.12f, 0f, 0f, 0f, 2f,
+            0f, 0.96f, 0.04f, 0f, 0f,
+            0.04f, 0f, 1.04f, 0f, 8f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    PhotoFilter.GOLDEN -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            1.18f, 0f, 0f, 0f, 12f,
+            0f, 1.04f, 0f, 0f, 4f,
+            0f, 0f, 0.78f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    PhotoFilter.DUSK -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            1.06f, 0f, 0f, 0f, 6f,
+            0f, 0.9f, 0f, 0f, 0f,
+            0f, 0f, 1.12f, 0f, 8f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    PhotoFilter.FROST -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            0.9f, 0f, 0f, 0f, 6f,
+            0f, 0.98f, 0f, 0f, 8f,
+            0f, 0f, 1.18f, 0f, 12f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    PhotoFilter.MATTE -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            0.85f, 0.05f, 0.05f, 0f, 22f,
+            0.05f, 0.85f, 0.05f, 0f, 22f,
+            0.05f, 0.05f, 0.85f, 0f, 24f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
+    PhotoFilter.ROSE -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            1.1f, 0f, 0f, 0f, 10f,
+            0f, 0.96f, 0f, 0f, 2f,
+            0f, 0f, 1.0f, 0f, 6f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+    )
     else -> null
 }
 
@@ -698,8 +824,9 @@ fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: P
         translationX = transform.offX * size.width
         translationY = transform.offY * size.height
     }
-    // clipToBounds so the per-photo zoom and the Ken-Burns scale never spill over the frame.
-    Box(Modifier.fillMaxSize().clipToBounds()) {
+    // Black backing (never the cream mat) so a not-yet-decoded photo shows black, not a white
+    // flash; clipToBounds so the per-photo zoom / Ken-Burns never spills over the frame.
+    Box(Modifier.fillMaxSize().clipToBounds().background(Color.Black)) {
         when (fit) {
             PhotoFit.FILL -> AsyncImage(
                 model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf, modifier = cropMod,
@@ -738,6 +865,7 @@ internal fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.meylon.salongal
             modifier = Modifier.align(align).safeDrawingPadding().padding(28.dp),
             showDate = clock.showDate,
             alignEnd = right || clock.pos == com.meylon.salongallery.net.ClockPos.CENTER,
+            size = clock.size,
         )
     }
     if (text.content.isNotBlank()) {
