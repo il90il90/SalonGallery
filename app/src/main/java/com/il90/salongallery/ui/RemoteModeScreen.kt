@@ -82,6 +82,7 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.DragIndicator
@@ -721,6 +722,7 @@ private fun ControlPanel(
     var filter by remember { mutableStateOf("none") }
     var filterPool by remember { mutableStateOf(setOf("none", "mono", "sepia", "warm", "cool", "vignette")) }
     var fit by remember { mutableStateOf("fill") }
+    var bgColor by remember { mutableStateOf("black") }
     var collage by remember { mutableStateOf(false) }
     var layout by remember { mutableStateOf("single") }
     var motion by remember { mutableStateOf("off") }
@@ -819,8 +821,15 @@ private fun ControlPanel(
     }
     // "Whole folder": pick a folder (e.g. DCIM/Camera) and send every photo and video in it, sub-folders
     // included — no selection to make and no cap at all.
+    // Remembered sync folder (persisted), so "Sync folder" can re-scan it later for new files.
+    val remotePrefs = remember { context.getSharedPreferences("salon_remote", android.content.Context.MODE_PRIVATE) }
+    var syncFolder by remember { mutableStateOf(remotePrefs.getString("sync_folder", null)) }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree == null) return@rememberLauncherForActivityResult
+        // Keep read access across app restarts so Sync works later without re-picking.
+        runCatching { context.contentResolver.takePersistableUriPermission(tree, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        remotePrefs.edit().putString("sync_folder", tree.toString()).apply()
+        syncFolder = tree.toString()
         busy = true; status = null
         scope.launch {
             val uris = withContext(Dispatchers.IO) { mediaInTree(context, tree, folderKind) }
@@ -828,6 +837,17 @@ private fun ControlPanel(
             if (uris.isEmpty()) { status = context.getString(R.string.folder_empty); return@launch }
             destAlbums = PhotoSender.getAlbums(screen.host, screen.port)?.albums ?: emptyList()
             pendingMedia = uris
+        }
+    }
+    // Re-scan the remembered folder; the Display skips files it already has, so only new ones land.
+    fun syncFolderNow() {
+        val saved = syncFolder ?: return
+        busy = true; status = null
+        scope.launch {
+            val uris = withContext(Dispatchers.IO) { runCatching { mediaInTree(context, android.net.Uri.parse(saved), "all") }.getOrDefault(emptyList()) }
+            if (uris.isEmpty()) { busy = false; status = context.getString(R.string.folder_empty); return@launch }
+            // Upload straight into the active album (or All); duplicates are dropped by the Display.
+            uploadMedia(uris, null)   // lands in the Display's active album; dups are skipped
         }
     }
     val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
@@ -942,6 +962,8 @@ private fun ControlPanel(
                     onFiles = { kind -> mediaMenu = false; mediaPicker.launch(PickVisualMediaRequest(visualTypeFor(kind))) },
                     onFolder = { mediaMenu = false; folderKindMenu = true },
                     onGooglePhotos = { mediaMenu = false; showGooglePhotos = true },
+                    hasSyncFolder = syncFolder != null,
+                    onSync = { mediaMenu = false; syncFolderNow() },
                 )
                 // Second step for "Whole folder": which kinds to pull from it.
                 MediaKindMenu(folderKindMenu, { folderKindMenu = false }) { kind ->
@@ -1007,6 +1029,8 @@ private fun ControlPanel(
             onInterval = { intervalMs = it; scope.launch { PhotoSender.setSlideshow(screen.host, screen.port, it, shuffle) } },
             onOrientation = { orientation = it; scope.launch { PhotoSender.setOrientation(screen.host, screen.port, it) } },
             onFit = { fit = it; scope.launch { PhotoSender.setFit(screen.host, screen.port, it) } },
+            bgColor = bgColor,
+            onBg = { bgColor = it; scope.launch { PhotoSender.setBackground(screen.host, screen.port, it) } },
             onCollage = { collage = it; scope.launch { PhotoSender.setCollage(screen.host, screen.port, it) } },
             onDismiss = { showSlideshow = false },
         )
@@ -2657,7 +2681,7 @@ private fun visualTypeFor(kind: String): ActivityResultContracts.PickVisualMedia
  * file picker for the chosen kind; [onFolder] opens the folder picker.
  */
 @Composable
-private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (String) -> Unit, onFolder: () -> Unit, onGooglePhotos: () -> Unit = {}) {
+private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (String) -> Unit, onFolder: () -> Unit, onGooglePhotos: () -> Unit = {}, hasSyncFolder: Boolean = false, onSync: () -> Unit = {}) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, containerColor = com.il90.salongallery.ui.theme.ElecSurface) {
         DropdownMenuItem(text = { Text(stringResource(R.string.add_photos), color = TextPrimary) }, onClick = { onFiles("photo") },
             leadingIcon = { Icon(Icons.Outlined.Image, null, tint = NeonCyan) })
@@ -2668,6 +2692,8 @@ private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (St
         androidx.compose.material3.HorizontalDivider(color = ElecBorder)
         DropdownMenuItem(text = { Text(stringResource(R.string.add_folder), color = TextPrimary) }, onClick = { onFolder() },
             leadingIcon = { Icon(Icons.Outlined.Folder, null, tint = NeonTeal) })
+        if (hasSyncFolder) DropdownMenuItem(text = { Text(stringResource(R.string.add_sync_folder), color = TextPrimary) }, onClick = { onSync() },
+            leadingIcon = { Icon(Icons.Outlined.Sync, null, tint = NeonTeal) })
         DropdownMenuItem(text = { Text(stringResource(R.string.home_gphotos), color = TextPrimary) }, onClick = { onGooglePhotos() },
             leadingIcon = { Icon(Icons.Outlined.Link, null, tint = NeonBlue) })
     }
@@ -2818,6 +2844,7 @@ private fun SlideshowSheet(
     onMotion: (String) -> Unit = {}, onMotionSpeed: (String) -> Unit = {},
     onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
     onFit: (String) -> Unit, onCollage: (Boolean) -> Unit, onDismiss: () -> Unit,
+    bgColor: String = "black", onBg: (String) -> Unit = {},
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.il90.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(top = 8.dp, bottom = 28.dp)) {
@@ -2832,6 +2859,20 @@ private fun SlideshowSheet(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     fits.forEachIndexed { i, key ->
                         OptionTile(labels[i], selected = fit == key, modifier = Modifier.weight(1f), onClick = { onFit(key) }) { FitIllustration(key) }
+                    }
+                }
+            }
+
+            // BACKGROUND
+            SettingsCard(stringResource(R.string.slideshow_bg_eyebrow), stringResource(R.string.slideshow_bg_title), stringResource(R.string.slideshow_bg_explain)) {
+                val bgs = listOf("black", "charcoal", "slate", "warm", "white")
+                val bgLabels = listOf("Black", "Charcoal", "Slate", "Warm", "White")
+                val bgSwatch = listOf(Color(0xFF000000), Color(0xFF14110E), Color(0xFF2B2F36), Color(0xFF1C140D), Color(0xFFF2EEE6))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    bgs.forEachIndexed { i, key ->
+                        OptionTile(bgLabels[i], selected = bgColor == key, modifier = Modifier.weight(1f), onClick = { onBg(key) }) {
+                            Box(Modifier.size(34.dp).clip(RoundedCornerShape(8.dp)).background(bgSwatch[i]).border(1.dp, Color.White.copy(0.18f), RoundedCornerShape(8.dp)))
+                        }
                     }
                 }
             }

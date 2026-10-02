@@ -77,6 +77,8 @@ class ScreenSession(
     /** Which looks the "Random" look shuffles between (per-photo). */
     val filterPool = MutableStateFlow(listOf("none", "mono", "sepia", "warm", "cool", "vignette"))
     val photoFit = MutableStateFlow(PhotoFit.FILL)
+    /** Backing colour behind photos (and letterbox bars): black | charcoal | slate | warm | white. */
+    val bgColor = MutableStateFlow("black")
     val photoFilter = MutableStateFlow(PhotoFilter.NONE)
     /** Auto-fill the screen with a tasteful collage when a photo's orientation leaves big gaps. */
     val collage = MutableStateFlow(false)
@@ -194,7 +196,7 @@ class ScreenSession(
 
     override fun onPhoto(bytes: ByteArray, album: String?) {
         runCatching {
-            val f = library.add(bytes)
+            val f = library.add(bytes) ?: return@runCatching   // skip exact duplicates
             targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
             mode.value = DisplayMode.SLIDESHOW
             libraryVersion.value = System.currentTimeMillis()
@@ -229,7 +231,7 @@ class ScreenSession(
                 val bytes = conn.inputStream.use { it.readBytes() }
                 conn.disconnect()
                 if (bytes.isNotEmpty() && clearGen.get() == gen) {
-                    val f = library.add(bytes)
+                    val f = library.add(bytes) ?: return@runCatching
                     sources.set(f.name, url)
                     if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
                     mode.value = DisplayMode.SLIDESHOW
@@ -258,7 +260,7 @@ class ScreenSession(
         runCatching {
             // Videos now live in the unified library and play inline in the slideshow,
             // so photos and clips can be mixed on the wall.
-            val f = library.addVideo(bytes)
+            val f = library.addVideo(bytes) ?: return@runCatching   // skip exact duplicates
             targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
             mode.value = DisplayMode.SLIDESHOW
             videoVersion.value = System.currentTimeMillis()
@@ -361,6 +363,8 @@ class ScreenSession(
     override fun onFit(fit: String) {
         this.photoFit.value = PhotoFit.from(fit)
     }
+
+    override fun onBackground(color: String) { bgColor.value = color }
 
     override fun onFilter(filter: String) {
         this.photoFilter.value = PhotoFilter.from(filter)

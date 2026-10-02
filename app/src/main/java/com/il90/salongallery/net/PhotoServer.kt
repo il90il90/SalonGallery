@@ -26,6 +26,7 @@ interface ScreenCommands {
     fun onEffectPool(names: List<String>)
     fun onFilterPool(names: List<String>)
     fun onFit(fit: String)
+    fun onBackground(color: String)   // black | charcoal | slate | warm | white
     fun onFilter(filter: String)
     fun onCollage(on: Boolean)
     fun onLayout(mode: String)             // single | mosaic | scatter | random
@@ -207,6 +208,9 @@ class PhotoServer(
                     session.parameters["style"]?.firstOrNull() ?: "digital",
                     session.parameters["size"]?.firstOrNull() ?: "m",
                 ); ok()
+            }
+            session.method == Method.GET && uri == "/bg" -> {
+                session.parameters["color"]?.firstOrNull()?.let { commands.onBackground(it) }; ok()
             }
             session.method == Method.GET && uri == "/weather" -> {
                 commands.onWeather(

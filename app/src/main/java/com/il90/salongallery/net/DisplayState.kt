@@ -142,16 +142,43 @@ class LibraryStore(private val dir: File) {
     private fun mediaFiles(): List<File> =
         dir.listFiles()?.filter { it.isFile && (it.name.startsWith("p_") || it.name.startsWith("v_")) } ?: emptyList()
 
-    @Synchronized
-    fun add(bytes: ByteArray): File = addNamed("p_${stamp()}.jpg", bytes)
+    // Content signatures (size + MD5) of every stored file, so an identical photo/video is only kept
+    // once — adding a duplicate (or re-syncing a folder) returns null instead of a second copy.
+    private val sigFile = File(dir, "sigs.txt")
+    private val sigs: HashMap<String, String> by lazy { loadSigs() }   // name -> signature
+    private fun loadSigs(): HashMap<String, String> {
+        val map = HashMap<String, String>()
+        val have = mediaFiles().map { it.name }.toSet()
+        runCatching { if (sigFile.exists()) sigFile.readLines().forEach { ln ->
+            val i = ln.indexOf('\t'); if (i > 0) { val n = ln.substring(0, i); if (n in have) map[n] = ln.substring(i + 1) }
+        } }
+        return map
+    }
+    private fun sigOf(bytes: ByteArray): String = runCatching {
+        val md = java.security.MessageDigest.getInstance("MD5").digest(bytes)
+        bytes.size.toString() + ":" + md.joinToString("") { "%02x".format(it) }
+    }.getOrDefault(bytes.size.toString())
 
+    /** True if a file with the same content is already in the library. */
     @Synchronized
-    fun addVideo(bytes: ByteArray): File = addNamed("v_${stamp()}.mp4", bytes)
+    fun isDuplicate(bytes: ByteArray): Boolean = sigOf(bytes) in sigs.values
 
-    private fun addNamed(name: String, bytes: ByteArray): File {
+    /** Adds a photo; returns null (no copy written) if the exact content is already present. */
+    @Synchronized
+    fun add(bytes: ByteArray): File? = addNamed("p_${stamp()}.jpg", bytes)
+
+    /** Adds a video; returns null if the exact content is already present. */
+    @Synchronized
+    fun addVideo(bytes: ByteArray): File? = addNamed("v_${stamp()}.mp4", bytes)
+
+    private fun addNamed(name: String, bytes: ByteArray): File? {
+        val sig = sigOf(bytes)
+        if (sig in sigs.values) return null        // duplicate — skip
         val f = File(dir, name)
         f.writeBytes(bytes)
         runCatching { orderFile.appendText(f.name + "\n") }
+        sigs[f.name] = sig
+        runCatching { sigFile.appendText("${f.name}\t$sig\n") }
         return f
     }
 
@@ -188,6 +215,7 @@ class LibraryStore(private val dir: File) {
         runCatching { File(dir, name).delete() }
         writeOrder(readOrder().filter { it != name })
         writePins(readPins().filter { it != name })
+        if (sigs.remove(name) != null) runCatching { saveSigs() }
     }
 
     @Synchronized
@@ -210,7 +238,10 @@ class LibraryStore(private val dir: File) {
         runCatching { mediaFiles().forEach { it.delete() } }
         runCatching { orderFile.delete() }
         runCatching { pinFile.delete() }
+        sigs.clear(); runCatching { sigFile.delete() }
     }
+
+    private fun saveSigs() = runCatching { sigFile.writeText(sigs.entries.joinToString("\n") { "${it.key}\t${it.value}" }) }
 
     private fun readOrder(): List<String> =
         if (orderFile.exists()) runCatching { orderFile.readLines().filter { it.isNotBlank() } }.getOrDefault(emptyList())

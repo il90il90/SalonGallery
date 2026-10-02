@@ -186,6 +186,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val filterPoolNames by session.filterPool.collectAsStateWithLifecycle()
     val filterPool = remember(filterPoolNames) { filterPoolNames.map { PhotoFilter.from(it) } }
     val photoFit by session.photoFit.collectAsStateWithLifecycle()
+    val bgColor by session.bgColor.collectAsStateWithLifecycle()
     val photoFilter by session.photoFilter.collectAsStateWithLifecycle()
     val collage by session.collage.collectAsStateWithLifecycle()
     val layout by session.layout.collectAsStateWithLifecycle()
@@ -361,7 +362,7 @@ fun ScreenModeScreen(actions: AppActions) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(bgColorOf(bgColor))
             .focusRequester(rootFocus)
             .focusable()
             .onKeyEvent { ev ->
@@ -392,6 +393,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         effectPool = effectPool,
                         filterPool = filterPool,
                         fit = photoFit,
+                        bg = bgColorOf(bgColor),
                         filter = photoFilter,
                         volume = volume,
                         collageOn = collage,
@@ -504,6 +506,7 @@ private fun Slideshow(
     effectPool: List<String>,
     filterPool: List<PhotoFilter> = emptyList(),
     fit: PhotoFit,
+    bg: Color = Color.Black,
     filter: PhotoFilter,
     volume: Float,
     collageOn: Boolean,
@@ -676,7 +679,7 @@ private fun Slideshow(
             } else null
             // Ken Burns already moves the photo — don't stack the ambient motion on top of it.
             MotionBox(if (kb != null) MotionMode.OFF else motion, motionSpeed, seed = i) {
-                PhotoContent(file, fit, transformOf(file), eff, focus = focusOf(file)) { kb?.value ?: 1f }
+                PhotoContent(file, fit, transformOf(file), eff, focus = focusOf(file), bg = bg) { kb?.value ?: 1f }
             }
         }
     }
@@ -1328,15 +1331,24 @@ private fun rememberSlideModel(file: File): coil.request.ImageRequest {
     }
 }
 
+/** The chosen backing colour behind photos and letterbox bars. */
+internal fun bgColorOf(key: String): Color = when (key.lowercase()) {
+    "charcoal" -> Color(0xFF14110E)
+    "slate" -> Color(0xFF2B2F36)
+    "warm" -> Color(0xFF1C140D)
+    "white" -> Color(0xFFF2EEE6)
+    else -> Color.Black
+}
+
 /** Renders one photo, applying its studio [transform], a [filter] look and an optional Ken-Burns [kb] zoom. */
 @Composable
-fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: PhotoFilter = PhotoFilter.NONE, focus: PhotoFocus? = null, kb: () -> Float = { 1f }) {
+fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: PhotoFilter = PhotoFilter.NONE, focus: PhotoFocus? = null, bg: Color = Color.Black, kb: () -> Float = { 1f }) {
     val cf = lookFilter(filter)
     val rot = transform.rotNorm
     val swapped = rot == 90 || rot == 270
     // Black backing (never the cream mat) so a not-yet-decoded photo shows black, not a white
     // flash; clipToBounds so the per-photo zoom / Ken-Burns / rotation never spills over the frame.
-    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(Color.Black), contentAlignment = Alignment.Center) {
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(bg), contentAlignment = Alignment.Center) {
         // When rotated a quarter turn, lay the image out with width/height swapped so that after the
         // 90°/270° turn it lands back filling the frame (a portrait rotated to landscape still fills).
         val w = if (swapped) maxHeight else maxWidth

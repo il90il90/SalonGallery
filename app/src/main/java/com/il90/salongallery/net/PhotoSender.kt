@@ -374,6 +374,9 @@ object PhotoSender {
     suspend fun setMotion(host: String, port: Int, mode: String, speed: String) =
         get(host, port, "/motion?mode=$mode&speed=$speed")
 
+    /** Backing colour behind photos: black | charcoal | slate | warm | white. */
+    suspend fun setBackground(host: String, port: Int, color: String) = get(host, port, "/bg?color=$color")
+
     suspend fun setText(host: String, port: Int, content: String, pos: String, size: String, color: String, font: String = "classic") =
         get(host, port, "/text?content=${enc(content)}&pos=$pos&size=$size&color=$color&font=$font")
 
