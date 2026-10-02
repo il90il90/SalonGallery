@@ -3,6 +3,7 @@ package com.il90.salongallery
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -58,6 +59,19 @@ private fun AppRoot(prefs: RolePreferences) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val role by prefs.role.collectAsStateWithLifecycle(initialValue = DeviceRole.UNSET)
+
+    // So the Display's waiting screen can show the Wi-Fi network name: Android hides the SSID
+    // without location permission. Best-effort — if denied, the screen simply omits the name.
+    val locationPermission = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(role) {
+        if (role == DeviceRole.SCREEN &&
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            runCatching { locationPermission.launch(android.Manifest.permission.ACCESS_FINE_LOCATION) }
+        }
+    }
 
     // Keep a foreground service alive while this device is a Display, so the gallery
     // keeps running (and stays discoverable) when the app is minimized.

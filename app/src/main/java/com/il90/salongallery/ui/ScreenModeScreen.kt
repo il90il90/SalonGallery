@@ -407,12 +407,18 @@ fun ScreenModeScreen(actions: AppActions) {
                 }
 
             else -> {
-                val net = remember(running) { networkInfo(context) }
+                // Re-read periodically so the Wi-Fi name appears once the location permission is granted.
+                var net by remember { mutableStateOf(networkInfo(context)) }
+                LaunchedEffect(running) { while (true) { net = networkInfo(context); delay(3000) } }
                 WaitingToPair(
                     deviceName = session.effectiveName(),
                     running = running,
                     ssid = net.first,
                     address = net.second,
+                    version = actions.version,
+                    availableVersion = actions.availableVersion,
+                    checking = actions.isChecking,
+                    onCheckUpdate = actions.onCheckUpdate,
                     onChangeRole = actions.onChangeRole,
                 )
             }
@@ -1688,9 +1694,18 @@ private fun NetChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text:
 
 /** (ssid, ip) for the current Wi-Fi connection, for display on the waiting screen. */
 private fun networkInfo(context: android.content.Context): Pair<String?, String?> {
+    fun clean(raw: String?): String? = raw?.trim('"')?.takeIf { it.isNotBlank() && !it.contains("unknown", true) && it != "0x" && it != "<unknown ssid>" }
     val ssid = runCatching {
-        val wm = context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-        wm?.connectionInfo?.ssid?.trim('"')?.takeIf { it.isNotBlank() && !it.contains("unknown", true) && it != "0x" }
+        // Android 12+ prefers the network-capabilities path; fall back to the (deprecated) WifiManager.
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        val fromCaps = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+            (caps?.transportInfo as? android.net.wifi.WifiInfo)?.ssid?.let { clean(it) }
+        } else null
+        fromCaps ?: run {
+            val wm = context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            @Suppress("DEPRECATION") clean(wm?.connectionInfo?.ssid)
+        }
     }.getOrNull()
     val ip = runCatching {
         java.net.NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
@@ -1705,11 +1720,24 @@ private fun WaitingToPair(
     running: Boolean,
     ssid: String? = null,
     address: String? = null,
+    version: String = "",
+    availableVersion: String? = null,
+    checking: Boolean = false,
+    onCheckUpdate: (() -> Unit)? = null,
     onChangeRole: (() -> Unit)? = null,
 ) {
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     SalonBackground {
         Column(
-            modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
+            modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp)
+                // OK / center on the TV remote checks for an app update (and shows the version below).
+                .focusRequester(focus).focusable()
+                .onKeyEvent { ev ->
+                    if (ev.type == KeyEventType.KeyDown &&
+                        (ev.key == Key.DirectionCenter || ev.key == Key.Enter || ev.key == Key.Menu)
+                    ) { onCheckUpdate?.invoke(); true } else false
+                },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.weight(1f))
@@ -1751,13 +1779,6 @@ private fun WaitingToPair(
                     address?.let { NetChip(Icons.Outlined.Lan, it) }
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                stringResource(R.string.screen_remote_hint),
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary, textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
             Spacer(Modifier.weight(1f))
             // Escape hatch: this device is a Display with no on-screen controls, so if it has no
             // Remote paired (or was set to Display by mistake) this is the only way back to the role
@@ -1769,6 +1790,24 @@ private fun WaitingToPair(
                     Text(stringResource(R.string.change_role), style = MaterialTheme.typography.labelLarge, color = TextSecondary)
                 }
             }
+            Spacer(Modifier.height(6.dp))
+            // Version + one-tap update (press OK on the remote to re-check).
+            val verText = when {
+                checking -> stringResource(R.string.update_checking)
+                availableVersion != null -> stringResource(R.string.update_available, availableVersion)
+                else -> stringResource(R.string.screen_version, version)
+            }
+            Text(
+                verText,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (availableVersion != null) NeonCyan else TextSecondary.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                stringResource(R.string.screen_update_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary.copy(alpha = 0.5f), textAlign = TextAlign.Center,
+            )
         }
     }
 }

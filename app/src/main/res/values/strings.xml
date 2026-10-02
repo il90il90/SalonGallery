@@ -29,6 +29,9 @@
     <string name="screen_starting">Starting…</string>
     <string name="screen_tap_hint">Tap anywhere to open settings</string>
     <string name="screen_remote_hint">Control everything from your phone — open Salon Gallery as a Remote. Use the TV remote\'s ◀ ▶ to change photos.</string>
+    <string name="update_checking">Checking for an update…</string>
+    <string name="screen_version">Salon Gallery · v%1$s</string>
+    <string name="screen_update_hint">Press OK on the remote to check for an update</string>
 
     <!-- Remote mode -->
     <string name="remote_overline">Remote</string>
