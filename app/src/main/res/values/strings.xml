@@ -59,6 +59,8 @@
     <string name="frame_thickness">Frame thickness</string>
     <string name="frame_recommended">Recommended</string>
     <string name="frame_random_hint">Tap frames to add them to the shuffle.</string>
+    <string name="frame_adaptive">Adaptive</string>
+    <string name="frame_adaptive_hint">The frame colour follows each photo automatically.</string>
     <string name="tile_music">Music</string>
     <string name="tile_slideshow">Slideshow</string>
     <string name="effects_title">Effects</string>
@@ -66,6 +68,7 @@
     <string name="effects_look">Look</string>
     <string name="effects_random">Random</string>
     <string name="effects_random_hint">Shuffles between the checked styles on each photo.</string>
+    <string name="look_random_hint">A different tasteful look on each photo — hands-free.</string>
     <string name="duration_title">Duration</string>
     <string name="art_on_wall">On the wall ·\ntap to remove</string>
     <string name="media_photo">Photo</string>
@@ -94,6 +97,8 @@
     <string name="rss_show_source">Show source</string>
     <string name="rss_show_summary">Show summary</string>
     <string name="clock_position">Clock position</string>
+    <string name="clock_style">Clock style</string>
+    <string name="clock_size">Clock size</string>
     <string name="clock_show_date">Show date</string>
     <string name="slideshow_autofill">Auto-fill the screen</string>
     <string name="slideshow_autofill_hint">Group photos that don\'t fill the wall into one framed piece.</string>

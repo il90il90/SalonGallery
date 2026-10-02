@@ -301,8 +301,8 @@ object PhotoSender {
     suspend fun setText(host: String, port: Int, content: String, pos: String, size: String, color: String) =
         get(host, port, "/text?content=${enc(content)}&pos=$pos&size=$size&color=$color")
 
-    suspend fun setClock(host: String, port: Int, on: Boolean, pos: String = "top_start", showDate: Boolean = true) =
-        get(host, port, "/clock?on=${if (on) 1 else 0}&pos=$pos&date=${if (showDate) 1 else 0}")
+    suspend fun setClock(host: String, port: Int, on: Boolean, pos: String = "top_start", showDate: Boolean = true, style: String = "digital", size: String = "m") =
+        get(host, port, "/clock?on=${if (on) 1 else 0}&pos=$pos&date=${if (showDate) 1 else 0}&style=$style&size=$size")
 
     suspend fun setOrientation(host: String, port: Int, o: String) =
         get(host, port, "/orientation?o=$o")

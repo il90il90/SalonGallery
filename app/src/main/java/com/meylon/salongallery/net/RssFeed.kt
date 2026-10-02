@@ -67,13 +67,23 @@ object RssFeed {
         }
     }
 
-    private fun clean(raw: String): String = raw
-        .replace(Regex("<!\\[CDATA\\[", RegexOption.IGNORE_CASE), "")
-        .replace("]]>", "")
-        .replace(Regex("<[^>]+>"), "")
-        .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    private val TAG = Regex("<[^>]+>")
+
+    private fun clean(raw: String): String {
+        var s = raw
+            .replace(Regex("<!\\[CDATA\\[", RegexOption.IGNORE_CASE), "")
+            .replace("]]>", "")
+        // Strip real tags, then decode entities (which may reveal entity-encoded tags like
+        // &lt;img&gt;), then strip again so that markup never shows up as literal text.
+        s = TAG.replace(s, "")
+        s = decodeEntities(s)
+        s = TAG.replace(s, "")
+        return s.replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun decodeEntities(s: String): String = s
+        .replace("&lt;", "<").replace("&gt;", ">")
         .replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'")
         .replace("&#8217;", "’").replace("&#8216;", "‘").replace("&nbsp;", " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
+        .replace("&amp;", "&")
 }

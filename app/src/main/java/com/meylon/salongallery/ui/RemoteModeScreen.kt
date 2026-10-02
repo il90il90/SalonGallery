@@ -726,11 +726,11 @@ private fun ControlPanel(
     }
     if (showText) {
         TextSheet(
-            onApply = { content, pos, size, color, clock, clockPos, clockDate ->
-                scope.launch {
-                    PhotoSender.setText(screen.host, screen.port, content, pos, size, color)
-                    PhotoSender.setClock(screen.host, screen.port, clock, clockPos, clockDate)
-                }
+            onText = { content, pos, size, color ->
+                scope.launch { PhotoSender.setText(screen.host, screen.port, content, pos, size, color) }
+            },
+            onClock = { on, pos, date, style, size ->
+                scope.launch { PhotoSender.setClock(screen.host, screen.port, on, pos, date, style, size) }
             },
             onClear = {
                 scope.launch {
@@ -1679,6 +1679,14 @@ private fun EffectsSheet(
 
             Spacer(Modifier.height(20.dp))
             Text(stringResource(R.string.effects_look), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(10.dp))
+            EffectChip("🎲 " + stringResource(R.string.effects_random), selected = filter == "random", showCheck = false) {
+                onFilter(if (filter == "random") "none" else "random")
+            }
+            if (filter == "random") {
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.look_random_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            }
             Spacer(Modifier.height(12.dp))
             val looks = listOf("none", "mono", "sepia", "warm", "cool", "vignette")
             val labels = listOf("Original", "Mono", "Sepia", "Warm", "Cool", "Vignette")
@@ -1761,9 +1769,19 @@ private fun FrameSheet(
             }
 
             Spacer(Modifier.height(14.dp))
+            val adaptiveId = remember { FRAMES.firstOrNull { it.adaptive }?.id ?: 50 }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 EffectChip("🎲 " + stringResource(R.string.effects_random), selected = random, showCheck = false) { onRandom(!random) }
-                if (random) Text(stringResource(R.string.frame_random_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                EffectChip("🎨 " + stringResource(R.string.frame_adaptive), selected = !random && current == adaptiveId, showCheck = false) {
+                    if (random) onRandom(false); onPick(adaptiveId)
+                }
+            }
+            if (random) {
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.frame_random_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            } else if (current == adaptiveId) {
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.frame_adaptive_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             }
 
             Spacer(Modifier.height(16.dp))
@@ -1875,7 +1893,8 @@ private fun SlideshowSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TextSheet(
-    onApply: (String, String, String, String, Boolean, String, Boolean) -> Unit,
+    onText: (String, String, String, String) -> Unit,
+    onClock: (Boolean, String, Boolean, String, String) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1886,10 +1905,28 @@ private fun TextSheet(
     var clock by remember { mutableStateOf(false) }
     var clockPosIdx by remember { mutableIntStateOf(0) }
     var clockDate by remember { mutableStateOf(true) }
+    var clockStyleIdx by remember { mutableIntStateOf(0) }
+    var clockSizeIdx by remember { mutableIntStateOf(1) }
     val positions = listOf("top", "center", "bottom")
     val sizes = listOf("s", "m", "l")
     val colors = listOf("white", "black", "gold", "cyan", "violet")
     val clockPositions = listOf("top_start", "top_end", "bottom_start", "bottom_end", "center")
+    val clockStyles = listOf("digital", "analog", "minimal", "mono")
+    val clockSizes = listOf("s", "m", "l")
+
+    // Live apply — no Apply button. Text is debounced; the clock applies on every change.
+    // Each skips its first emission so opening the sheet doesn't clobber what's on screen.
+    var textTouched by remember { mutableStateOf(false) }
+    LaunchedEffect(content, posIdx, sizeIdx, colorIdx) {
+        if (!textTouched) { textTouched = true; return@LaunchedEffect }
+        kotlinx.coroutines.delay(250)
+        onText(content, positions[posIdx], sizes[sizeIdx], colors[colorIdx])
+    }
+    var clockTouched by remember { mutableStateOf(false) }
+    LaunchedEffect(clock, clockPosIdx, clockDate, clockStyleIdx, clockSizeIdx) {
+        if (!clockTouched) { clockTouched = true; return@LaunchedEffect }
+        onClock(clock, clockPositions[clockPosIdx], clockDate, clockStyles[clockStyleIdx], clockSizes[clockSizeIdx])
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
@@ -1924,6 +1961,14 @@ private fun TextSheet(
             }
             if (clock) {
                 Spacer(Modifier.height(12.dp))
+                Text(stringResource(R.string.clock_style), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(8.dp))
+                SegRow(listOf("Digital", "Analog", "Minimal", "Mono"), clockStyleIdx) { clockStyleIdx = it }
+                Spacer(Modifier.height(12.dp))
+                Text(stringResource(R.string.clock_size), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(8.dp))
+                SegRow(listOf("S", "M", "L"), clockSizeIdx) { clockSizeIdx = it }
+                Spacer(Modifier.height(12.dp))
                 Text(stringResource(R.string.clock_position), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
                 Spacer(Modifier.height(8.dp))
                 SegRow(listOf("↖", "↗", "↙", "↘", "•"), clockPosIdx) { clockPosIdx = it }
@@ -1934,8 +1979,6 @@ private fun TextSheet(
                 }
             }
             Spacer(Modifier.height(20.dp))
-            GradientButton(text = stringResource(R.string.text_apply), onClick = { onApply(content, positions[posIdx], sizes[sizeIdx], colors[colorIdx], clock, clockPositions[clockPosIdx], clockDate) })
-            Spacer(Modifier.height(12.dp))
             OutlineButton(text = stringResource(R.string.text_clear), onClick = { content = ""; clock = false; onClear() })
             Spacer(Modifier.height(16.dp))
         }
@@ -2090,8 +2133,8 @@ private fun ArtSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
-    var source by remember { mutableStateOf(ArtSource.ARTIC) }
-    var activeCat by remember { mutableStateOf(ArtGallery.categoriesFor(ArtSource.ARTIC).first()) }
+    var source by remember { mutableStateOf(ArtSource.entries.first()) }
+    var activeCat by remember { mutableStateOf(ArtGallery.categoriesFor(ArtSource.entries.first()).first()) }
     var results by remember { mutableStateOf<List<ArtPiece>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }

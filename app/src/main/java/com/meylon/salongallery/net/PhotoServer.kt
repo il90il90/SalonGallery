@@ -27,7 +27,7 @@ interface ScreenCommands {
     fun onFilter(filter: String)
     fun onCollage(on: Boolean)
     fun onText(content: String, pos: String, size: String, color: String)
-    fun onClock(on: Boolean, pos: String, showDate: Boolean)
+    fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String)
     fun onOpenScreensaver()
     fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean)
     fun rssJson(): String
@@ -160,6 +160,8 @@ class PhotoServer(
                     session.parameters["on"]?.firstOrNull() == "1",
                     session.parameters["pos"]?.firstOrNull() ?: "top_start",
                     session.parameters["date"]?.firstOrNull() != "0",
+                    session.parameters["style"]?.firstOrNull() ?: "digital",
+                    session.parameters["size"]?.firstOrNull() ?: "m",
                 ); ok()
             }
             session.method == Method.GET && uri == "/orientation" -> {

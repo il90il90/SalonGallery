@@ -295,8 +295,8 @@ class ScreenSession(
     }
 
 
-    override fun onClock(on: Boolean, pos: String, showDate: Boolean) {
-        clock.value = ClockConfig(on, ClockPos.from(pos), showDate)
+    override fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String) {
+        clock.value = ClockConfig(on, ClockPos.from(pos), showDate, ClockStyle.from(style), size)
     }
 
     override fun onOpenScreensaver() { screensaverTrigger.value = System.currentTimeMillis() }

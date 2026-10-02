@@ -17,11 +17,12 @@ data class ArtPiece(
 
 /** A free, key-less image collection the Remote can browse and send to the wall. */
 enum class ArtSource(val label: String) {
+    // Colourful, lively sources first; the museum / fine-art paintings go last.
+    NASA("Space"),
+    PHOTOS("Backgrounds"),
+    OPENVERSE("Colorful"),
     ARTIC("Fine art"),
     MET("Museum"),
-    PHOTOS("Photography"),
-    NASA("Space"),
-    OPENVERSE("Open"),
 }
 
 /**
@@ -35,10 +36,10 @@ object ArtGallery {
     const val REFERER = "https://www.artic.edu/"
     private const val IIIF = "https://www.artic.edu/iiif/2"
 
-    private val artCategories = listOf("Landscape", "Portrait", "Impressionism", "Nature", "Still life", "Cityscape", "Abstract", "Japanese")
-    private val photoCategories = listOf("Nature", "City", "Mountains", "Ocean", "Minimal")
-    private val spaceCategories = listOf("Galaxy", "Nebula", "Earth", "Mars", "Moon", "Aurora", "Jupiter", "Saturn")
-    private val openCategories = listOf("Nature", "Sunset", "Flowers", "Forest", "Ocean", "Architecture", "Street", "Minimal")
+    private val artCategories = listOf("Impressionism", "Landscape", "Flowers", "Seascape", "Japanese", "Van Gogh", "Monet", "Abstract", "Still life", "Portrait")
+    private val photoCategories = listOf("Nature", "Mountains", "Ocean", "City", "Forest", "Desert", "Minimal")
+    private val spaceCategories = listOf("Nebula", "Galaxy", "Aurora", "Earth", "Jupiter", "Saturn", "Mars", "Moon", "Sun")
+    private val openCategories = listOf("Sunset", "Aurora", "Flowers", "Autumn", "Ocean", "Mountains", "Waterfall", "Tropical", "Forest", "Desert", "Lake", "Night sky")
 
     fun categoriesFor(source: ArtSource): List<String> = when (source) {
         ArtSource.PHOTOS -> photoCategories
@@ -55,7 +56,7 @@ object ArtGallery {
         ArtSource.MET -> searchMet(query, limit.coerceAtMost(18))
         ArtSource.PHOTOS -> searchPhotos(limit.coerceAtMost(30))
         ArtSource.NASA -> searchNasa(query, limit)
-        ArtSource.OPENVERSE -> searchOpenverse(query, limit)
+        ArtSource.OPENVERSE -> searchWikimedia(query, limit)
     }
 
     private fun openGet(url: String, artHeaders: Boolean = false): HttpURLConnection =
@@ -150,26 +151,38 @@ object ArtGallery {
         } catch (e: Exception) { null }
     }
 
-    private suspend fun searchOpenverse(query: String, limit: Int): List<ArtPiece>? = withContext(Dispatchers.IO) {
-        val q = enc(query.ifBlank { "nature" })
+    // Wikimedia Commons: huge, key-less, varied real photography. Returns scaled thumbnails so
+    // the Display downloads a reasonable size (the originals can be tens of MB).
+    private suspend fun searchWikimedia(query: String, limit: Int): List<ArtPiece>? = withContext(Dispatchers.IO) {
+        val q = enc(query.ifBlank { "landscape" })
         try {
-            val conn = openGet("https://api.openverse.org/v1/images/?q=$q&page_size=$limit")
+            val url = "https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search" +
+                "&gsrsearch=$q&gsrnamespace=6&gsrlimit=${limit.coerceAtMost(40)}" +
+                "&prop=imageinfo&iiprop=url|mime|size&iiurlwidth=1280"
+            val conn = openGet(url)
             if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             conn.disconnect()
-            val res = JSONObject(body).optJSONArray("results") ?: return@withContext emptyList<ArtPiece>()
+            val pages = JSONObject(body).optJSONObject("query")?.optJSONObject("pages")
+                ?: return@withContext emptyList<ArtPiece>()
             buildList {
-                for (i in 0 until res.length()) {
-                    val o = res.getJSONObject(i)
-                    val thumb = o.optString("thumbnail", "")
-                    val full = o.optString("url", "")
-                    if (thumb.isBlank() && full.isBlank()) continue
+                val keys = pages.keys()
+                while (keys.hasNext()) {
+                    val p = pages.getJSONObject(keys.next())
+                    val ii = p.optJSONArray("imageinfo")?.optJSONObject(0) ?: continue
+                    if (!ii.optString("mime", "").startsWith("image/")) continue
+                    val w = ii.optInt("width", 0); val h = ii.optInt("height", 0)
+                    if (w in 1 until 700 || h in 1 until 500) continue  // skip icons/diagrams
+                    val scaled = ii.optString("thumburl", "")
+                    val full = ii.optString("url", "")
+                    if (scaled.isBlank() && full.isBlank()) continue
+                    val best = scaled.ifBlank { full }
                     add(
                         ArtPiece(
-                            title = o.optString("title", "Untitled").ifBlank { "Untitled" },
-                            artist = o.optString("creator", "").ifBlank { "Open" },
-                            thumbUrl = thumb.ifBlank { full },
-                            fullUrl = full.ifBlank { thumb },
+                            title = p.optString("title", "").removePrefix("File:").substringBeforeLast('.').ifBlank { "Untitled" },
+                            artist = "Wikimedia",
+                            thumbUrl = best,
+                            fullUrl = best,
                         )
                     )
                 }

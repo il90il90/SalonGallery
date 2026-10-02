@@ -25,7 +25,7 @@ enum class PhotoFit { FILL, FIT, BLUR;
 }
 
 /** A colour "look" applied over the media. */
-enum class PhotoFilter { NONE, MONO, SEPIA, WARM, COOL, VIGNETTE;
+enum class PhotoFilter { NONE, MONO, SEPIA, WARM, COOL, VIGNETTE, RANDOM;
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: NONE
     }
@@ -40,11 +40,18 @@ enum class ClockPos { TOP_START, TOP_END, BOTTOM_START, BOTTOM_END, CENTER;
     companion object { fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: TOP_START }
 }
 
+/** The look of the clock on the screen and the idle/sleep view. */
+enum class ClockStyle { DIGITAL, ANALOG, MINIMAL, MONO;
+    companion object { fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: DIGITAL }
+}
+
 /** The clock / date overlay configuration. */
 data class ClockConfig(
     val on: Boolean = false,
     val pos: ClockPos = ClockPos.TOP_START,
     val showDate: Boolean = true,
+    val style: ClockStyle = ClockStyle.DIGITAL,
+    val size: String = "m",   // s | m | l — scales the clock
 )
 
 /** A text overlay shown on the display over the media. */

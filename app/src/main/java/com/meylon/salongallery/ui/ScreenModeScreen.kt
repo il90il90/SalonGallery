@@ -82,6 +82,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -376,9 +377,14 @@ fun ScreenModeScreen(actions: AppActions) {
                 ) { sleeping = false },
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.graphicsLayer { alpha = 0.28f }) {
+                Box(Modifier.graphicsLayer { alpha = 0.32f }) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        ClockText(Modifier)
+                        ClockView(
+                            style = clock.style,
+                            modifier = Modifier,
+                            showDate = clock.showDate,
+                            alignEnd = false,
+                        )
                         Spacer(Modifier.height(10.dp))
                         Text(
                             stringResource(R.string.sleep_tap_wake),
@@ -464,21 +470,23 @@ private fun Slideshow(
     ) { i ->
         val file = files[i.coerceIn(0, files.size - 1)]
         val members = membersAt(i.coerceIn(0, files.size - 1))
+        // The "Random" look shuffles a different tasteful filter onto each photo.
+        val eff = resolveLook(filter, i)
         if (isVideoName(file.name)) {
             VideoSlide(
-                file = file, volume = volume, fit = fit, vignette = filter == PhotoFilter.VIGNETTE,
+                file = file, volume = volume, fit = fit, vignette = eff == PhotoFilter.VIGNETTE,
                 loop = files.size <= 1, capSec = durationOf(file),
                 onEnded = { advanceFrom(i) },
             )
         } else if (members.size >= 2) {
-            CollageSlide(members.map { files[it] }, filter = filter, horizontal = screenLandscape)
+            CollageSlide(members.map { files[it] }, filter = eff, horizontal = screenLandscape)
         } else {
             val kb = if (effAt(i) == SlideEffect.KENBURNS) {
                 val a = remember(i) { Animatable(1f) }
                 LaunchedEffect(i) { a.animateTo(1.14f, tween(intervalMs.toInt(), easing = LinearEasing)) }
                 a
             } else null
-            PhotoContent(file, fit, transformOf(file), filter) { kb?.value ?: 1f }
+            PhotoContent(file, fit, transformOf(file), eff) { kb?.value ?: 1f }
         }
     }
 }
@@ -608,6 +616,12 @@ internal fun dominantColor(f: java.io.File): Color? = runCatching {
 }.getOrNull()
 
 /** A ColorFilter for the colour-matrix "looks" (null = leave the image untouched). */
+/** Resolves the "Random" look to a tasteful per-photo filter (seeded by slide index). */
+private val RANDOM_LOOK_POOL = listOf(PhotoFilter.NONE, PhotoFilter.MONO, PhotoFilter.SEPIA, PhotoFilter.WARM, PhotoFilter.COOL, PhotoFilter.VIGNETTE)
+private fun resolveLook(filter: PhotoFilter, index: Int): PhotoFilter =
+    if (filter == PhotoFilter.RANDOM) RANDOM_LOOK_POOL[kotlin.random.Random(index.toLong() * 2654435761L).nextInt(RANDOM_LOOK_POOL.size)]
+    else filter
+
 private fun lookFilter(filter: PhotoFilter): androidx.compose.ui.graphics.ColorFilter? = when (filter) {
     PhotoFilter.MONO -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(
         androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }
@@ -661,7 +675,8 @@ fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: P
         translationX = transform.offX * size.width
         translationY = transform.offY * size.height
     }
-    Box(Modifier.fillMaxSize()) {
+    // clipToBounds so the per-photo zoom and the Ken-Burns scale never spill over the frame.
+    Box(Modifier.fillMaxSize().clipToBounds()) {
         when (fit) {
             PhotoFit.FILL -> AsyncImage(
                 model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf, modifier = cropMod,
@@ -695,8 +710,9 @@ internal fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.meylon.salongal
             com.meylon.salongallery.net.ClockPos.CENTER -> Alignment.Center
         }
         val right = clock.pos == com.meylon.salongallery.net.ClockPos.TOP_END || clock.pos == com.meylon.salongallery.net.ClockPos.BOTTOM_END
-        ClockText(
-            Modifier.align(align).safeDrawingPadding().padding(28.dp),
+        ClockView(
+            style = clock.style,
+            modifier = Modifier.align(align).safeDrawingPadding().padding(28.dp),
             showDate = clock.showDate,
             alignEnd = right || clock.pos == com.meylon.salongallery.net.ClockPos.CENTER,
         )
@@ -785,14 +801,65 @@ internal fun BoxScope.RssTicker(items: List<com.meylon.salongallery.net.RssItem>
 }
 
 @Composable
-private fun ClockText(modifier: Modifier, showDate: Boolean = true, alignEnd: Boolean = false) {
+private fun ClockView(
+    style: com.meylon.salongallery.net.ClockStyle,
+    modifier: Modifier,
+    showDate: Boolean = true,
+    alignEnd: Boolean = false,
+    tint: Color = Color.White,
+    size: String = "m",
+) {
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
     val time = remember(now / 60000) { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(now)) }
     val date = remember(now / 3600000) { java.text.SimpleDateFormat("EEE, d MMM", java.util.Locale.getDefault()).format(java.util.Date(now)) }
+    val shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 3f), 18f)
+    val dateShadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 2f), 12f)
+    val k = when (size.lowercase()) { "s" -> 0.62f; "l" -> 1.6f; else -> 1f }
     Column(modifier, horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
-        Text(time, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Display, fontSize = 58.sp, fontWeight = FontWeight(400), color = Color.White, shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 3f), 18f)))
-        if (showDate) Text(date, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Body, fontSize = 18.sp, fontWeight = FontWeight(500), color = Color.White.copy(0.92f), letterSpacing = 0.5.sp, shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 2f), 12f)))
+        when (style) {
+            com.meylon.salongallery.net.ClockStyle.ANALOG ->
+                AnalogClock(now, tint, Modifier.size(156.dp * k))
+            com.meylon.salongallery.net.ClockStyle.MINIMAL ->
+                Text(time, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.ContentFont, fontSize = 74.sp * k, fontWeight = FontWeight(200), color = tint, letterSpacing = 2.sp, shadow = shadow))
+            com.meylon.salongallery.net.ClockStyle.MONO ->
+                Text(time, style = TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 56.sp * k, fontWeight = FontWeight(600), color = tint, letterSpacing = 1.sp, shadow = shadow))
+            else ->
+                Text(time, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Display, fontSize = 58.sp * k, fontWeight = FontWeight(400), color = tint, shadow = shadow))
+        }
+        if (showDate) {
+            if (style == com.meylon.salongallery.net.ClockStyle.ANALOG) Spacer(Modifier.height(10.dp))
+            Text(date, style = TextStyle(fontFamily = com.meylon.salongallery.ui.theme.Body, fontSize = 18.sp * k.coerceAtMost(1.3f), fontWeight = FontWeight(500), color = tint.copy(0.92f), letterSpacing = 0.5.sp, shadow = dateShadow))
+        }
+    }
+}
+
+@Composable
+private fun AnalogClock(timeMs: Long, tint: Color, modifier: Modifier) {
+    val cal = remember(timeMs / 1000) { java.util.Calendar.getInstance().apply { timeInMillis = timeMs } }
+    val h = cal.get(java.util.Calendar.HOUR)
+    val m = cal.get(java.util.Calendar.MINUTE)
+    val s = cal.get(java.util.Calendar.SECOND)
+    androidx.compose.foundation.Canvas(modifier) {
+        val r = size.minDimension / 2f
+        val c = Offset(size.width / 2f, size.height / 2f)
+        drawCircle(Color.Black.copy(0.35f), r, c)
+        drawCircle(tint.copy(0.9f), r, c, style = androidx.compose.ui.graphics.drawscope.Stroke(width = r * 0.045f))
+        for (i in 0 until 12) {
+            val a = Math.toRadians(i * 30.0)
+            val outer = c + Offset((r * 0.86f * Math.sin(a)).toFloat(), (-r * 0.86f * Math.cos(a)).toFloat())
+            val inner = c + Offset((r * 0.73f * Math.sin(a)).toFloat(), (-r * 0.73f * Math.cos(a)).toFloat())
+            drawLine(tint.copy(0.8f), inner, outer, strokeWidth = r * 0.03f)
+        }
+        fun hand(angleDeg: Double, len: Float, w: Float, color: Color) {
+            val a = Math.toRadians(angleDeg)
+            val end = c + Offset((len * Math.sin(a)).toFloat(), (-len * Math.cos(a)).toFloat())
+            drawLine(color, c, end, strokeWidth = w, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        }
+        hand((h % 12 + m / 60.0) * 30.0, r * 0.5f, r * 0.065f, tint)
+        hand((m + s / 60.0) * 6.0, r * 0.72f, r * 0.045f, tint)
+        hand(s * 6.0, r * 0.8f, r * 0.02f, Color(0xFFE0A857))
+        drawCircle(tint, r * 0.05f, c)
     }
 }
 

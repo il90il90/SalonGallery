@@ -119,15 +119,6 @@ private fun AppRoot(prefs: RolePreferences) {
         }
     }
 
-    // Show the installed version as a toast when the app opens.
-    LaunchedEffect(Unit) {
-        Toast.makeText(
-            context,
-            context.getString(R.string.installed_version, UpdateManager.currentVersion),
-            Toast.LENGTH_SHORT,
-        ).show()
-    }
-
     // Silent, throttled auto-check when the app comes to the foreground.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
