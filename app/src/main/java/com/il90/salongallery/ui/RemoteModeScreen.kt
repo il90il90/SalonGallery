@@ -1760,9 +1760,7 @@ private fun RowOverflow(
 }
 
 /** Per-item display duration chooser. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun DurationDialog(screen: DiscoveredScreen, name: String, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()

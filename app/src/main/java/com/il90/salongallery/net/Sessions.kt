@@ -182,8 +182,16 @@ class ScreenSession(
             targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
             mode.value = DisplayMode.SLIDESHOW
             libraryVersion.value = System.currentTimeMillis()
+            showNewest(f.name)
             autoOrient(f)
         }
+    }
+
+    /** Jump the wall to a freshly added photo so each one the user sends appears right away (only if
+     *  it's in what's showing now — the active album, or everything). */
+    private fun showNewest(name: String) {
+        val idx = activeFiles().indexOfFirst { it.name == name }
+        if (idx >= 0) currentIndex.value = idx
     }
 
     // Bumped on every Clear so background downloads that were already in flight don't
@@ -209,6 +217,7 @@ class ScreenSession(
                     if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
                     mode.value = DisplayMode.SLIDESHOW
                     libraryVersion.value = System.currentTimeMillis()
+                    showNewest(f.name)
                     autoOrient(f)
                 }
             }
@@ -236,6 +245,7 @@ class ScreenSession(
             mode.value = DisplayMode.SLIDESHOW
             videoVersion.value = System.currentTimeMillis()
             libraryVersion.value = System.currentTimeMillis()
+            showNewest(f.name)
         }
     }
 
