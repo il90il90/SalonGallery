@@ -23,38 +23,70 @@ object FaceOrient {
     /** How much more face confidence a turn needs over the photo as-is before we rotate it. */
     private const val MARGIN = 0.1f
 
-    fun detect(file: File): Int = runCatching {
-        val base = decodeAsShown(file) ?: return 0
+    /**
+     * What we learnt about a photo: the extra [rot] to stand it upright, and — when faces were
+     * found — where they are ([focus], normalised 0..1 in the photo as Coil draws it, i.e. EXIF
+     * applied but BEFORE [rot]) plus that picture's [aspect] (width / height). The focus lets a
+     * cropped photo keep the faces in view instead of the middle (often just a belly).
+     */
+    data class Result(val rot: Int, val focus: PhotoFocus?)
+
+    fun detect(file: File): Int = analyze(file).rot
+
+    fun analyze(file: File): Result = runCatching {
+        val base = decodeAsShown(file) ?: return Result(0, null)
         try {
             var bestRot = 0
-            var bestScore = score(base)
+            var best = faces(base)
             for (rot in intArrayOf(90, 180, 270)) {
                 val turned = Bitmap.createBitmap(base, 0, 0, base.width, base.height, Matrix().apply { postRotate(rot.toFloat()) }, true)
-                val s = score(turned)
+                val f = faces(turned)
                 if (turned !== base) turned.recycle()
                 // Clearly better only: a tie (or a marginal win) keeps the photo as it is.
-                if (s > bestScore + MARGIN) { bestScore = s; bestRot = rot }
+                if (f.score > best.score + MARGIN) { best = f; bestRot = rot }
             }
-            if (bestScore <= 0f) 0 else bestRot
+            if (best.score <= 0f) return Result(0, null)
+            // Map the upright faces' centre back into the un-turned picture's coordinates.
+            val bw = base.width.toFloat(); val bh = base.height.toFloat()
+            val (x, y) = when (bestRot) {
+                90 -> best.cy to (bh - best.cx)
+                180 -> (bw - best.cx) to (bh - best.cy)
+                270 -> (bw - best.cy) to best.cx
+                else -> best.cx to best.cy
+            }
+            Result(bestRot, PhotoFocus((x / bw).coerceIn(0f, 1f), (y / bh).coerceIn(0f, 1f), bw / bh))
         } finally {
             base.recycle()
         }
-    }.getOrDefault(0)
+    }.getOrDefault(Result(0, null))
+
+    /** Confidence-weighted centre of the faces found in [src] (its own pixel coordinates). */
+    private class Faces(val score: Float, val cx: Float, val cy: Float)
 
     /** Sum of face confidences above the floor — 0 when nothing upright is found. */
-    private fun score(src: Bitmap): Float {
+    private fun faces(src: Bitmap): Faces {
         // FaceDetector wants RGB_565 with an even width.
         val w = src.width and 1.inv()
         val h = src.height
-        if (w < 32 || h < 32) return 0f
+        if (w < 32 || h < 32) return Faces(0f, 0f, 0f)
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565)
         Canvas(bmp).drawBitmap(src, 0f, 0f, null)
-        val faces = arrayOfNulls<FaceDetector.Face>(MAX_FACES)
-        val n = runCatching { FaceDetector(w, h, MAX_FACES).findFaces(bmp, faces) }.getOrDefault(0)
+        val found = arrayOfNulls<FaceDetector.Face>(MAX_FACES)
+        val n = runCatching { FaceDetector(w, h, MAX_FACES).findFaces(bmp, found) }.getOrDefault(0)
         bmp.recycle()
-        var total = 0f
-        for (i in 0 until n) faces[i]?.confidence()?.let { if (it >= MIN_CONFIDENCE) total += it }
-        return total
+        var total = 0f; var sx = 0f; var sy = 0f
+        val mid = android.graphics.PointF()
+        for (i in 0 until n) {
+            val face = found[i] ?: continue
+            val c = face.confidence()
+            if (c < MIN_CONFIDENCE) continue
+            face.getMidPoint(mid)
+            total += c
+            sx += mid.x * c
+            // The midpoint is between the eyes; the face's centre sits a little lower.
+            sy += (mid.y + face.eyesDistance() * 0.5f) * c
+        }
+        return if (total > 0f) Faces(total, sx / total, sy / total) else Faces(0f, 0f, 0f)
     }
 
     /**

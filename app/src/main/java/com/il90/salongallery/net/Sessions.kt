@@ -28,6 +28,7 @@ class ScreenSession(
     val albums = AlbumStore(File(app.filesDir, "albums.json"), library)
     val transforms = TransformStore(File(app.filesDir, "transforms.json"))
     val durations = DurationStore(File(app.filesDir, "durations.json"))
+    val focus = FocusStore(File(app.filesDir, "focus.json"))
     val sources = SourceStore(File(app.filesDir, "sources.json"))
     val music = MusicStore(File(app.filesDir, "music"))
     val prefs = DisplayPrefs(app)
@@ -43,6 +44,8 @@ class ScreenSession(
     fun transformFor(name: String): PhotoTransform = transforms.get(name)
 
     fun durationFor(name: String): Int = durations.get(name)
+
+    fun focusFor(name: String): PhotoFocus? = focus.get(name)
 
     val mode = MutableStateFlow(if (library.count() > 0) DisplayMode.SLIDESHOW else DisplayMode.WAITING)
     // Seeded with the boot time (not 0) so every process start presents a fresh version: a Remote
@@ -491,6 +494,7 @@ class ScreenSession(
             albums.onPhotoDeleted(name)
             transforms.remove(name)
             durations.remove(name)
+            focus.remove(name)
             sources.remove(name)
             runCatching { File(thumbDir, "$name.jpg").delete() }
             val names = albums.activePhotoNames()
@@ -537,7 +541,7 @@ class ScreenSession(
             runCatching {
                 library.delete(name)
                 albums.onPhotoDeleted(name)
-                transforms.remove(name); durations.remove(name); sources.remove(name)
+                transforms.remove(name); durations.remove(name); focus.remove(name); sources.remove(name)
                 File(thumbDir, "$name.jpg").delete()
             }
         }
@@ -588,16 +592,16 @@ class ScreenSession(
     }
 
     /**
-     * Face-aware default orientation: if the people in a photo only stand upright after a turn
+     * Face-aware default orientation (and crop focus): if the people in a photo only stand upright after a turn
      * (a quarter turn or upside down), store that turn as the photo's rotation. Runs on one
      * low-priority background thread so uploads stay snappy; the user's manual rotate always wins.
-     * Each photo is checked once (remembered in orient_checked.txt), so photos that were already in
+     * Each photo is checked once (remembered in orient_checked_v2.txt), so photos that were already in
      * the library before this existed get straightened too, by [sweepOrientation] at start.
      */
     private val orientExec = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "salon-orient").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
     }
-    private val orientFile = File(app.filesDir, "orient_checked.txt")
+    private val orientFile = File(app.filesDir, "orient_checked_v2.txt")
     private val orientChecked: MutableSet<String> = java.util.Collections.synchronizedSet(
         runCatching { orientFile.readLines().filter { it.isNotBlank() }.toMutableSet() }.getOrDefault(mutableSetOf())
     )
@@ -622,7 +626,10 @@ class ScreenSession(
 
     private fun orientOne(f: File) {
         if (f.name in orientChecked || !f.exists()) return
-        val r = FaceOrient.detect(f)
+        val res = FaceOrient.analyze(f)
+        res.focus?.let { focus.set(f.name, it) }
+        val r = res.rot
+        if (r != 0 || res.focus != null) libraryVersion.value = System.currentTimeMillis()
         if (r != 0) {
             val t = transforms.get(f.name)
             if (t.rotNorm == 0) {

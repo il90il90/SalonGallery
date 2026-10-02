@@ -124,6 +124,7 @@ import com.il90.salongallery.net.PhotoFilter
 import com.il90.salongallery.net.PhotoTransform
 import com.il90.salongallery.net.LayoutMode
 import com.il90.salongallery.net.MotionMode
+import com.il90.salongallery.net.PhotoFocus
 import com.il90.salongallery.net.MotionSpeed
 import com.il90.salongallery.net.ScreenOrientation
 import com.il90.salongallery.net.SlideEffect
@@ -388,6 +389,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         orientationMap = orientationMap,
                         transformOf = { session.transformFor(it.name) },
                         durationOf = { session.durationFor(it.name) },
+                        focusOf = { session.focusFor(it.name) },
                         onNext = { session.currentIndex.value = it },
                     )
                 }
@@ -484,6 +486,7 @@ private fun Slideshow(
     orientationMap: Map<String, Boolean>,
     transformOf: (File) -> PhotoTransform,
     durationOf: (File) -> Int,
+    focusOf: (File) -> PhotoFocus? = { null },
     onNext: (Int) -> Unit,
 ) {
     if (files.isEmpty()) return
@@ -592,12 +595,12 @@ private fun Slideshow(
             val mf = members.map { files[it] }
             val rotOf: (File) -> Int = { transformOf(it).rotNorm }
             MotionBox(motion, motionSpeed, seed = i) {
-                if (spreadAt(i) == LayoutMode.MOSAIC) MosaicSlide(mf, filter = eff, seed = i, landscape = screenLandscape, rotOf = rotOf)
-                else ScatterSlide(mf, filter = eff, seed = i, rotOf = rotOf)
+                if (spreadAt(i) == LayoutMode.MOSAIC) MosaicSlide(mf, filter = eff, seed = i, landscape = screenLandscape, rotOf = rotOf, focusOf = focusOf)
+                else ScatterSlide(mf, filter = eff, seed = i, rotOf = rotOf, focusOf = focusOf)
             }
         } else if (members.size >= 2) {
             MotionBox(motion, motionSpeed, seed = i) {
-                CollageSlide(members.map { files[it] }, filter = eff, horizontal = screenLandscape, rotOf = { transformOf(it).rotNorm })
+                CollageSlide(members.map { files[it] }, filter = eff, horizontal = screenLandscape, rotOf = { transformOf(it).rotNorm }, focusOf = focusOf)
             }
         } else {
             val kb = if (effAt(i) == SlideEffect.KENBURNS) {
@@ -607,7 +610,7 @@ private fun Slideshow(
             } else null
             // Ken Burns already moves the photo — don't stack the ambient motion on top of it.
             MotionBox(if (kb != null) MotionMode.OFF else motion, motionSpeed, seed = i) {
-                PhotoContent(file, fit, transformOf(file), eff) { kb?.value ?: 1f }
+                PhotoContent(file, fit, transformOf(file), eff, focus = focusOf(file)) { kb?.value ?: 1f }
             }
         }
     }
@@ -712,7 +715,7 @@ private fun MotionBox(mode: MotionMode, speed: MotionSpeed, seed: Int, content: 
  * template is chosen by [seed] so each slide gets a different but stable arrangement.
  */
 @Composable
-private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, landscape: Boolean, rotOf: (File) -> Int = { 0 }) {
+private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, landscape: Boolean, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }) {
     val cf = lookFilter(filter)
     val mat = Color(0xFFEBE4D7)
     val gap = 10.dp
@@ -721,7 +724,7 @@ private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, lands
     val f = files.take(n)
 
     // Building blocks: a row/column of cells sharing space equally.
-    @Composable fun cell(file: File, m: Modifier) = CollageCell(file, cf, m, rot = rotOf(file))
+    @Composable fun cell(file: File, m: Modifier) = CollageCell(file, cf, m, rot = rotOf(file), focus = focusOf(file))
     @Composable fun strip(items: List<File>, m: Modifier, horizontal: Boolean) {
         if (horizontal) Row(m, horizontalArrangement = Arrangement.spacedBy(gap)) { items.forEach { cell(it, Modifier.weight(1f).fillMaxHeight()) } }
         else Column(m, verticalArrangement = Arrangement.spacedBy(gap)) { items.forEach { cell(it, Modifier.weight(1f).fillMaxWidth()) } }
@@ -763,7 +766,7 @@ private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, lands
  * jittered grid so they read as a casual spread without burying one another. Seeded by [seed].
  */
 @Composable
-private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotOf: (File) -> Int = { 0 }) {
+private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }) {
     val cf = lookFilter(filter)
     val r = kotlin.random.Random(seed.toLong() * 65537 + 11)
     val n = files.size.coerceIn(3, 5)
@@ -815,6 +818,7 @@ private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotO
                 val rot = rotOf(file)
                 AsyncImage(
                     model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+                    alignment = focusAlignment(focusOf(file), 1f, 1f),
                     modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = rot.toFloat() },
                 )
             }
@@ -824,18 +828,18 @@ private fun ScatterSlide(files: List<File>, filter: PhotoFilter, seed: Int, rotO
 }
 
 @Composable
-private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boolean, rotOf: (File) -> Int = { 0 }) {
+private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boolean, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }) {
     val cf = lookFilter(filter)
     val mat = Color(0xFFEBE4D7)      // warm gallery mat
     val gap = 12.dp
     Box(Modifier.fillMaxSize().background(mat).padding(gap)) {
         if (horizontal) {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxHeight(), rot = rotOf(f)) }
+                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxHeight(), rot = rotOf(f), focus = focusOf(f)) }
             }
         } else {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
-                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxWidth(), rot = rotOf(f)) }
+                files.forEach { f -> CollageCell(f, cf, Modifier.weight(1f).fillMaxWidth(), rot = rotOf(f), focus = focusOf(f)) }
             }
         }
         if (filter == PhotoFilter.VIGNETTE) VignetteOverlay()
@@ -843,15 +847,19 @@ private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boo
 }
 
 @Composable
-private fun CollageCell(f: File, cf: androidx.compose.ui.graphics.ColorFilter?, modifier: Modifier, rot: Int = 0) {
+private fun CollageCell(f: File, cf: androidx.compose.ui.graphics.ColorFilter?, modifier: Modifier, rot: Int = 0, focus: PhotoFocus? = null) {
     BoxWithConstraints(modifier.clipToBounds(), contentAlignment = Alignment.Center) {
         // Honour the photo's display rotation like PhotoContent does: lay a quarter-turned image
         // out with width/height swapped (requiredSize — plain size() gets clamped) so it still fills.
         val swapped = rot == 90 || rot == 270
+        val bw = if (swapped) maxHeight else maxWidth
+        val bh = if (swapped) maxWidth else maxHeight
         AsyncImage(
             model = f, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+            // Aim the crop at the faces rather than the middle of the photo.
+            alignment = focusAlignment(focus, bw.value, bh.value),
             modifier = Modifier
-                .requiredSize(if (swapped) maxHeight else maxWidth, if (swapped) maxWidth else maxHeight)
+                .requiredSize(bw, bh)
                 .graphicsLayer { rotationZ = rot.toFloat() },
         )
         // Hairline bevel so each photo reads as recessed into the mat.
@@ -1044,9 +1052,30 @@ private fun BoxScope.VignetteOverlay() {
     )
 }
 
+/**
+ * Where to anchor a [ContentScale.Crop] of a photo into a [boxW]×[boxH] box (any unit, only the ratio
+ * matters, measured before any display rotation) so its [focus] — the faces — stays in view instead
+ * of the plain centre: horizontally the faces are centred, vertically they sit a little above the
+ * middle (natural headroom), each clamped so the crop never runs past the photo's edge. Absolute
+ * (not start/end) bias, so an RTL screen doesn't mirror it. No focus → centre.
+ */
+internal fun focusAlignment(focus: PhotoFocus?, boxW: Float, boxH: Float): Alignment {
+    if (focus == null || focus.aspect <= 0f || !(boxW > 0f) || !(boxH > 0f) || boxW.isInfinite() || boxH.isInfinite()) return Alignment.Center
+    val boxAr = boxW / boxH
+    // Fraction of the picture left visible along each axis once Crop fills the box.
+    val vx = if (focus.aspect > boxAr) boxAr / focus.aspect else 1f
+    val vy = if (focus.aspect < boxAr) focus.aspect / boxAr else 1f
+    fun bias(f: Float, v: Float, at: Float): Float {
+        if (v >= 0.999f) return 0f
+        val start = (f - v * at).coerceIn(0f, 1f - v)
+        return start / (1f - v) * 2f - 1f
+    }
+    return androidx.compose.ui.BiasAbsoluteAlignment(bias(focus.x, vx, 0.5f), bias(focus.y, vy, 0.42f))
+}
+
 /** Renders one photo, applying its studio [transform], a [filter] look and an optional Ken-Burns [kb] zoom. */
 @Composable
-fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: PhotoFilter = PhotoFilter.NONE, kb: () -> Float = { 1f }) {
+fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: PhotoFilter = PhotoFilter.NONE, focus: PhotoFocus? = null, kb: () -> Float = { 1f }) {
     val cf = lookFilter(filter)
     val rot = transform.rotNorm
     val swapped = rot == 90 || rot == 270
@@ -1067,9 +1096,13 @@ fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: P
             translationX = transform.offX * size.width
             translationY = transform.offY * size.height
         }
+        // A hand-made crop (studio zoom/pan) is the user's framing; otherwise aim the crop at the faces.
+        val handCropped = transform.scale > 1.001f || kotlin.math.abs(transform.offX) > 0.001f || kotlin.math.abs(transform.offY) > 0.001f
+        val cropAlign = if (handCropped) Alignment.Center else focusAlignment(focus, w.value, h.value)
         when (fit) {
             PhotoFit.FILL -> AsyncImage(
-                model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf, modifier = imgMod(),
+                model = file, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = cf,
+                alignment = cropAlign, modifier = imgMod(),
             )
             PhotoFit.FIT -> AsyncImage(
                 model = file, contentDescription = null, contentScale = ContentScale.Fit, colorFilter = cf, modifier = imgMod(),
