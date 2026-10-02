@@ -27,10 +27,13 @@ enum class PrintStyle {
 }
 
 /** The surface a spread sits on. */
-enum class SpreadSurface { MAT, TABLE, CORK, FILM, VELVET, WALL, LINEN, PAPER, BLACK }
+enum class SpreadSurface { MAT, TABLE, CORK, FILM, VELVET, WALL, LINEN, PAPER, BLACK, WHITE }
 
-/** The multi-photo layouts built from a [SpreadPlan] (Mosaic and Scatter have their own renderers). */
-enum class SpreadStyle(val surface: SpreadSurface) {
+/**
+ * The multi-photo layouts built from a [SpreadPlan] (Mosaic and Scatter have their own renderers),
+ * each taking between [minN] and [maxN] photos.
+ */
+enum class SpreadStyle(val surface: SpreadSurface, val minN: Int = 3, val maxN: Int = 5) {
     GRID(SpreadSurface.MAT),
     POLAROID(SpreadSurface.CORK),
     FILMSTRIP(SpreadSurface.FILM),
@@ -41,6 +44,14 @@ enum class SpreadStyle(val surface: SpreadSurface) {
     BUBBLES(SpreadSurface.MAT),
     MAGAZINE(SpreadSurface.PAPER),
     COLUMNS(SpreadSurface.BLACK),
+    /** A scrapbook: many overlapping, tilted prints covering a white page, one hero on top. */
+    COLLAGE(SpreadSurface.WHITE, 6, 9),
+    /** Layout frames: an asymmetric grid of mixed-size cells with white gutters. */
+    FRAMES(SpreadSurface.WHITE, 5, 9),
+    /** A busy patchwork of 10–12 mixed cells with thin white seams. */
+    PATCHWORK(SpreadSurface.WHITE, 8, 12),
+    /** Large bordered prints overlapping in two staggered rows on a light page. */
+    OVERLAP(SpreadSurface.PAPER, 4, 7),
 }
 
 /**
@@ -79,9 +90,9 @@ private fun rotExt(w: Float, h: Float, rotDeg: Float): Pair<Float, Float> {
     return (w * c + h * s) / 2f to (w * s + h * c) / 2f
 }
 
-/** Builds [style] for [n] photos (clamped to 3..5) on a [w]×[h] slide; [seed] varies it stably. */
+/** Builds [style] for [n] photos (clamped to its range) on a [w]×[h] slide; [seed] varies it stably. */
 fun placeSpread(style: SpreadStyle, n: Int, w: Float, h: Float, seed: Int): SpreadPlan {
-    val count = n.coerceIn(3, 5)
+    val count = n.coerceIn(style.minN, style.maxN)
     if (!(w > 0f) || !(h > 0f) || w.isInfinite() || h.isInfinite()) return SpreadPlan(emptyList())
     val r = kotlin.random.Random(seed.toLong() * 2654435761L + style.ordinal * 97L + 1)
     val raw = when (style) {
@@ -95,6 +106,10 @@ fun placeSpread(style: SpreadStyle, n: Int, w: Float, h: Float, seed: Int): Spre
         SpreadStyle.BUBBLES -> SpreadPlan(bubbles(count, w, h, r))
         SpreadStyle.MAGAZINE -> SpreadPlan(magazine(count, w, h, r))
         SpreadStyle.COLUMNS -> SpreadPlan(columns(count, w, h))
+        SpreadStyle.COLLAGE -> SpreadPlan(collage(count, w, h, r))
+        SpreadStyle.FRAMES -> SpreadPlan(guillotine(count, w, h, r, gapFrac = 0.02f))
+        SpreadStyle.PATCHWORK -> SpreadPlan(guillotine(count, w, h, r, gapFrac = 0.011f))
+        SpreadStyle.OVERLAP -> SpreadPlan(overlap(count, w, h, r))
     }
     // Safety pass: shrink anything too big for the slide, then pull it fully inside.
     val margin = min(w, h) * 0.012f
@@ -347,4 +362,79 @@ private fun columns(n: Int, w: Float, h: Float): List<Placement> {
         val ch = (h - g * (n + 1)) / n
         List(n) { k -> Placement(g, g + k * (ch + g), w - 2 * g, ch, 0f, PrintStyle.CELL) }
     }
+}
+
+/**
+ * Mixed-size cells by repeated "guillotine" cuts: start from the whole slide, keep cutting the
+ * biggest cell across its longer side at 40–60%, leaving a gutter, until there are n. Every cell
+ * stays close to a photo shape, and the seed makes each slide's pattern different but stable.
+ */
+private fun guillotine(n: Int, w: Float, h: Float, r: kotlin.random.Random, gapFrac: Float): List<Placement> {
+    val g = min(w, h) * gapFrac
+    data class Cell(val x: Float, val y: Float, val w: Float, val h: Float)
+    val cells = mutableListOf(Cell(g, g, w - 2 * g, h - 2 * g))
+    while (cells.size < n) {
+        val c = cells.maxByOrNull { it.w * it.h } ?: break
+        cells.remove(c)
+        val ratio = 0.4f + r.nextFloat() * 0.2f
+        val ar = c.w / c.h
+        val vertical = when { ar > 1.15f -> true; ar < 0.87f -> false; else -> r.nextBoolean() }
+        if (vertical) {
+            val a = (c.w - g) * ratio
+            cells += Cell(c.x, c.y, a, c.h); cells += Cell(c.x + a + g, c.y, c.w - g - a, c.h)
+        } else {
+            val a = (c.h - g) * ratio
+            cells += Cell(c.x, c.y, c.w, a); cells += Cell(c.x, c.y + a + g, c.w, c.h - g - a)
+        }
+    }
+    // Reading order (top-to-bottom, then left-to-right) so the photos run in library order.
+    return cells.sortedWith(compareBy({ (it.y / (h * 0.08f)).toInt() }, { it.x }))
+        .map { Placement(it.x, it.y, it.w, it.h, 0f, PrintStyle.CELL) }
+}
+
+/** A scrapbook page: tilted prints overlapping across the whole page, a larger hero on top. */
+private fun collage(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<Placement> {
+    val landscape = w >= h
+    val cols = if (landscape) kotlin.math.ceil(kotlin.math.sqrt(n * 1.8)).toInt() else kotlin.math.ceil(kotlin.math.sqrt(n / 1.8)).toInt().coerceAtLeast(2)
+    val rows = (n + cols - 1) / cols
+    val cw = w / cols; val ch = h / rows
+    val hero = (n - 1) / 2
+    val out = mutableListOf<Placement>()
+    for (k in 0 until n) {
+        val col = k % cols; val row = k / cols
+        val inRow = if (row == rows - 1) n - row * cols else cols
+        val rowOff = (cols - inRow) * cw / 2f
+        val cx = rowOff + col * cw + cw / 2f + (r.nextFloat() - 0.5f) * cw * 0.2f
+        val cy = row * ch + ch / 2f + (r.nextFloat() - 0.5f) * ch * 0.2f
+        // Prints a little bigger than their cell so they overlap like a real collage.
+        val portrait = r.nextFloat() < 0.4f
+        var pw = cw * 1.12f; var ph = pw * (if (portrait) 1.3f else 0.76f)
+        if (ph > ch * 1.2f) { val k2 = ch * 1.2f / ph; pw *= k2; ph *= k2 }
+        val big = if (k == hero) 1.3f else 1f
+        out += Placement(cx - pw * big / 2f, cy - ph * big / 2f, pw * big, ph * big, (r.nextFloat() - 0.5f) * 18f, PrintStyle.PRINT)
+    }
+    // Draw order: shuffled, with the hero last (on top) — but keep each photo's own slot index.
+    val order = (0 until n).filter { it != hero }.shuffled(r) + hero
+    return order.map { out[it] }
+}
+
+/** Big bordered prints in two staggered, overlapping rows (columns on a portrait screen). */
+private fun overlap(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<Placement> {
+    val landscape = w >= h
+    val first = (n + 1) / 2; val second = n - first
+    val out = mutableListOf<Placement>()
+    if (landscape) {
+        val pw = w / first * 1.12f
+        val ph = min(pw * 0.72f, h * 0.56f)
+        for (k in 0 until first) out += Placement(k * (w / first) + (w / first - pw) / 2f, h * 0.27f - ph / 2f, pw, ph, (r.nextFloat() - 0.5f) * 6f, PrintStyle.PRINT)
+        val step = w / maxOf(second, 1)
+        for (k in 0 until second) out += Placement(k * step + (step - pw) / 2f, h * 0.73f - ph / 2f, pw, ph, (r.nextFloat() - 0.5f) * 6f, PrintStyle.PRINT)
+    } else {
+        val ph = h / first * 1.12f
+        val pw = min(ph * 0.72f, w * 0.56f)
+        for (k in 0 until first) out += Placement(w * 0.27f - pw / 2f, k * (h / first) + (h / first - ph) / 2f, pw, ph, (r.nextFloat() - 0.5f) * 6f, PrintStyle.PRINT)
+        val step = h / maxOf(second, 1)
+        for (k in 0 until second) out += Placement(w * 0.73f - pw / 2f, k * step + (step - ph) / 2f, pw, ph, (r.nextFloat() - 0.5f) * 6f, PrintStyle.PRINT)
+    }
+    return out
 }

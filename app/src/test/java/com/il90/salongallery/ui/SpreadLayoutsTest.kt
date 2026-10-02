@@ -14,7 +14,7 @@ class SpreadLayoutsTest {
     )
 
     @Test fun everyLayoutStaysOnScreen() {
-        for (style in SpreadStyle.entries) for ((w, h) in screens) for (n in 3..5) for (seed in 0 until 60) {
+        for (style in SpreadStyle.entries) for ((w, h) in screens) for (n in style.minN..style.maxN) for (seed in 0 until 60) {
             val plan = placeSpread(style, n, w, h, seed)
             val what = "$style n=$n ${w}x$h seed=$seed"
             assertEquals("count $what", n, plan.items.size)
@@ -31,8 +31,8 @@ class SpreadLayoutsTest {
 
     /** Layouts that are meant to tile must not cover one another (only Stack/Fan/Magazine overlap). */
     @Test fun tiledLayoutsDoNotOverlap() {
-        val tiled = listOf(SpreadStyle.GRID, SpreadStyle.FILMSTRIP, SpreadStyle.GALLERY, SpreadStyle.COLUMNS, SpreadStyle.BUBBLES)
-        for (style in tiled) for ((w, h) in screens) for (n in 3..5) for (seed in 0 until 10) {
+        val tiled = listOf(SpreadStyle.GRID, SpreadStyle.FILMSTRIP, SpreadStyle.GALLERY, SpreadStyle.COLUMNS, SpreadStyle.BUBBLES, SpreadStyle.FRAMES, SpreadStyle.PATCHWORK)
+        for (style in tiled) for ((w, h) in screens) for (n in style.minN..style.maxN) for (seed in 0 until 10) {
             val items = placeSpread(style, n, w, h, seed).items
             for (a in items.indices) for (b in a + 1 until items.size) {
                 val p = items[a]; val q = items[b]
@@ -44,6 +44,16 @@ class SpreadLayoutsTest {
                     kotlin.math.sqrt(dx * dx + dy * dy) >= (p.w + q.w) / 2f - 1f
                 }
                 assertTrue("$style n=$n ${w}x$h seed=$seed #$a/#$b overlap", !touching || circlesOk)
+            }
+        }
+    }
+
+    /** Mixed-cell grids keep every cell a usable photo shape (no slivers that slice faces). */
+    @Test fun gridCellsAreNotSlivers() {
+        for (style in listOf(SpreadStyle.FRAMES, SpreadStyle.PATCHWORK)) for ((w, h) in screens) for (n in style.minN..style.maxN) for (seed in 0 until 40) {
+            placeSpread(style, n, w, h, seed).items.forEach { p ->
+                val ar = maxOf(p.w / p.h, p.h / p.w)
+                assertTrue("$style n=$n ${w}x$h seed=$seed aspect $ar", ar <= 3.2f)
             }
         }
     }

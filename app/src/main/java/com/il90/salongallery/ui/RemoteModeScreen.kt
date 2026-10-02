@@ -711,6 +711,7 @@ private fun ControlPanel(
     var layout by remember { mutableStateOf("single") }
     var motion by remember { mutableStateOf("off") }
     var stagger by remember { mutableStateOf(false) }
+    var spreadMix by remember { mutableStateOf("always") }
     var motionSpeed by remember { mutableStateOf("medium") }
     var showFrames by remember { mutableStateOf(false) }
     var showEffects by remember { mutableStateOf(false) }
@@ -789,6 +790,19 @@ private fun ControlPanel(
         // Load the album list BEFORE opening the sheet: it decides its initial layout (chips vs.
         // "name your first album") from that list, so showing it early made it think there were none.
         scope.launch {
+            destAlbums = PhotoSender.getAlbums(screen.host, screen.port)?.albums ?: emptyList()
+            pendingMedia = uris
+        }
+    }
+    // "Whole folder": pick a folder (e.g. DCIM/Camera) and send every photo and video in it, sub-folders
+    // included — no selection to make and no cap at all.
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        if (tree == null) return@rememberLauncherForActivityResult
+        busy = true; status = null
+        scope.launch {
+            val uris = withContext(Dispatchers.IO) { mediaInTree(context, tree) }
+            busy = false
+            if (uris.isEmpty()) { status = context.getString(R.string.folder_empty); return@launch }
             destAlbums = PhotoSender.getAlbums(screen.host, screen.port)?.albums ?: emptyList()
             pendingMedia = uris
         }
@@ -886,7 +900,8 @@ private fun ControlPanel(
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HomeAction(Modifier.weight(1f), Icons.Outlined.Link, stringResource(R.string.home_gphotos), NeonBlue, TintBlue, !busy) { showGooglePhotos = true }
-            Spacer(Modifier.weight(2f))
+            HomeAction(Modifier.weight(1f), Icons.Outlined.Folder, stringResource(R.string.home_folder), NeonTeal, TintSage, !busy) { folderPicker.launch(null) }
+            Spacer(Modifier.weight(1f))
         }
 
         Spacer(Modifier.height(20.dp))
@@ -948,6 +963,8 @@ private fun ControlPanel(
             onLayout = { layout = it; scope.launch { PhotoSender.setLayout(screen.host, screen.port, it) } },
             motion = motion, motionSpeed = motionSpeed,
             stagger = stagger,
+            spreadMix = spreadMix,
+            onSpreadMix = { spreadMix = it; scope.launch { PhotoSender.setSpreadMix(screen.host, screen.port, it) } },
             onStagger = { stagger = it; scope.launch { PhotoSender.setStagger(screen.host, screen.port, it) } },
             onMotion = { motion = it; scope.launch { PhotoSender.setMotion(screen.host, screen.port, it, motionSpeed) } },
             onMotionSpeed = { motionSpeed = it; scope.launch { PhotoSender.setMotion(screen.host, screen.port, motion, it) } },
@@ -2459,6 +2476,39 @@ private fun FramePreview(f: FrameStyle, selected: Boolean, width: Float, showChe
     }
 }
 
+/**
+ * Every photo and video under a folder the user granted with OpenDocumentTree (sub-folders
+ * included), oldest first by modification time so the wall keeps the camera roll's order.
+ */
+private fun mediaInTree(context: android.content.Context, tree: Uri): List<Uri> {
+    val cr = context.contentResolver
+    val found = mutableListOf<Pair<Long, Uri>>()
+    val dirs = ArrayDeque<String>().apply { add(android.provider.DocumentsContract.getTreeDocumentId(tree)) }
+    val cols = arrayOf(
+        android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+        android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE,
+        android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+    )
+    while (dirs.isNotEmpty()) {
+        val dir = dirs.removeLast()
+        val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, dir)
+        runCatching {
+            cr.query(children, cols, null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0) ?: continue
+                    val mime = c.getString(1) ?: ""
+                    when {
+                        mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR -> dirs.add(id)
+                        mime.startsWith("image/") || mime.startsWith("video/") ->
+                            found += (if (c.isNull(2)) 0L else c.getLong(2)) to android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                    }
+                }
+            }
+        }
+    }
+    return found.sortedBy { it.first }.map { it.second }
+}
+
 /** What the add-media pickers offer: every photo and video type. */
 private val MEDIA_TYPES = arrayOf("image/*", "video/*")
 
@@ -2467,7 +2517,8 @@ private val LAYOUTS = listOf(
     "single" to "Single", "mosaic" to "Mosaic", "scatter" to "Scatter", "grid" to "Grid",
     "polaroid" to "Polaroids", "filmstrip" to "Film strip", "stack" to "Stack", "fan" to "Fan",
     "gallery" to "Gallery wall", "clothesline" to "Clothesline", "bubbles" to "Bubbles",
-    "magazine" to "Magazine", "columns" to "Columns", "random" to "🎲 Random",
+    "magazine" to "Magazine", "columns" to "Columns", "collage" to "Collage", "frames" to "Frames",
+    "patchwork" to "Patchwork", "overlap" to "Overlap", "random" to "🎲 Random",
 )
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -2477,6 +2528,7 @@ private fun SlideshowSheet(
     layout: String = "single", onLayout: (String) -> Unit = {},
     motion: String = "off", motionSpeed: String = "medium",
     stagger: Boolean = false, onStagger: (Boolean) -> Unit = {},
+    spreadMix: String = "always", onSpreadMix: (String) -> Unit = {},
     onMotion: (String) -> Unit = {}, onMotionSpeed: (String) -> Unit = {},
     onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
     onFit: (String) -> Unit, onCollage: (Boolean) -> Unit, onDismiss: () -> Unit,
@@ -2500,6 +2552,11 @@ private fun SlideshowSheet(
             Spacer(Modifier.height(6.dp))
             Text(stringResource(R.string.slideshow_layout_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             if (layout != "single") {
+                Spacer(Modifier.height(12.dp))
+                Text(stringResource(R.string.slideshow_spread_mix), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(8.dp))
+                val mixes = listOf("always", "often", "sometimes", "rarely")
+                SegRow(listOf("Every slide", "Often", "Sometimes", "Rarely"), mixes.indexOf(spreadMix).coerceAtLeast(0)) { onSpreadMix(mixes[it]) }
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

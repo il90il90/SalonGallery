@@ -340,6 +340,9 @@ object PhotoSender {
     /** Slide composition: single | mosaic | scatter | random. */
     suspend fun setLayout(host: String, port: Int, mode: String) =
         get(host, port, "/layout?mode=$mode")
+    /** How often a spread replaces a single photo: always | often | sometimes | rarely. */
+    suspend fun setSpreadMix(host: String, port: Int, level: String) =
+        get(host, port, "/spreadmix?level=$level")
     /** Whether a spread's photos appear one after another instead of all at once. */
     suspend fun setStagger(host: String, port: Int, on: Boolean) =
         get(host, port, "/stagger?on=${if (on) 1 else 0}")

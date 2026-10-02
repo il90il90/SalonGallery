@@ -84,6 +84,8 @@ class ScreenSession(
     val layout = MutableStateFlow(LayoutMode.SINGLE)
     /** Spread photos appear one by one (a staggered entrance) instead of all at once. */
     val spreadStagger = MutableStateFlow(false)
+    /** How often a spread appears instead of a single photo. */
+    val spreadMix = MutableStateFlow(SpreadMix.ALWAYS)
     /** Subtle motion while a still waits on screen, and how fast it runs. */
     val motion = MutableStateFlow(MotionMode.OFF)
     val motionSpeed = MutableStateFlow(MotionSpeed.MEDIUM)
@@ -325,6 +327,8 @@ class ScreenSession(
     override fun onLayout(mode: String) { layout.value = LayoutMode.from(mode) }
 
     override fun onStagger(on: Boolean) { spreadStagger.value = on }
+
+    override fun onSpreadMix(level: String) { spreadMix.value = SpreadMix.from(level) }
 
     override fun onMotion(mode: String, speed: String) {
         if (mode.isNotBlank()) motion.value = MotionMode.from(mode)

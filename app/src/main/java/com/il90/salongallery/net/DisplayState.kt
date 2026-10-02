@@ -22,7 +22,8 @@ enum class SlideEffect {
  * mat, a SCATTER of tilted prints on a table, and the planned layouts (GRID … COLUMNS, see
  * ui/SpreadLayouts.kt) — or RANDOM, a seeded per-slide mix of single photos and every spread.
  */
-enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, POLAROID, FILMSTRIP, STACK, FAN, GALLERY, CLOTHESLINE, BUBBLES, MAGAZINE, COLUMNS, RANDOM;
+enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, POLAROID, FILMSTRIP, STACK, FAN, GALLERY, CLOTHESLINE, BUBBLES, MAGAZINE, COLUMNS,
+    COLLAGE, FRAMES, PATCHWORK, OVERLAP, RANDOM;
     val isSpread get() = this != SINGLE && this != RANDOM
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: SINGLE
@@ -45,6 +46,16 @@ enum class MotionMode { OFF, ZOOM, DRIFT, BREATHE, MIX;
 enum class MotionSpeed(val sweepMs: Int) { SLOW(24000), MEDIUM(12000), FAST(6000);
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: MEDIUM
+    }
+}
+
+/**
+ * How often a multi-photo spread appears when a spread layout (or Random) is chosen — the rest of
+ * the slides show one photo. [chance] is the per-slide probability (seeded, so stable per slide).
+ */
+enum class SpreadMix(val chance: Float) { ALWAYS(1f), OFTEN(0.66f), SOMETIMES(0.4f), RARELY(0.2f);
+    companion object {
+        fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: ALWAYS
     }
 }
 

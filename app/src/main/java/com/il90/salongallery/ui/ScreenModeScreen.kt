@@ -127,6 +127,7 @@ import com.il90.salongallery.net.PhotoFilter
 import com.il90.salongallery.net.PhotoTransform
 import com.il90.salongallery.net.LayoutMode
 import com.il90.salongallery.net.MotionMode
+import com.il90.salongallery.net.SpreadMix
 import com.il90.salongallery.net.PhotoFocus
 import com.il90.salongallery.net.MotionSpeed
 import com.il90.salongallery.net.ScreenOrientation
@@ -187,6 +188,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val layout by session.layout.collectAsStateWithLifecycle()
     val motion by session.motion.collectAsStateWithLifecycle()
     val spreadStagger by session.spreadStagger.collectAsStateWithLifecycle()
+    val spreadMix by session.spreadMix.collectAsStateWithLifecycle()
     val motionSpeed by session.motionSpeed.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
     val clock by session.clock.collectAsStateWithLifecycle()
@@ -390,6 +392,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         layout = layout,
                         motion = motion,
                         stagger = spreadStagger,
+                        spreadMix = spreadMix,
                         motionSpeed = motionSpeed,
                         orientationMap = orientationMap,
                         transformOf = { session.transformFor(it.name) },
@@ -488,6 +491,7 @@ private fun Slideshow(
     layout: LayoutMode = LayoutMode.SINGLE,
     motion: MotionMode = MotionMode.OFF,
     stagger: Boolean = false,
+    spreadMix: SpreadMix = SpreadMix.ALWAYS,
     motionSpeed: MotionSpeed = MotionSpeed.MEDIUM,
     orientationMap: Map<String, Boolean>,
     transformOf: (File) -> PhotoTransform,
@@ -503,26 +507,30 @@ private fun Slideshow(
     // Which items (by index) form the slide starting at [from]: a collage of same-orientation
     // photos that would otherwise leave big side gaps, or just the single item.
     // Which spread (if any) the slide starting at [from] is: fixed by the layout setting, or for
-    // RANDOM a seeded per-slide draw (so a given slide always renders the same way) — about a
-    // quarter single photos, the rest spread evenly over every spread layout. Needs at least 4 photos.
+    // RANDOM a seeded per-slide draw (so a given slide always renders the same way) over every
+    // spread layout. [spreadMix] decides how often a slide is a spread at all — the others show one
+    // photo. A layout that needs more photos than there are falls back to a Grid. Needs 4+ stills.
+    val stillCount = remember(files) { files.count { !isVideoName(it.name) } }
+    fun rangeOf(m: LayoutMode): IntRange = when (m) {
+        LayoutMode.MOSAIC, LayoutMode.SCATTER -> 4..5
+        else -> SpreadStyle.valueOf(m.name).let { maxOf(it.minN, 4)..it.maxN }
+    }
     fun spreadAt(from: Int): LayoutMode? {
-        if (files.size < 4) return null
-        return when (layout) {
-            LayoutMode.SINGLE -> null
-            LayoutMode.RANDOM -> {
-                val rr = kotlin.random.Random(from.toLong() * 7919 + 17)
-                if (rr.nextInt(4) == 0) null else LayoutMode.SPREADS[rr.nextInt(LayoutMode.SPREADS.size)]
-            }
-            else -> layout
-        }
+        if (stillCount < 4 || layout == LayoutMode.SINGLE) return null
+        val rr = kotlin.random.Random(from.toLong() * 7919 + 17)
+        if (rr.nextFloat() >= spreadMix.chance) return null
+        val m = if (layout == LayoutMode.RANDOM) LayoutMode.SPREADS[rr.nextInt(LayoutMode.SPREADS.size)] else layout
+        return if (stillCount < rangeOf(m).first) LayoutMode.GRID else m
     }
 
     fun membersAt(from: Int): List<Int> {
         val f0 = files[from]
         if (isVideoName(f0.name)) return listOf(from)
-        // A mosaic / scatter spread: this photo plus the next 3–4 stills (wrapping, skipping clips).
-        if (spreadAt(from) != null) {
-            val want = 4 + kotlin.random.Random(from.toLong() * 31 + 3).nextInt(2)   // 4 or 5
+        // A spread: this photo plus the next stills it needs (wrapping, skipping clips) — a count
+        // within the layout's range, seeded per slide, never more than the library holds.
+        spreadAt(from)?.let { m ->
+            val range = rangeOf(m)
+            val want = (range.first + kotlin.random.Random(from.toLong() * 31 + 3).nextInt(range.last - range.first + 1)).coerceAtMost(stillCount)
             val out = mutableListOf(from)
             var j = from
             while (out.size < want) {
@@ -891,6 +899,7 @@ private fun surfaceBrush(s: SpreadSurface): Brush = when (s) {
     SpreadSurface.LINEN -> Brush.verticalGradient(listOf(Color(0xFFF1ECE3), Color(0xFFDFD7C8)))
     SpreadSurface.PAPER -> SolidColor(Color(0xFFF7F5F0))
     SpreadSurface.BLACK -> SolidColor(Color(0xFF0A0A0A))
+    SpreadSurface.WHITE -> Brush.verticalGradient(listOf(Color(0xFFF7F7F5), Color(0xFFEDEDEA)))
 }
 
 /**

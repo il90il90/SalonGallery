@@ -29,6 +29,7 @@ interface ScreenCommands {
     fun onCollage(on: Boolean)
     fun onLayout(mode: String)             // single | mosaic | scatter | random
     fun onStagger(on: Boolean)             // spread photos appear one by one
+    fun onSpreadMix(level: String)         // always | often | sometimes | rarely
     fun onMotion(mode: String, speed: String) // off | zoom | drift | breathe | mix ; slow | medium | fast
     fun onText(content: String, pos: String, size: String, color: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String)
@@ -168,6 +169,9 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/layout" -> {
                 session.parameters["mode"]?.firstOrNull()?.let { commands.onLayout(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/spreadmix" -> {
+                session.parameters["level"]?.firstOrNull()?.let { commands.onSpreadMix(it) }; ok()
             }
             session.method == Method.GET && uri == "/stagger" -> {
                 commands.onStagger(session.parameters["on"]?.firstOrNull() == "1"); ok()
