@@ -17,15 +17,15 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "com.meylon.salongallery"
+    namespace = "com.il90.salongallery"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.meylon.salongallery"
+        applicationId = "com.il90.salongallery"
         minSdk = 26
         targetSdk = 35
-        versionCode = 47
-        versionName = "1.41.0"
+        versionCode = 48
+        versionName = "1.42.0"
 
         buildConfigField("String", "GITHUB_OWNER", "\"il90il90\"")
         buildConfigField("String", "GITHUB_REPO", "\"SalonGallery\"")

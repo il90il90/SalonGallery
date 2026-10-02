@@ -5,7 +5,7 @@ Copy-ready metadata for publishing Salon Gallery on Google Play.
 ## App details
 
 - **App name:** Salon Gallery
-- **Package:** `com.meylon.salongallery`
+- **Package:** `com.il90.salongallery`
 - **Category:** Personalization (alt: Art & Design)
 - **Content rating:** Everyone
 - **Contact email:** israel@m-eylon.com
