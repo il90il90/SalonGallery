@@ -64,6 +64,7 @@ import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.FilterFrames
@@ -147,6 +148,7 @@ import com.meylon.salongallery.net.AlbumInfo
 import com.meylon.salongallery.net.ArtGallery
 import com.meylon.salongallery.net.ArtPiece
 import com.meylon.salongallery.net.ArtSource
+import com.meylon.salongallery.net.GooglePhotos
 import com.meylon.salongallery.net.DiscoveredScreen
 import com.meylon.salongallery.net.FreeTrack
 import com.meylon.salongallery.net.LibraryList
@@ -641,6 +643,7 @@ private fun ControlPanel(
     var showText by remember { mutableStateOf(false) }
     var showMusic by remember { mutableStateOf(false) }
     var showArt by remember { mutableStateOf(false) }
+    var showGooglePhotos by remember { mutableStateOf(false) }
     var showRss by remember { mutableStateOf(false) }
     var lib by remember { mutableStateOf<LibraryList?>(null) }
 
@@ -781,6 +784,11 @@ private fun ControlPanel(
             HomeAction(Modifier.weight(1f), Icons.Outlined.Palette, stringResource(R.string.home_art), NeonTeal, TintSage, !busy) { showArt = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.MusicNote, stringResource(R.string.home_music), NeonViolet, TintPlum, !busy) { showMusic = true }
         }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            HomeAction(Modifier.weight(1f), Icons.Outlined.Link, stringResource(R.string.home_gphotos), NeonBlue, TintBlue, !busy) { showGooglePhotos = true }
+            Spacer(Modifier.weight(2f))
+        }
 
         Spacer(Modifier.height(20.dp))
         SectionLabel(stringResource(R.string.home_style))
@@ -871,6 +879,9 @@ private fun ControlPanel(
             onAddFromPhone = { musicPicker.launch("audio/*") },
             onDismiss = { showMusic = false },
         )
+    }
+    if (showGooglePhotos) {
+        GooglePhotosSheet(screen = screen, onDismiss = { showGooglePhotos = false; onInfoRefresh(scope); refreshLib() })
     }
     if (showArt) {
         ArtSheet(screen = screen, onDismiss = { showArt = false; onInfoRefresh(scope); refreshLib() })
@@ -2328,6 +2339,81 @@ private fun FreeMusicSheet(onDownload: (FreeTrack) -> Unit, onDismiss: () -> Uni
                 }
             }
             Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GooglePhotosSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var link by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var ok by remember { mutableStateOf(false) }
+    val tf = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+        focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+    )
+    // Resolve status strings here (composable scope) so the coroutine can use them.
+    val errFetch = stringResource(R.string.gphotos_err_fetch)
+    val errEmpty = stringResource(R.string.gphotos_err_empty)
+    val doneFmt = stringResource(R.string.gphotos_done)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.meylon.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(24.dp)) {
+            Text(stringResource(R.string.gphotos_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.gphotos_hint), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+
+            // Step-by-step so the user knows exactly what to do.
+            Spacer(Modifier.height(16.dp))
+            listOf(
+                R.string.gphotos_step1, R.string.gphotos_step2, R.string.gphotos_step3, R.string.gphotos_step4,
+            ).forEachIndexed { i, s ->
+                Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(24.dp).clip(CircleShape).background(NeonCyan.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                        Text("${i + 1}", style = MaterialTheme.typography.labelMedium, color = NeonCyan)
+                    }
+                    Text(stringResource(s), style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = link, onValueChange = { link = it; status = null }, singleLine = true,
+                modifier = Modifier.fillMaxWidth(), colors = tf,
+                placeholder = { Text("https://photos.app.goo.gl/…", color = TextTertiary) },
+                label = { Text(stringResource(R.string.gphotos_link_label), color = TextSecondary) },
+            )
+            status?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = if (ok) GoodGreen else Color(0xFFF2B07A))
+            }
+            Spacer(Modifier.height(16.dp))
+            GradientButton(
+                text = if (busy) stringResource(R.string.gphotos_importing) else stringResource(R.string.gphotos_import),
+                enabled = !busy && GooglePhotos.looksLikeShareLink(link),
+                onClick = {
+                    busy = true; status = null; ok = false
+                    scope.launch {
+                        val urls = GooglePhotos.fetchSharedAlbum(link.trim())
+                        when {
+                            urls == null -> { status = errFetch; ok = false }
+                            urls.isEmpty() -> { status = errEmpty; ok = false }
+                            else -> {
+                                var done = 0
+                                urls.forEach { u ->
+                                    if (PhotoSender.downloadPhoto(screen.host, screen.port, u)) done++
+                                }
+                                ok = done > 0
+                                status = String.format(java.util.Locale.getDefault(), doneFmt, done)
+                            }
+                        }
+                        busy = false
+                    }
+                },
+            )
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
