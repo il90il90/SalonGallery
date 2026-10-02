@@ -84,6 +84,8 @@ class ScreenSession(
     val layout = MutableStateFlow(LayoutMode.SINGLE)
     /** Spread photos appear one by one (a staggered entrance) instead of all at once. */
     val spreadStagger = MutableStateFlow(false)
+    /** The slide on the wall right now, so the Remote can show exactly what the wall shows. */
+    val nowSlide = MutableStateFlow<NowSlide?>(null)
     /** How often a spread appears instead of a single photo. */
     val spreadMix = MutableStateFlow(SpreadMix.ALWAYS)
     /** Subtle motion while a still waits on screen, and how fast it runs. */
@@ -115,7 +117,7 @@ class ScreenSession(
         // Prefer a fixed, well-known port so the Remote can connect by IP alone; fall back to a
         // random free port if it's taken (NSD auto-discovery still works either way).
         for (p in listOf(PhotoServer.FIXED_PORT, 0)) {
-            val s = PhotoServer({ pingBody() }, this, p)
+            val s = PhotoServer({ pingBody() }, this, p, { nowBody() })
             val ok = runCatching { s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false) }.isSuccess
             if (ok) {
                 server = s
@@ -146,6 +148,15 @@ class ScreenSession(
     }
 
     private fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
+
+    /** JSON describing the current slide: its layout, seed and the photos it is made of. */
+    private fun nowBody(): String {
+        val n = nowSlide.value
+        val members = n?.members.orEmpty().joinToString(",") { "\"${esc(it)}\"" }
+        val style = n?.style ?: "single"
+        val seed = n?.seed ?: 0
+        return """{"style":"$style","seed":$seed,"w":$screenW,"h":$screenH,"members":[$members]}"""
+    }
 
     private fun pingBody(): String {
         val stat = runCatching { StatFs(app.filesDir.path) }.getOrNull()

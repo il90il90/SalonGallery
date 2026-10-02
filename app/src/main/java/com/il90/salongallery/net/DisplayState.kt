@@ -59,6 +59,10 @@ enum class SpreadMix(val chance: Float) { ALWAYS(1f), OFTEN(0.66f), SOMETIMES(0.
     }
 }
 
+/** The slide currently on the wall: its [style] (a LayoutMode name lower-cased, or "single"), the
+ * per-slide [seed] the layout was drawn with, and the photo file [members] in order. */
+data class NowSlide(val style: String, val members: List<String>, val seed: Int)
+
 /** How a photo is scaled to the screen. */
 enum class PhotoFit { FILL, FIT, BLUR;
     companion object {

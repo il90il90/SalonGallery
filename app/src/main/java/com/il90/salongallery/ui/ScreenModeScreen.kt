@@ -127,6 +127,7 @@ import com.il90.salongallery.net.PhotoFilter
 import com.il90.salongallery.net.PhotoTransform
 import com.il90.salongallery.net.LayoutMode
 import com.il90.salongallery.net.MotionMode
+import com.il90.salongallery.net.NowSlide
 import com.il90.salongallery.net.SpreadMix
 import com.il90.salongallery.net.PhotoFocus
 import com.il90.salongallery.net.MotionSpeed
@@ -399,6 +400,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         durationOf = { session.durationFor(it.name) },
                         focusOf = { session.focusFor(it.name) },
                         onNext = { session.currentIndex.value = it },
+                        reportSlide = { style, names, seed -> session.nowSlide.value = NowSlide(style, names, seed) },
                     )
                 }
 
@@ -498,6 +500,7 @@ private fun Slideshow(
     durationOf: (File) -> Int,
     focusOf: (File) -> PhotoFocus? = { null },
     onNext: (Int) -> Unit,
+    reportSlide: (String, List<String>, Int) -> Unit = { _, _, _ -> },
 ) {
     if (files.isEmpty()) return
     val idx = currentIndex.coerceIn(0, files.size - 1)
@@ -572,6 +575,15 @@ private fun Slideshow(
         delay(if (sec > 0) sec * 1000L else intervalMs)
         advanceFrom(idx)
     }
+    // Tell the session exactly what this slide is (layout + the photos in it), so the Remote app can
+    // mirror the wall instead of only showing the single "current" photo.
+    LaunchedEffect(idx, layout, spreadMix, collageOn, files.size) {
+        val m = membersAt(idx)
+        val sp = spreadAt(idx)
+        val style = sp?.name?.lowercase() ?: if (m.size > 1) "collage" else "single"
+        reportSlide(style, m.map { files[it].name }, idx)
+    }
+
     // Warm the WHOLE next slide into Coil's cache ahead of time, decoded at screen size, so a spread
     // (or a big photo) never shows its empty mat/frame first and then pops the pictures in a second
     // later. We warm every member of the slide that follows the current one — and, for good measure,

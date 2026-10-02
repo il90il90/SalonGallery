@@ -36,6 +36,9 @@ data class LibraryList(
     val rots: Map<String, Int> = emptyMap(),     // display rotation (0/90/180/270) per item
 )
 
+/** The slide currently on the wall, for mirroring it in the Remote. */
+data class NowInfo(val style: String, val seed: Int, val members: List<String>)
+
 data class AlbumInfo(val id: String, val name: String, val count: Int)
 data class AlbumList(val activeId: String, val activeName: String, val albums: List<AlbumInfo>)
 data class RemoteTransform(val scale: Float, val x: Float, val y: Float, val rot: Int = 0)
@@ -61,6 +64,19 @@ data class FreeTrack(val title: String, val artist: String, val url: String)
 object PhotoSender {
 
     private const val TIMEOUT = 8_000
+
+    suspend fun getNow(host: String, port: Int): NowInfo? = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/now", "GET", 4000)
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val o = JSONObject(body)
+            val arr = o.optJSONArray("members")
+            val members = buildList { if (arr != null) for (i in 0 until arr.length()) add(arr.getString(i)) }
+            NowInfo(o.optString("style", "single"), o.optInt("seed", 0), members)
+        } catch (e: Exception) { null }
+    }
 
     fun thumbUrl(host: String, port: Int, name: String) = "http://$host:$port/thumb?id=$name"
     fun fullUrl(host: String, port: Int, name: String) = "http://$host:$port/full?id=$name"

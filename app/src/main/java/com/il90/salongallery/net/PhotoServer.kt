@@ -80,6 +80,7 @@ class PhotoServer(
     private val pingBody: () -> String,
     private val commands: ScreenCommands,
     port: Int = FIXED_PORT,
+    private val nowBody: () -> String = { "{}" },
 ) : NanoHTTPD(port) {
 
     companion object {
@@ -91,6 +92,8 @@ class PhotoServer(
         val uri = session.uri
         when {
             session.method == Method.GET && uri == "/ping" -> json(pingBody())
+            // The exact composition of the slide on the wall right now, so the Remote can mirror it.
+            session.method == Method.GET && uri == "/now" -> json(nowBody())
 
             session.method == Method.POST && uri == "/photo" -> {
                 // Optional ?album=<id> files the upload into that album instead of the active one.

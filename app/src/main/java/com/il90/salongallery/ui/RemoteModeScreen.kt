@@ -134,11 +134,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -733,6 +736,11 @@ private fun ControlPanel(
     var screenBrightness by remember { mutableStateOf(1f) }
     var screenVolume by remember { mutableStateOf(1f) }
     var music by remember { mutableStateOf<MusicState?>(null) }
+    // The exact slide on the wall (layout + member photos), polled so the hero mirrors a spread.
+    var now by remember { mutableStateOf<com.il90.salongallery.net.NowInfo?>(null) }
+    LaunchedEffect(screen.host, screen.port) {
+        while (true) { now = PhotoSender.getNow(screen.host, screen.port) ?: now; kotlinx.coroutines.delay(2500) }
+    }
     fun refreshMusic() { scope.launch { PhotoSender.getMusic(screen.host, screen.port)?.let { music = it } } }
     // Keep the mini-player in sync with the screen.
     LaunchedEffect(screen.host, screen.port) {
@@ -837,6 +845,8 @@ private fun ControlPanel(
         NowShowingHero(
             screen = screen,
             current = nowName,
+            now = now,
+            rots = lib?.rots ?: emptyMap(),
             rot = nowName?.let { lib?.rots?.get(it) } ?: 0,
             onRotate = { nowName?.let { n -> scope.launch { PhotoSender.rotatePhoto(screen.host, screen.port, n); refreshLib() } } },
             screenName = screen.name,
@@ -1079,9 +1089,12 @@ private fun ConnectionBanner(lostScreen: Boolean, onChoose: () -> Unit) {
 @Composable
 private fun NowShowingHero(
     screen: DiscoveredScreen, current: String?, screenName: String,
+    now: com.il90.salongallery.net.NowInfo? = null, rots: Map<String, Int> = emptyMap(),
     rot: Int = 0, onRotate: () -> Unit = {}, onSwipe: (Int) -> Unit = {},
     connected: Boolean = true, lost: Boolean = false,
 ) {
+    // A spread is on the wall when the current slide has more than one photo.
+    val mirror = now?.takeIf { it.members.size > 1 && it.style != "single" }
     Column(Modifier.fillMaxWidth()) {
         Box(
             Modifier.fillMaxWidth()
@@ -1105,7 +1118,9 @@ private fun NowShowingHero(
                         )
                     },
             ) {
-                if (current != null) {
+                if (mirror != null) {
+                    MirrorSpread(screen, mirror, rots)
+                } else if (current != null) {
                     // Preview turns the same way the wall does; swap the laid-out size for a quarter
                     // turn so the rotated image still fills the card.
                     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1132,8 +1147,8 @@ private fun NowShowingHero(
                         color = if (current != null) Color.White.copy(alpha = 0.94f) else TextSecondary,
                     )
                 }
-                // Quarter-turn the photo that's on the wall right now.
-                if (current != null) {
+                // Quarter-turn the photo that's on the wall right now (single photo only).
+                if (current != null && mirror == null) {
                     Box(
                         Modifier.align(Alignment.TopEnd).padding(10.dp).size(38.dp).clip(CircleShape)
                             .background(Color.Black.copy(alpha = 0.45f))
@@ -1160,6 +1175,56 @@ private fun NowShowingHero(
             Text(statusText, style = MaterialTheme.typography.labelMedium, color = statusColor, fontWeight = FontWeight.SemiBold)
         }
     }
+}
+
+/**
+ * Mirrors the wall's current spread inside the "Now showing" card: the same photos in the same
+ * arrangement. The planned layouts (Grid, Frames, Gallery wall, …) use the exact same [placeSpread]
+ * geometry the wall does, with the wall's own per-slide seed, so they match; Mosaic/Scatter/auto-fill
+ * are shown as a close equivalent. Each photo keeps its display rotation, like on the wall.
+ */
+@Composable
+private fun MirrorSpread(screen: DiscoveredScreen, now: com.il90.salongallery.net.NowInfo, rots: Map<String, Int>) {
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(Color(0xFF14100B))) {
+        val w = maxWidth.value; val h = maxHeight.value
+        val n = now.members.size
+        val items = remember(now.style, n, w, h, now.seed) { mirrorPlacements(now.style, n, w, h, now.seed) }
+        items.forEachIndexed { k, p ->
+            val name = now.members.getOrNull(k) ?: return@forEachIndexed
+            val circle = p.style == PrintStyle.CIRCLE
+            val bordered = p.style != PrintStyle.CELL
+            val pad = if (bordered) minOf(p.w, p.h) * 0.05f else 0f
+            Box(
+                Modifier.align(AbsoluteAlignment.TopLeft)
+                    .absoluteOffset(p.x.dp, p.y.dp)
+                    .size(p.w.dp, p.h.dp)
+                    .graphicsLayer { rotationZ = p.rot }
+                    .then(if (circle) Modifier.clip(CircleShape) else Modifier)
+                    .then(if (bordered) Modifier.background(Color(0xFFF5F2EC)) else Modifier)
+                    .padding(pad.dp),
+            ) {
+                val rotStored = rots[name] ?: 0
+                val swapped = rotStored == 90 || rotStored == 270
+                BoxWithConstraints(Modifier.fillMaxSize().then(if (circle) Modifier.clip(CircleShape) else Modifier).clipToBounds(), contentAlignment = Alignment.Center) {
+                    AsyncImage(
+                        model = PhotoSender.thumbUrl(screen.host, screen.port, name),
+                        contentDescription = null, contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .requiredSize(if (swapped) maxHeight else maxWidth, if (swapped) maxWidth else maxHeight)
+                            .graphicsLayer { rotationZ = rotStored.toFloat() },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Placements to mirror a wall spread: exact for the planned layouts, a close stand-in for the rest. */
+private fun mirrorPlacements(style: String, n: Int, w: Float, h: Float, seed: Int): List<Placement> = when (style) {
+    "scatter" -> placeSpread(SpreadStyle.POLAROID, n.coerceIn(3, 5), w, h, seed).items
+    "mosaic", "collage" -> placeSpread(SpreadStyle.GRID, n.coerceIn(3, 5), w, h, seed).items
+    else -> runCatching { placeSpread(SpreadStyle.valueOf(style.uppercase()), n, w, h, seed).items }
+        .getOrElse { placeSpread(SpreadStyle.GRID, n.coerceIn(3, 5), w, h, seed).items }
 }
 
 /** Horizontal strip of library thumbnails; tap to show one now, or open the manager. */
