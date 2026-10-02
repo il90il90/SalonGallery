@@ -73,6 +73,7 @@
     <string name="music_now_playing">NOW PLAYING</string>
     <string name="music_preview">Preview on phone</string>
     <string name="home_text">Text</string>
+    <string name="home_overlays">Overlays</string>
     <string name="tile_photos">Send Photos</string>
     <string name="tile_video">Send Video</string>
     <string name="tile_frame">Frame</string>
@@ -259,4 +260,14 @@
     <string name="add_dest_none_hint">No albums yet — name your first one</string>
     <string name="add_dest_err_create">Couldn\'t create the album — nothing was added. Try again.</string>
     <string name="remote_same_host_hint">Two screens share one address: that device is running two copies of Salon Gallery (usually an older install next to the new one). Pick the newer version here, and remove the old app from that device\'s settings.</string>
+    <string name="overlays_title">On-screen</string>
+    <string name="overlays_hint">Add a message, a clock, or the weather over your photos.</string>
+    <string name="overlays_text">Text</string>
+    <string name="overlays_clock">Clock &amp; date</string>
+    <string name="overlays_weather">Weather</string>
+    <string name="text_font">Font</string>
+    <string name="weather_free_hint">Free, no account needed — just search your city.</string>
+    <string name="weather_city">Search a city…</string>
+    <string name="weather_searching">Searching…</string>
+    <string name="weather_units">Units</string>
 </resources>

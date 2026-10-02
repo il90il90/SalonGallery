@@ -76,7 +76,9 @@ import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.FilterFrames
@@ -942,7 +944,7 @@ private fun ControlPanel(
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            HomeAction(Modifier.weight(1f), Icons.Outlined.TextFields, stringResource(R.string.home_text), NeonViolet, TintPlum, true) { showText = true }
+            HomeAction(Modifier.weight(1f), Icons.Outlined.Layers, stringResource(R.string.home_overlays), NeonViolet, TintPlum, true) { showText = true }
             HomeAction(Modifier.weight(1f), Icons.Outlined.RssFeed, stringResource(R.string.rss_title), NeonCyan, TintClay, true) { showRss = true }
         }
 
@@ -1026,16 +1028,20 @@ private fun ControlPanel(
     }
     if (showText) {
         TextSheet(
-            onText = { content, pos, size, color ->
-                scope.launch { PhotoSender.setText(screen.host, screen.port, content, pos, size, color) }
+            onText = { content, pos, size, color, font ->
+                scope.launch { PhotoSender.setText(screen.host, screen.port, content, pos, size, color, font) }
             },
             onClock = { on, pos, date, style, size ->
                 scope.launch { PhotoSender.setClock(screen.host, screen.port, on, pos, date, style, size) }
+            },
+            onWeather = { on, place, lat, lon, units, pos ->
+                scope.launch { PhotoSender.setWeather(screen.host, screen.port, on, place, lat, lon, units, pos) }
             },
             onClear = {
                 scope.launch {
                     PhotoSender.setText(screen.host, screen.port, "", "bottom", "m", "white")
                     PhotoSender.setClock(screen.host, screen.port, false)
+                    PhotoSender.setWeather(screen.host, screen.port, false)
                 }
             },
             onDismiss = { showText = false },
@@ -2876,48 +2882,73 @@ private fun SlideshowSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun TextSheet(
-    onText: (String, String, String, String) -> Unit,
+    onText: (String, String, String, String, String) -> Unit,
     onClock: (Boolean, String, Boolean, String, String) -> Unit,
+    onWeather: (Boolean, String, Double, Double, String, String) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var content by remember { mutableStateOf("") }
     var posIdx by remember { mutableIntStateOf(2) }
     var sizeIdx by remember { mutableIntStateOf(1) }
     var colorIdx by remember { mutableIntStateOf(0) }
+    var fontIdx by remember { mutableIntStateOf(0) }
     var clock by remember { mutableStateOf(false) }
     var clockPosIdx by remember { mutableIntStateOf(0) }
     var clockDate by remember { mutableStateOf(true) }
-    var clockStyleIdx by remember { mutableIntStateOf(0) }
+    var clockStyle by remember { mutableStateOf("digital") }
     var clockSizeIdx by remember { mutableIntStateOf(1) }
     val positions = listOf("top", "center", "bottom")
     val sizes = listOf("s", "m", "l")
     val colors = listOf("white", "black", "gold", "cyan", "violet")
+    val fonts = listOf("classic", "modern", "mono", "elegant", "rounded")
     val clockPositions = listOf("top_start", "top_end", "bottom_start", "bottom_end", "center")
-    val clockStyles = listOf("digital", "analog", "minimal", "mono")
+    val clockStyles = listOf(
+        "digital" to "Digital", "bold" to "Bold", "card" to "Card", "minimal" to "Minimal",
+        "mono" to "Mono", "led" to "LED", "analog" to "Analog",
+    )
     val clockSizes = listOf("s", "m", "l")
 
-    // Live apply — no Apply button. Text is debounced; the clock applies on every change.
-    // Each skips its first emission so opening the sheet doesn't clobber what's on screen.
+    // Weather
+    var weatherOn by remember { mutableStateOf(false) }
+    var weatherUnitsIdx by remember { mutableIntStateOf(0) }
+    var weatherPosIdx by remember { mutableIntStateOf(1) }
+    var weatherPlace by remember { mutableStateOf("") }
+    var weatherLat by remember { mutableStateOf(0.0) }
+    var weatherLon by remember { mutableStateOf(0.0) }
+    var citySearch by remember { mutableStateOf("") }
+    var cityResults by remember { mutableStateOf<List<PhotoSender.GeoPlace>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    val weatherUnits = listOf("c", "f")
+
+    fun pushWeather() = onWeather(weatherOn && weatherLat != 0.0, weatherPlace, weatherLat, weatherLon, weatherUnits[weatherUnitsIdx], clockPositions[weatherPosIdx])
+
     var textTouched by remember { mutableStateOf(false) }
-    LaunchedEffect(content, posIdx, sizeIdx, colorIdx) {
+    LaunchedEffect(content, posIdx, sizeIdx, colorIdx, fontIdx) {
         if (!textTouched) { textTouched = true; return@LaunchedEffect }
         kotlinx.coroutines.delay(250)
-        onText(content, positions[posIdx], sizes[sizeIdx], colors[colorIdx])
+        onText(content, positions[posIdx], sizes[sizeIdx], colors[colorIdx], fonts[fontIdx])
     }
     var clockTouched by remember { mutableStateOf(false) }
-    LaunchedEffect(clock, clockPosIdx, clockDate, clockStyleIdx, clockSizeIdx) {
+    LaunchedEffect(clock, clockPosIdx, clockDate, clockStyle, clockSizeIdx) {
         if (!clockTouched) { clockTouched = true; return@LaunchedEffect }
-        onClock(clock, clockPositions[clockPosIdx], clockDate, clockStyles[clockStyleIdx], clockSizes[clockSizeIdx])
+        onClock(clock, clockPositions[clockPosIdx], clockDate, clockStyle, clockSizes[clockSizeIdx])
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.il90.salongallery.ui.theme.ElecBg) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(24.dp)) {
-            Text(stringResource(R.string.text_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
-            Spacer(Modifier.height(16.dp))
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 24.dp).padding(bottom = 8.dp)) {
+            Text(stringResource(R.string.overlays_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text(stringResource(R.string.overlays_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+            // ---- TEXT ----
+            Spacer(Modifier.height(20.dp))
+            SheetSection(stringResource(R.string.overlays_text))
+            Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = content, onValueChange = { content = it },
                 modifier = Modifier.fillMaxWidth(),
@@ -2928,47 +2959,119 @@ private fun TextSheet(
                     focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
                 ),
             )
-            Spacer(Modifier.height(16.dp))
-            Text(stringResource(R.string.text_position), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(14.dp))
+            FieldLabel(stringResource(R.string.text_font))
+            SegRow(listOf("Classic", "Modern", "Mono", "Elegant", "Round"), fontIdx) { fontIdx = it }
+            Spacer(Modifier.height(14.dp))
+            FieldLabel(stringResource(R.string.text_position))
             SegRow(listOf("Top", "Center", "Bottom"), posIdx) { posIdx = it }
-            Spacer(Modifier.height(16.dp))
-            Text(stringResource(R.string.text_size), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(14.dp))
+            FieldLabel(stringResource(R.string.text_size))
             SegRow(listOf("S", "M", "L"), sizeIdx) { sizeIdx = it }
-            Spacer(Modifier.height(16.dp))
-            Text(stringResource(R.string.text_color), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(14.dp))
+            FieldLabel(stringResource(R.string.text_color))
             SegRow(listOf("White", "Black", "Gold", "Cyan", "Violet"), colorIdx) { colorIdx = it }
-            Spacer(Modifier.height(18.dp))
+
+            // ---- CLOCK ----
+            Spacer(Modifier.height(22.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.text_clock), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                SheetSection(stringResource(R.string.overlays_clock), Modifier.weight(1f))
                 Switch(checked = clock, onCheckedChange = { clock = it })
             }
             if (clock) {
                 Spacer(Modifier.height(12.dp))
-                Text(stringResource(R.string.clock_style), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                Spacer(Modifier.height(8.dp))
-                SegRow(listOf("Digital", "Analog", "Minimal", "Mono"), clockStyleIdx) { clockStyleIdx = it }
+                FieldLabel(stringResource(R.string.clock_style))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    clockStyles.forEach { (key, label) -> EffectChip(label, selected = key == clockStyle, showCheck = false) { clockStyle = key } }
+                }
                 Spacer(Modifier.height(12.dp))
-                Text(stringResource(R.string.clock_size), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                Spacer(Modifier.height(8.dp))
+                FieldLabel(stringResource(R.string.clock_size))
                 SegRow(listOf("S", "M", "L"), clockSizeIdx) { clockSizeIdx = it }
                 Spacer(Modifier.height(12.dp))
-                Text(stringResource(R.string.clock_position), style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                Spacer(Modifier.height(8.dp))
-                SegRow(listOf("↖", "↗", "↙", "↘", "•"), clockPosIdx) { clockPosIdx = it }
+                FieldLabel(stringResource(R.string.clock_position))
+                SegRow(listOf("\u2196", "\u2197", "\u2199", "\u2198", "\u2022"), clockPosIdx) { clockPosIdx = it }
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.clock_show_date), style = MaterialTheme.typography.bodyMedium, color = TextPrimary, modifier = Modifier.weight(1f))
                     Switch(checked = clockDate, onCheckedChange = { clockDate = it })
                 }
             }
-            Spacer(Modifier.height(20.dp))
-            OutlineButton(text = stringResource(R.string.text_clear), onClick = { content = ""; clock = false; onClear() })
+
+            // ---- WEATHER ----
+            Spacer(Modifier.height(22.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SheetSection(stringResource(R.string.overlays_weather), Modifier.weight(1f))
+                Switch(checked = weatherOn, onCheckedChange = { weatherOn = it; pushWeather() })
+            }
+            if (weatherOn) {
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.weather_free_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Spacer(Modifier.height(10.dp))
+                if (weatherPlace.isNotBlank()) {
+                    Text("\uD83D\uDCCD " + weatherPlace, style = MaterialTheme.typography.titleMedium, color = NeonCyan)
+                    Spacer(Modifier.height(10.dp))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = citySearch, onValueChange = { citySearch = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = com.il90.salongallery.ui.theme.ContentFont),
+                        placeholder = { Text(stringResource(R.string.weather_city), color = TextTertiary) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan, unfocusedBorderColor = ElecBorder,
+                            focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, cursorColor = NeonCyan,
+                        ),
+                    )
+                    RoundIconBtn(Icons.Outlined.Search, accent = true) {
+                        searching = true
+                        scope.launch { cityResults = PhotoSender.geocode(citySearch); searching = false }
+                    }
+                }
+                if (searching) { Spacer(Modifier.height(8.dp)); Text(stringResource(R.string.weather_searching), style = MaterialTheme.typography.bodySmall, color = TextSecondary) }
+                cityResults.forEach { place ->
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).border(1.dp, ElecBorder, RoundedCornerShape(12.dp))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                weatherPlace = place.name; weatherLat = place.lat; weatherLon = place.lon
+                                cityResults = emptyList(); citySearch = ""; pushWeather()
+                            }.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.LocationOn, null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text("${place.name}${if (place.country.isNotBlank()) ", ${place.country}" else ""}", style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                FieldLabel(stringResource(R.string.weather_units))
+                SegRow(listOf("\u00B0C", "\u00B0F"), weatherUnitsIdx) { weatherUnitsIdx = it; pushWeather() }
+                Spacer(Modifier.height(12.dp))
+                FieldLabel(stringResource(R.string.clock_position))
+                SegRow(listOf("\u2196", "\u2197", "\u2199", "\u2198", "\u2022"), weatherPosIdx) { weatherPosIdx = it; pushWeather() }
+            }
+
+            Spacer(Modifier.height(22.dp))
+            OutlineButton(text = stringResource(R.string.text_clear), onClick = {
+                content = ""; clock = false; weatherOn = false; weatherPlace = ""; weatherLat = 0.0; onClear()
+            })
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+/** A bold section header inside a settings sheet. */
+@Composable
+private fun SheetSection(title: String, modifier: Modifier = Modifier) {
+    Text(title, modifier = modifier, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.ContentFont, fontWeight = FontWeight.SemiBold)
+}
+
+/** A small field label with the standard spacing under it. */
+@Composable
+private fun FieldLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+    Spacer(Modifier.height(8.dp))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -90,7 +90,7 @@ enum class ClockPos { TOP_START, TOP_END, BOTTOM_START, BOTTOM_END, CENTER;
 }
 
 /** The look of the clock on the screen and the idle/sleep view. */
-enum class ClockStyle { DIGITAL, ANALOG, MINIMAL, MONO;
+enum class ClockStyle { DIGITAL, ANALOG, MINIMAL, MONO, BOLD, LED, CARD;
     companion object { fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: DIGITAL }
 }
 
@@ -109,7 +109,20 @@ data class TextOverlay(
     val pos: TextPos = TextPos.BOTTOM,
     val size: String = "m",     // s | m | l
     val color: String = "white",
+    val font: String = "classic",   // classic | modern | mono | elegant | rounded
 )
+
+/** On-screen weather (via Open-Meteo — no API key). [place] is the shown name; [lat]/[lon] drive the
+ *  fetch; [units] is c|f. [temp] / [code] are the latest reading (code is a WMO weather code). */
+data class WeatherConfig(
+    val on: Boolean = false,
+    val place: String = "",
+    val lat: Double = 0.0,
+    val lon: Double = 0.0,
+    val units: String = "c",
+    val pos: ClockPos = ClockPos.TOP_END,
+)
+data class WeatherNow(val temp: Int = 0, val code: Int = -1, val ok: Boolean = false)
 
 /** True when a library item name refers to a video clip (vs a still photo). */
 fun isVideoName(name: String): Boolean = name.startsWith("v_")

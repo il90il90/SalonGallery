@@ -32,8 +32,9 @@ interface ScreenCommands {
     fun onStagger(on: Boolean)             // spread photos appear one by one
     fun onSpreadMix(level: String)         // always | often | sometimes | rarely
     fun onMotion(mode: String, speed: String) // off | zoom | drift | breathe | mix ; slow | medium | fast
-    fun onText(content: String, pos: String, size: String, color: String)
+    fun onText(content: String, pos: String, size: String, color: String, font: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String)
+    fun onWeather(on: Boolean, place: String, lat: Double, lon: Double, units: String, pos: String)
     fun onOpenScreensaver()
     fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean)
     fun rssJson(): String
@@ -195,6 +196,7 @@ class PhotoServer(
                     session.parameters["pos"]?.firstOrNull() ?: "bottom",
                     session.parameters["size"]?.firstOrNull() ?: "m",
                     session.parameters["color"]?.firstOrNull() ?: "white",
+                    session.parameters["font"]?.firstOrNull() ?: "classic",
                 ); ok()
             }
             session.method == Method.GET && uri == "/clock" -> {
@@ -204,6 +206,16 @@ class PhotoServer(
                     session.parameters["date"]?.firstOrNull() != "0",
                     session.parameters["style"]?.firstOrNull() ?: "digital",
                     session.parameters["size"]?.firstOrNull() ?: "m",
+                ); ok()
+            }
+            session.method == Method.GET && uri == "/weather" -> {
+                commands.onWeather(
+                    session.parameters["on"]?.firstOrNull() == "1",
+                    session.parameters["place"]?.firstOrNull().orEmpty(),
+                    session.parameters["lat"]?.firstOrNull()?.toDoubleOrNull() ?: 0.0,
+                    session.parameters["lon"]?.firstOrNull()?.toDoubleOrNull() ?: 0.0,
+                    session.parameters["units"]?.firstOrNull() ?: "c",
+                    session.parameters["pos"]?.firstOrNull() ?: "top_end",
                 ); ok()
             }
             session.method == Method.GET && uri == "/orientation" -> {

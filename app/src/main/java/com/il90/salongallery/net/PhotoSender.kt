@@ -374,8 +374,31 @@ object PhotoSender {
     suspend fun setMotion(host: String, port: Int, mode: String, speed: String) =
         get(host, port, "/motion?mode=$mode&speed=$speed")
 
-    suspend fun setText(host: String, port: Int, content: String, pos: String, size: String, color: String) =
-        get(host, port, "/text?content=${enc(content)}&pos=$pos&size=$size&color=$color")
+    suspend fun setText(host: String, port: Int, content: String, pos: String, size: String, color: String, font: String = "classic") =
+        get(host, port, "/text?content=${enc(content)}&pos=$pos&size=$size&color=$color&font=$font")
+
+    /** Turn weather on/off on the wall. Uses Open-Meteo (no API key); [place]/[lat]/[lon] from geocode(). */
+    suspend fun setWeather(host: String, port: Int, on: Boolean, place: String = "", lat: Double = 0.0, lon: Double = 0.0, units: String = "c", pos: String = "top_end") =
+        get(host, port, "/weather?on=${if (on) 1 else 0}&place=${enc(place)}&lat=$lat&lon=$lon&units=$units&pos=$pos")
+
+    /** A place matched for a typed city name, via Open-Meteo's free geocoding (no key). */
+    data class GeoPlace(val name: String, val country: String, val lat: Double, val lon: Double)
+    suspend fun geocode(query: String): List<GeoPlace> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        try {
+            val url = "https://geocoding-api.open-meteo.com/v1/search?name=${enc(query)}&count=6&language=en&format=json"
+            val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply { connectTimeout = 10000; readTimeout = 10000 }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val arr = JSONObject(body).optJSONArray("results") ?: return@withContext emptyList()
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    add(GeoPlace(o.optString("name"), o.optString("country", ""), o.optDouble("latitude"), o.optDouble("longitude")))
+                }
+            }
+        } catch (e: Exception) { emptyList() }
+    }
 
     suspend fun setClock(host: String, port: Int, on: Boolean, pos: String = "top_start", showDate: Boolean = true, style: String = "digital", size: String = "m") =
         get(host, port, "/clock?on=${if (on) 1 else 0}&pos=$pos&date=${if (showDate) 1 else 0}&style=$style&size=$size")

@@ -93,6 +93,8 @@ class ScreenSession(
     val motionSpeed = MutableStateFlow(MotionSpeed.MEDIUM)
     val textOverlay = MutableStateFlow(TextOverlay())
     val clock = MutableStateFlow(ClockConfig())
+    val weather = MutableStateFlow(WeatherConfig())
+    val weatherNow = MutableStateFlow(WeatherNow())
     val rssOn = MutableStateFlow(prefs.rssEnabled)
     val rssFeeds = MutableStateFlow(prefs.rssFeeds)
     val rssConfig = MutableStateFlow(
@@ -363,8 +365,42 @@ class ScreenSession(
         if (speed.isNotBlank()) motionSpeed.value = MotionSpeed.from(speed)
     }
 
-    override fun onText(content: String, pos: String, size: String, color: String) {
-        textOverlay.value = TextOverlay(content, TextPos.from(pos), size, color)
+    override fun onText(content: String, pos: String, size: String, color: String, font: String) {
+        textOverlay.value = TextOverlay(content, TextPos.from(pos), size, color, font)
+    }
+
+    override fun onWeather(on: Boolean, place: String, lat: Double, lon: Double, units: String, pos: String) {
+        weather.value = WeatherConfig(on, place, lat, lon, units, ClockPos.from(pos))
+        if (on) fetchWeather() else weatherNow.value = WeatherNow()
+    }
+
+    // Open-Meteo current weather — free, no API key. Fetched on change and then hourly while on.
+    @Volatile private var weatherGen = 0
+    private fun fetchWeather() {
+        val gen = ++weatherGen
+        val w = weather.value
+        if (!w.on) return
+        Thread {
+            while (weatherGen == gen && weather.value.on) {
+                runCatching {
+                    val unit = if (w.units.equals("f", true)) "fahrenheit" else "celsius"
+                    val url = "https://api.open-meteo.com/v1/forecast?latitude=${w.lat}&longitude=${w.lon}" +
+                        "&current=temperature_2m,weather_code&temperature_unit=$unit"
+                    val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 10000; readTimeout = 10000
+                    }
+                    val body = conn.inputStream.bufferedReader().use { it.readText() }
+                    conn.disconnect()
+                    val cur = org.json.JSONObject(body).getJSONObject("current")
+                    weatherNow.value = WeatherNow(
+                        temp = Math.round(cur.getDouble("temperature_2m")).toInt(),
+                        code = cur.optInt("weather_code", -1), ok = true,
+                    )
+                }
+                // Refresh hourly.
+                for (i in 0 until 60) { if (weatherGen != gen || !weather.value.on) return@Thread; Thread.sleep(60_000) }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
 

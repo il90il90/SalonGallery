@@ -193,6 +193,8 @@ fun ScreenModeScreen(actions: AppActions) {
     val motionSpeed by session.motionSpeed.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
     val clock by session.clock.collectAsStateWithLifecycle()
+    val weather by session.weather.collectAsStateWithLifecycle()
+    val weatherNow by session.weatherNow.collectAsStateWithLifecycle()
     val rssOn by session.rssOn.collectAsStateWithLifecycle()
     val rssFeeds by session.rssFeeds.collectAsStateWithLifecycle()
     val rssConfig by session.rssConfig.collectAsStateWithLifecycle()
@@ -436,7 +438,7 @@ fun ScreenModeScreen(actions: AppActions) {
             }
         }
 
-        if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clock)
+        if (mode != DisplayMode.WAITING) OverlayLayer(textOverlay, clock, weather, weatherNow)
 
         if (mode != DisplayMode.WAITING && rssOn && rssItems.isNotEmpty()) {
             RssTicker(rssItems, rssConfig)
@@ -1360,7 +1362,11 @@ fun PhotoContent(file: File, fit: PhotoFit, transform: PhotoTransform, filter: P
 }
 
 @Composable
-internal fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.il90.salongallery.net.ClockConfig) {
+internal fun BoxScope.OverlayLayer(
+    text: TextOverlay, clock: com.il90.salongallery.net.ClockConfig,
+    weather: com.il90.salongallery.net.WeatherConfig = com.il90.salongallery.net.WeatherConfig(),
+    weatherNow: com.il90.salongallery.net.WeatherNow = com.il90.salongallery.net.WeatherNow(),
+) {
     if (clock.on) {
         // Absolute corners (not start/end) so the arrows match on an RTL/Hebrew screen too.
         val align: Alignment = when (clock.pos) {
@@ -1389,7 +1395,7 @@ internal fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.il90.salongalle
             text.content,
             modifier = Modifier.align(align).safeDrawingPadding().padding(horizontal = 24.dp, vertical = 44.dp),
             style = TextStyle(
-                fontFamily = com.il90.salongallery.ui.theme.ContentFont,
+                fontFamily = overlayFont(text.font),
                 fontSize = overlaySize(text.size),
                 fontWeight = FontWeight.Bold,
                 color = overlayColor(text.color),
@@ -1399,6 +1405,63 @@ internal fun BoxScope.OverlayLayer(text: TextOverlay, clock: com.il90.salongalle
             ),
         )
     }
+    if (weather.on && weatherNow.ok) {
+        val align: Alignment = when (weather.pos) {
+            com.il90.salongallery.net.ClockPos.TOP_START -> androidx.compose.ui.AbsoluteAlignment.TopLeft
+            com.il90.salongallery.net.ClockPos.TOP_END -> androidx.compose.ui.AbsoluteAlignment.TopRight
+            com.il90.salongallery.net.ClockPos.BOTTOM_START -> androidx.compose.ui.AbsoluteAlignment.BottomLeft
+            com.il90.salongallery.net.ClockPos.BOTTOM_END -> androidx.compose.ui.AbsoluteAlignment.BottomRight
+            com.il90.salongallery.net.ClockPos.CENTER -> Alignment.Center
+        }
+        WeatherBadge(weather, weatherNow, Modifier.align(align).safeDrawingPadding().padding(28.dp))
+    }
+}
+
+/** A tasteful weather pill: icon, temperature and place name. */
+@Composable
+private fun BoxScope.WeatherBadge(cfg: com.il90.salongallery.net.WeatherConfig, now: com.il90.salongallery.net.WeatherNow, modifier: Modifier) {
+    Row(
+        modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.42f))
+            .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(50))
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(weatherGlyph(now.code), style = TextStyle(fontSize = 34.sp))
+        Column {
+            Text(
+                "${now.temp}°${cfg.units.uppercase()}",
+                style = TextStyle(fontFamily = com.il90.salongallery.ui.theme.Display, fontSize = 34.sp, fontWeight = FontWeight(500), color = Color.White, shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 2f), 10f)),
+            )
+            if (cfg.place.isNotBlank()) Text(
+                cfg.place,
+                style = TextStyle(fontFamily = com.il90.salongallery.ui.theme.Body, fontSize = 15.sp, fontWeight = FontWeight(500), color = Color.White.copy(0.9f), letterSpacing = 0.4.sp),
+            )
+        }
+    }
+}
+
+/** An emoji for a WMO weather code (Open-Meteo's current.weather_code). */
+private fun weatherGlyph(code: Int): String = when (code) {
+    0 -> "☀️"
+    1, 2 -> "🌤️"
+    3 -> "☁️"
+    45, 48 -> "🌫️"
+    in 51..57 -> "🌦️"
+    in 61..67 -> "🌧️"
+    in 71..77 -> "❄️"
+    in 80..82 -> "🌧️"
+    in 85..86 -> "🌨️"
+    in 95..99 -> "⛈️"
+    else -> "🌡️"
+}
+
+/** The font a text overlay uses. */
+private fun overlayFont(f: String): androidx.compose.ui.text.font.FontFamily = when (f.lowercase()) {
+    "modern" -> com.il90.salongallery.ui.theme.Display
+    "mono" -> androidx.compose.ui.text.font.FontFamily.Monospace
+    "elegant" -> com.il90.salongallery.ui.theme.Body
+    "rounded" -> androidx.compose.ui.text.font.FontFamily.SansSerif
+    else -> com.il90.salongallery.ui.theme.ContentFont
 }
 
 /** A quiet rotating headline banner, configurable (position / image / source / summary). */
@@ -1478,16 +1541,25 @@ private fun ClockView(
     val shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 3f), 18f)
     val dateShadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 2f), 12f)
     val k = when (size.lowercase()) { "s" -> 0.62f; "l" -> 1.6f; else -> 1f }
+    @Composable fun timeText(ts: TextStyle) = Text(time, style = ts)
     Column(modifier, horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
         when (style) {
             com.il90.salongallery.net.ClockStyle.ANALOG ->
                 AnalogClock(now, tint, Modifier.size(156.dp * k))
             com.il90.salongallery.net.ClockStyle.MINIMAL ->
-                Text(time, style = TextStyle(fontFamily = com.il90.salongallery.ui.theme.ContentFont, fontSize = 74.sp * k, fontWeight = FontWeight(200), color = tint, letterSpacing = 2.sp, shadow = shadow))
+                timeText(TextStyle(fontFamily = com.il90.salongallery.ui.theme.ContentFont, fontSize = 74.sp * k, fontWeight = FontWeight(200), color = tint, letterSpacing = 2.sp, shadow = shadow))
             com.il90.salongallery.net.ClockStyle.MONO ->
-                Text(time, style = TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 56.sp * k, fontWeight = FontWeight(600), color = tint, letterSpacing = 1.sp, shadow = shadow))
+                timeText(TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 56.sp * k, fontWeight = FontWeight(600), color = tint, letterSpacing = 1.sp, shadow = shadow))
+            com.il90.salongallery.net.ClockStyle.BOLD ->
+                timeText(TextStyle(fontFamily = com.il90.salongallery.ui.theme.Display, fontSize = 92.sp * k, fontWeight = FontWeight(800), color = tint, shadow = shadow))
+            com.il90.salongallery.net.ClockStyle.LED ->
+                timeText(TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 70.sp * k, fontWeight = FontWeight(700), color = Color(0xFF6FE8C7), letterSpacing = 3.sp, shadow = Shadow(Color(0xFF2BBfa0).copy(0.9f), Offset(0f, 0f), 24f)))
+            com.il90.salongallery.net.ClockStyle.CARD ->
+                Box(Modifier.clip(RoundedCornerShape(18.dp)).background(Color.Black.copy(0.4f)).border(1.dp, Color.White.copy(0.14f), RoundedCornerShape(18.dp)).padding(horizontal = 22.dp * k.coerceAtMost(1.4f), vertical = 12.dp * k.coerceAtMost(1.4f))) {
+                    timeText(TextStyle(fontFamily = com.il90.salongallery.ui.theme.Display, fontSize = 56.sp * k, fontWeight = FontWeight(500), color = tint))
+                }
             else ->
-                Text(time, style = TextStyle(fontFamily = com.il90.salongallery.ui.theme.Display, fontSize = 58.sp * k, fontWeight = FontWeight(400), color = tint, shadow = shadow))
+                timeText(TextStyle(fontFamily = com.il90.salongallery.ui.theme.Display, fontSize = 58.sp * k, fontWeight = FontWeight(400), color = tint, shadow = shadow))
         }
         if (showDate) {
             if (style == com.il90.salongallery.net.ClockStyle.ANALOG) Spacer(Modifier.height(10.dp))
