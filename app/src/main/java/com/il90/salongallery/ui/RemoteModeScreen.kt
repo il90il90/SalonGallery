@@ -3294,9 +3294,10 @@ private fun SlideshowSheet(
 
             // MOTION
             SettingsCard(stringResource(R.string.slideshow_motion_eyebrow), stringResource(R.string.slideshow_motion_title), stringResource(R.string.slideshow_motion_hint)) {
-                // Mix first; then Off and every effect. Each tile previews its own motion live.
-                val motions = listOf("mix", "off", "zoom", "drift", "breathe", "sway", "glide", "float", "swing", "pulse", "tilt", "tilty", "rise", "fall", "slidex", "wobble", "parallax", "glow", "rock")
-                val labels = listOf("Mix", "Off", "Zoom", "Drift", "Fade", "Sway", "Glide", "Float", "Swing", "Pulse", "Tilt", "Tilt Y", "Rise", "Fall", "Slide", "Wobble", "Parallax", "Glow", "Rock")
+                // "None" (no motion) first — it's the default; then Mix and every effect. Each tile
+                // previews its own motion live.
+                val motions = listOf("off", "mix", "zoom", "drift", "breathe", "sway", "glide", "float", "swing", "pulse", "tilt", "tilty", "rise", "fall", "slidex", "wobble", "parallax", "glow", "rock")
+                val labels = listOf("None", "Mix", "Zoom", "Drift", "Fade", "Sway", "Glide", "Float", "Swing", "Pulse", "Tilt", "Tilt Y", "Rise", "Fall", "Slide", "Wobble", "Parallax", "Glow", "Rock")
                 val gap = 8.dp
                 BoxWithConstraints {
                     val tileW = (maxWidth - gap * 3) / 4
