@@ -4,7 +4,7 @@ import fi.iki.elonen.NanoHTTPD
 
 /** Commands the Display device reacts to when the server receives a request. */
 interface ScreenCommands {
-    fun onPhoto(bytes: ByteArray, album: String? = null)   // append to the library (into [album] when given)
+    fun onPhoto(bytes: ByteArray, album: String? = null, srcSig: String? = null)   // append to the library (into [album] when given); srcSig = original-file signature for cross-quality dedup
     fun onPhotoUrl(url: String)            // download an image and append to the library
     fun removeByUrl(url: String)           // remove library items that came from this url
     fun sourcesJson(): String              // {"urls":[...]} of source urls currently on the wall
@@ -111,8 +111,10 @@ class PhotoServer(
 
             session.method == Method.POST && uri == "/photo" -> {
                 // Optional ?album=<id> files the upload into that album instead of the active one.
+                // Optional ?sig=<hash> is the original file's signature, for cross-quality dedup.
                 val album = session.parameters["album"]?.firstOrNull()?.takeIf { it.isNotBlank() }
-                readBody(session)?.let { commands.onPhoto(it, album) }; ok()
+                val srcSig = session.parameters["sig"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+                readBody(session)?.let { commands.onPhoto(it, album, srcSig) }; ok()
             }
             session.method == Method.GET && uri == "/photo/download" -> {
                 session.parameters["url"]?.firstOrNull()?.let { commands.onPhotoUrl(it) }; ok()

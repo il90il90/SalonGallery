@@ -247,9 +247,12 @@ class ScreenSession(
     private fun targetAlbum(album: String?): String? =
         album?.takeIf { it.isNotBlank() && it != "all" } ?: albums.activeId.takeIf { !albums.isAllActive() }
 
-    override fun onPhoto(bytes: ByteArray, album: String?) {
+    override fun onPhoto(bytes: ByteArray, album: String?, srcSig: String?) {
         runCatching {
-            val f = library.add(bytes) ?: return@runCatching   // skip exact duplicates
+            // Same source photo already here (even if sent before at a different quality)? Skip it.
+            if (srcSig != null && library.isDuplicateSource(srcSig)) return@runCatching
+            val f = library.add(bytes) ?: return@runCatching   // skip exact-content duplicates
+            if (srcSig != null) library.rememberSource(f.name, srcSig)
             targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
             mode.value = DisplayMode.SLIDESHOW
             onMediaArrived(f.name)

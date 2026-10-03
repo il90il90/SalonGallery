@@ -167,6 +167,33 @@ class LibraryStore(private val dir: File) {
     @Synchronized
     fun isDuplicate(bytes: ByteArray): Boolean = sigOf(bytes) in sigs.values
 
+    // Source signatures (MD5 of the ORIGINAL file, computed on the sender before any optimisation) for
+    // photos uploaded with one. This catches the one case the content signature can't: the SAME source
+    // photo sent twice at a different quality — the stored bytes differ, but the source is the same, so
+    // it must not land twice.
+    private val srcFile = File(dir, "srcsigs.txt")
+    private val srcSigs: HashMap<String, String> by lazy { loadSrcSigs() }   // name -> source signature
+    private fun loadSrcSigs(): HashMap<String, String> {
+        val map = HashMap<String, String>()
+        val have = mediaFiles().map { it.name }.toSet()
+        runCatching { if (srcFile.exists()) srcFile.readLines().forEach { ln ->
+            val i = ln.indexOf('\t'); if (i > 0) { val n = ln.substring(0, i); if (n in have) map[n] = ln.substring(i + 1) }
+        } }
+        return map
+    }
+
+    /** True if a photo with this source signature is already in the library. */
+    @Synchronized
+    fun isDuplicateSource(srcSig: String): Boolean = srcSig in srcSigs.values
+
+    /** Record the source signature of an already-stored file, so a later re-send of the same source
+     *  (even at a different quality) is recognised as a duplicate. */
+    @Synchronized
+    fun rememberSource(name: String, srcSig: String) {
+        srcSigs[name] = srcSig
+        runCatching { srcFile.appendText("$name\t$srcSig\n") }
+    }
+
     /** Adds a photo; returns null (no copy written) if the exact content is already present. */
     @Synchronized
     fun add(bytes: ByteArray): File? = addNamed("p_${stamp()}.jpg", bytes)
@@ -272,6 +299,7 @@ class LibraryStore(private val dir: File) {
         writeOrder(readOrder().filter { it != name })
         writePins(readPins().filter { it != name })
         if (sigs.remove(name) != null) runCatching { saveSigs() }
+        if (srcSigs.remove(name) != null) runCatching { saveSrcSigs() }
     }
 
     @Synchronized
@@ -295,9 +323,11 @@ class LibraryStore(private val dir: File) {
         runCatching { orderFile.delete() }
         runCatching { pinFile.delete() }
         sigs.clear(); runCatching { sigFile.delete() }
+        srcSigs.clear(); runCatching { srcFile.delete() }
     }
 
     private fun saveSigs() = runCatching { sigFile.writeText(sigs.entries.joinToString("\n") { "${it.key}\t${it.value}" }) }
+    private fun saveSrcSigs() = runCatching { srcFile.writeText(srcSigs.entries.joinToString("\n") { "${it.key}\t${it.value}" }) }
 
     private fun readOrder(): List<String> =
         if (orderFile.exists()) runCatching { orderFile.readLines().filter { it.isNotBlank() } }.getOrDefault(emptyList())

@@ -264,9 +264,17 @@ object PhotoSender {
         }
     }
 
-    /** POSTs a photo. Returns null on success, or a short error string. */
-    suspend fun sendPhoto(host: String, port: Int, bytes: ByteArray, album: String? = null) =
-        sendMedia(host, port, "/photo" + albumQuery(album), bytes, "image/jpeg")
+    /** POSTs a photo. [srcSig] (signature of the ORIGINAL file, before any optimisation) lets the
+     *  Display reject the same source photo even if it was sent before at a different quality.
+     *  Returns null on success, or a short error string. */
+    suspend fun sendPhoto(host: String, port: Int, bytes: ByteArray, album: String? = null, srcSig: String? = null): String? {
+        val params = buildList {
+            if (!album.isNullOrBlank()) add("album=$album")
+            if (!srcSig.isNullOrBlank()) add("sig=$srcSig")
+        }
+        val query = if (params.isEmpty()) "" else "?" + params.joinToString("&")
+        return sendMedia(host, port, "/photo$query", bytes, "image/jpeg")
+    }
 
     private fun albumQuery(album: String?) = if (album.isNullOrBlank()) "" else "?album=$album"
 

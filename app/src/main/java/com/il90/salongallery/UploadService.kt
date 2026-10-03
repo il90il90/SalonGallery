@@ -79,10 +79,17 @@ class UploadService : Service() {
             }
         } else {
             val raw = runCatching { cr.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() ?: return
+            // Signature of the ORIGINAL file, so the Display can reject the same source photo even when
+            // it was sent before at a different quality (which changes the bytes it finally stores).
+            val srcSig = md5Hex(raw)
             val b = if (u.quality == UploadQuality.OPTIMIZED) optimizePhotoForUpload(raw) else raw
-            PhotoSender.sendPhoto(u.host, u.port, b, u.album)
+            PhotoSender.sendPhoto(u.host, u.port, b, u.album, srcSig)
         }
     }
+
+    private fun md5Hex(bytes: ByteArray): String? = runCatching {
+        java.security.MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }
+    }.getOrNull()
 
     private fun buildNotification(done: Int, total: Int): android.app.Notification {
         ensureChannel()
