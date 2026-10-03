@@ -1278,8 +1278,10 @@ private fun NowShowingHero(
     rot: Int = 0, onRotate: () -> Unit = {}, onSwipe: (Int) -> Unit = {},
     connected: Boolean = true, lost: Boolean = false,
 ) {
-    // A spread is on the wall when the current slide has more than one photo.
-    val mirror = now?.takeIf { it.members.size > 1 && it.style != "single" }
+    // A spread is on the wall when the current slide has more than one photo. Only when there is
+    // actually something on the wall (current != null) — otherwise a just-cleared library would keep
+    // showing the previous spread from cache while the empty-state text sits on top of it.
+    val mirror = now?.takeIf { it.members.size > 1 && it.style != "single" && current != null }
     Column(Modifier.fillMaxWidth()) {
         Box(
             Modifier.fillMaxWidth()

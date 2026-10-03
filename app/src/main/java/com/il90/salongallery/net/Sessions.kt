@@ -605,6 +605,7 @@ class ScreenSession(
             runCatching { thumbDir.listFiles()?.forEach { it.delete() } }
             if (mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
             currentIndex.value = 0
+            nowSlide.value = null   // so the Remote stops mirroring the just-cleared spread
             libraryVersion.value = System.currentTimeMillis()
         }
     }
@@ -710,6 +711,7 @@ class ScreenSession(
             runCatching { File(thumbDir, "$name.jpg").delete() }
             val names = albums.activePhotoNames()
             if (names.isEmpty() && mode.value == DisplayMode.SLIDESHOW) mode.value = DisplayMode.WAITING
+            if (names.isEmpty()) nowSlide.value = null   // nothing on the wall → stop mirroring it
             currentIndex.value = if (names.isEmpty()) 0 else currentIndex.value.coerceIn(0, names.size - 1)
             libraryVersion.value = System.currentTimeMillis()
         }
