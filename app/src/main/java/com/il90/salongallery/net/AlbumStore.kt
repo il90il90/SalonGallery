@@ -26,7 +26,9 @@ class AlbumStore(private val file: File, private val library: LibraryStore) {
         if (!file.exists()) return
         runCatching {
             val o = JSONObject(file.readText())
-            activeId = o.optString("active", ALL)
+            // The wall always starts on "All" (every photo). Choosing an album is a session choice,
+            // not a persisted default — so a screen never boots showing only a small album.
+            activeId = ALL
             val arr = o.optJSONArray("albums") ?: JSONArray()
             for (i in 0 until arr.length()) {
                 val a = arr.getJSONObject(i)
@@ -35,7 +37,6 @@ class AlbumStore(private val file: File, private val library: LibraryStore) {
                 for (j in 0 until p.length()) photos.add(p.getString(j))
                 albums.add(Album(a.getString("id"), a.optString("name", "Album"), photos))
             }
-            if (activeId != ALL && albums.none { it.id == activeId }) activeId = ALL
         }
     }
 

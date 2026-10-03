@@ -58,6 +58,30 @@ enum class SpreadStyle(val surface: SpreadSurface, val minN: Int = 3, val maxN: 
     CAROUSEL(SpreadSurface.PAPER, 3, 5),
     /** Prints cascading along the diagonal, each slightly tilted and overlapping. */
     DIAGONAL(SpreadSurface.TABLE, 3, 5),
+    /** Triangular rows (1, 2, 3 …) of prints, centred. */
+    PYRAMID(SpreadSurface.MAT, 3, 6),
+    /** Prints arranged in a diamond around the centre. */
+    DIAMOND(SpreadSurface.VELVET, 4, 5),
+    /** A plus/cross of five prints. */
+    CROSS(SpreadSurface.MAT, 5, 5),
+    /** A framed hero in the centre with a framed print in each corner. */
+    CORNERS(SpreadSurface.WALL, 5, 5),
+    /** Full-width horizontal bands stacked down the slide. */
+    ROWS(SpreadSurface.BLACK, 3, 5),
+    /** A dense quilt of equal square-ish cells. */
+    QUILT(SpreadSurface.MAT, 6, 12),
+    /** Pinterest-style columns of varied-height cells. */
+    MASONRY(SpreadSurface.MAT, 5, 9),
+    /** Prints wound along an outward spiral. */
+    SPIRAL(SpreadSurface.VELVET, 5, 7),
+    /** Prints riding a gentle sine wave across the slide. */
+    WAVE(SpreadSurface.LINEN, 4, 6),
+    /** One large print with smaller ones gathered loosely behind it. */
+    SPOTLIGHT(SpreadSurface.TABLE, 4, 6),
+    /** Loose tilted postcards in a centred row. */
+    POSTCARDS(SpreadSurface.CORK, 3, 5),
+    /** Three equal tall panels with thin gaps. */
+    TRIPTYCH(SpreadSurface.MAT, 3, 3),
 }
 
 /**
@@ -119,6 +143,18 @@ fun placeSpread(style: SpreadStyle, n: Int, w: Float, h: Float, seed: Int): Spre
         SpreadStyle.WINDOW -> SpreadPlan(windowGrid(count, w, h))
         SpreadStyle.CAROUSEL -> SpreadPlan(carousel(count, w, h))
         SpreadStyle.DIAGONAL -> SpreadPlan(diagonal(count, w, h, r))
+        SpreadStyle.PYRAMID -> SpreadPlan(pyramid(count, w, h))
+        SpreadStyle.DIAMOND -> SpreadPlan(diamond(count, w, h))
+        SpreadStyle.CROSS -> SpreadPlan(cross(count, w, h))
+        SpreadStyle.CORNERS -> SpreadPlan(corners(count, w, h))
+        SpreadStyle.ROWS -> SpreadPlan(rows(count, w, h))
+        SpreadStyle.QUILT -> SpreadPlan(quilt(count, w, h))
+        SpreadStyle.MASONRY -> SpreadPlan(masonry(count, w, h, r))
+        SpreadStyle.SPIRAL -> SpreadPlan(spiral(count, w, h))
+        SpreadStyle.WAVE -> SpreadPlan(wave(count, w, h))
+        SpreadStyle.SPOTLIGHT -> SpreadPlan(spotlight(count, w, h, r))
+        SpreadStyle.POSTCARDS -> SpreadPlan(tossed(count, w, h, r, PrintStyle.POLAROID, 1.0f, 9f))
+        SpreadStyle.TRIPTYCH -> SpreadPlan(triptych(count, w, h))
     }
     // Safety pass: shrink anything too big for the slide, then pull it fully inside.
     val margin = min(w, h) * 0.012f
@@ -486,6 +522,176 @@ private fun diagonal(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<
         val cx = w * (0.24f + 0.52f * t)
         val cy = h * (if (down) 0.24f + 0.52f * t else 0.76f - 0.52f * t)
         Placement(cx - pw / 2f, cy - ph / 2f, pw, ph, (r.nextFloat() - 0.5f) * 10f, PrintStyle.PRINT)
+    }
+}
+
+/** Triangular rows (1, 2, 3 …) of equal prints, each row centred. */
+private fun pyramid(n: Int, w: Float, h: Float): List<Placement> {
+    val rows = mutableListOf<Int>(); var placed = 0; var i = 0
+    while (placed < n) { val c = minOf(i + 1, n - placed); rows.add(c); placed += c; i++ }
+    val g = min(w, h) * 0.02f
+    val rh = (h - g * (rows.size + 1)) / rows.size
+    val out = mutableListOf<Placement>()
+    rows.forEachIndexed { ri, cnt ->
+        val cw = min((w - g * (cnt + 1)) / cnt, rh * 1.45f)
+        val total = cw * cnt + g * (cnt - 1); val start = (w - total) / 2f
+        for (c in 0 until cnt) out += Placement(start + c * (cw + g), g + ri * (rh + g), cw, rh, 0f, PrintStyle.PRINT)
+    }
+    return out
+}
+
+/** Prints arranged in a diamond around the centre (one at each point, extras stacked in the middle). */
+private fun diamond(n: Int, w: Float, h: Float): List<Placement> {
+    val s = min(w, h) * 0.30f
+    val pw = s; val ph = s * 0.82f
+    val dx = w * 0.26f; val dy = h * 0.28f
+    val cx = w / 2f; val cy = h / 2f
+    val offsets = listOf(0f to -1f, 1f to 0f, 0f to 1f, -1f to 0f, 0f to 0f)
+    return List(n) { k ->
+        val (ox, oy) = offsets[k % offsets.size]
+        Placement(cx + ox * dx - pw / 2f, cy + oy * dy - ph / 2f, pw, ph, 0f, PrintStyle.PRINT)
+    }
+}
+
+/** A plus/cross of five prints: centre, up, down, left, right. */
+private fun cross(n: Int, w: Float, h: Float): List<Placement> {
+    val pw = min(w, h) * 0.3f; val ph = pw * 0.8f
+    val dx = w * 0.27f; val dy = h * 0.29f
+    val cx = w / 2f; val cy = h / 2f
+    val offsets = listOf(0f to 0f, 0f to -1f, 0f to 1f, -1f to 0f, 1f to 0f)
+    return List(n) { k ->
+        val (ox, oy) = offsets[k % offsets.size]
+        Placement(cx + ox * dx - pw / 2f, cy + oy * dy - ph / 2f, pw, ph, 0f, PrintStyle.PRINT)
+    }
+}
+
+/** A framed hero in the centre with a framed print in each corner. */
+private fun corners(n: Int, w: Float, h: Float): List<Placement> {
+    val out = mutableListOf<Placement>()
+    val heroW = w * 0.42f; val heroH = h * 0.42f
+    out += Placement(w / 2f - heroW / 2f, h / 2f - heroH / 2f, heroW, heroH, 0f, PrintStyle.FRAMED)
+    val cw = w * 0.26f; val ch = h * 0.3f
+    val m = min(w, h) * 0.03f
+    val pos = listOf(
+        m to m, (w - cw - m) to m, m to (h - ch - m), (w - cw - m) to (h - ch - m),
+    )
+    for (k in 0 until (n - 1).coerceAtMost(4)) out += Placement(pos[k].first, pos[k].second, cw, ch, 0f, PrintStyle.FRAMED)
+    return out
+}
+
+/** Full-width horizontal bands stacked down the slide (rows of one photo each). */
+private fun rows(n: Int, w: Float, h: Float): List<Placement> {
+    val g = min(w, h) * 0.014f
+    val rh = (h - g * (n + 1)) / n
+    return List(n) { k -> Placement(g, g + k * (rh + g), w - 2 * g, rh, 0f, PrintStyle.CELL) }
+}
+
+/** A dense quilt of near-square cells in a balanced grid. */
+private fun quilt(n: Int, w: Float, h: Float): List<Placement> {
+    val landscape = w >= h
+    var cols = kotlin.math.ceil(kotlin.math.sqrt(n.toFloat() * (if (landscape) 16f / 9f else 9f / 16f))).toInt().coerceAtLeast(2)
+    var rows = kotlin.math.ceil(n.toFloat() / cols).toInt()
+    // Trim an over-tall/over-wide grid.
+    if (cols * (rows - 1) >= n) rows -= 1
+    val g = min(w, h) * 0.016f
+    val cw = (w - g * (cols + 1)) / cols
+    val rh = (h - g * (rows + 1)) / rows
+    val out = mutableListOf<Placement>()
+    for (k in 0 until n) {
+        val row = k / cols; val col = k % cols
+        val inRow = if (row == rows - 1) n - row * cols else cols
+        val rowOff = (cols - inRow) * (cw + g) / 2f
+        out += Placement(g + rowOff + col * (cw + g), g + row * (rh + g), cw, rh, 0f, PrintStyle.CELL)
+    }
+    return out
+}
+
+/** Pinterest-style columns of varied-height cells. */
+private fun masonry(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<Placement> {
+    val landscape = w >= h
+    val cols = if (landscape) 3 else 2
+    val g = min(w, h) * 0.016f
+    val cw = (w - g * (cols + 1)) / cols
+    // Distribute n items round-robin into columns, each column filling the height with its share.
+    val perCol = IntArray(cols)
+    for (k in 0 until n) perCol[k % cols]++
+    val out = mutableListOf<Placement>()
+    // Keep reading order (round-robin) so photos run roughly in library order.
+    val yCursor = FloatArray(cols) { g }
+    val heights = Array(cols) { c ->
+        val cnt = perCol[c].coerceAtLeast(1)
+        // Random-ish but seeded split of the column height into cnt parts.
+        val weights = FloatArray(cnt) { 0.8f + r.nextFloat() * 0.4f }
+        val sum = weights.sum()
+        val avail = h - g * (cnt + 1)
+        FloatArray(cnt) { avail * weights[it] / sum }
+    }
+    val idxInCol = IntArray(cols)
+    for (k in 0 until n) {
+        val c = k % cols
+        val hk = heights[c][idxInCol[c]]
+        out += Placement(g + c * (cw + g), yCursor[c], cw, hk, 0f, PrintStyle.CELL)
+        yCursor[c] += hk + g
+        idxInCol[c]++
+    }
+    return out
+}
+
+/** Prints wound along an outward spiral from the centre. */
+private fun spiral(n: Int, w: Float, h: Float): List<Placement> {
+    val cx = w / 2f; val cy = h / 2f
+    val pw = min(w, h) * 0.26f; val ph = pw * 0.8f
+    val maxR = min(w, h) * 0.34f
+    return List(n) { k ->
+        val t = if (n == 1) 0f else k / (n - 1f)
+        val ang = t * 2.4f * Math.PI.toFloat()
+        val rad = maxR * t
+        val x = cx + (rad * cos(ang.toDouble())).toFloat()
+        val y = cy + (rad * sin(ang.toDouble())).toFloat()
+        Placement(x - pw / 2f, y - ph / 2f, pw, ph, (t - 0.5f) * 24f, PrintStyle.PRINT)
+    }
+}
+
+/** Prints riding a gentle sine wave across the slide. */
+private fun wave(n: Int, w: Float, h: Float): List<Placement> {
+    val pw = min((w * 0.9f) / n, h * 0.4f * 1.25f); val ph = pw * 0.8f
+    val amp = h * 0.18f
+    val startX = (w - pw * n) / 2f + pw / 2f
+    return List(n) { k ->
+        val cx = startX + k * pw
+        val cy = h / 2f + amp * sin((k / 1.4f).toDouble()).toFloat()
+        Placement(cx - pw / 2f, cy - ph / 2f, pw, ph, 0f, PrintStyle.PRINT)
+    }
+}
+
+/** One large print with smaller ones gathered loosely behind it. */
+private fun spotlight(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<Placement> {
+    val out = mutableListOf<Placement>()
+    val small = n - 1
+    val sw = min(w, h) * 0.26f; val sh = sw * 0.8f
+    // Small prints ringed around the centre, behind the hero.
+    for (k in 0 until small) {
+        val ang = (k / small.toFloat()) * 2f * Math.PI.toFloat() + 0.4f
+        val rx = w * 0.3f; val ry = h * 0.32f
+        val cx = w / 2f + (rx * cos(ang.toDouble())).toFloat()
+        val cy = h / 2f + (ry * sin(ang.toDouble())).toFloat()
+        out += Placement(cx - sw / 2f, cy - sh / 2f, sw, sh, (r.nextFloat() - 0.5f) * 16f, PrintStyle.PRINT)
+    }
+    val hw = w * 0.4f; val hh = h * 0.5f
+    out += Placement(w / 2f - hw / 2f, h / 2f - hh / 2f, hw, hh, 0f, PrintStyle.PRINT)
+    return out
+}
+
+/** Three equal tall panels with thin gaps (centred bands on a portrait screen). */
+private fun triptych(n: Int, w: Float, h: Float): List<Placement> {
+    val g = min(w, h) * 0.015f
+    val landscape = w >= h
+    return if (landscape) {
+        val cw = (w - g * (n + 1)) / n
+        List(n) { k -> Placement(g + k * (cw + g), g, cw, h - 2 * g, 0f, PrintStyle.CELL) }
+    } else {
+        val rh = (h - g * (n + 1)) / n
+        List(n) { k -> Placement(g, g + k * (rh + g), w - 2 * g, rh, 0f, PrintStyle.CELL) }
     }
 }
 

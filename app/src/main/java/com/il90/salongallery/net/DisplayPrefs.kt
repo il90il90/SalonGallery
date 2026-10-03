@@ -65,7 +65,7 @@ class DisplayPrefs(context: Context) {
         get() = sp.getBoolean("clkOn", false)
         set(v) = sp.edit().putBoolean("clkOn", v).apply()
     var clockPos: String
-        get() = sp.getString("clkPos", "top_start") ?: "top_start"
+        get() = sp.getString("clkPos", "bottom_start") ?: "bottom_start"
         set(v) = sp.edit().putString("clkPos", v).apply()
     var clockDate: Boolean
         get() = sp.getBoolean("clkDate", true)

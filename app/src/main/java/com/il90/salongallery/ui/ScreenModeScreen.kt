@@ -739,9 +739,12 @@ private fun AnimatedContentTransitionScope<Int>.transitionFor(e: SlideEffect): C
  */
 @Composable
 private fun MotionBox(mode: MotionMode, speed: MotionSpeed, seed: Int, content: @Composable () -> Unit) {
-    val m = if (mode == MotionMode.MIX)
-        listOf(MotionMode.ZOOM, MotionMode.DRIFT, MotionMode.BREATHE, MotionMode.SWAY, MotionMode.GLIDE)[kotlin.random.Random(seed.toLong() * 131 + 5).nextInt(5)]
-    else mode
+    val mixPool = listOf(
+        MotionMode.ZOOM, MotionMode.DRIFT, MotionMode.BREATHE, MotionMode.SWAY, MotionMode.GLIDE,
+        MotionMode.FLOAT, MotionMode.PULSE, MotionMode.RISE, MotionMode.FALL, MotionMode.SLIDEX,
+        MotionMode.WOBBLE, MotionMode.PARALLAX, MotionMode.GLOW, MotionMode.ROCK,
+    )
+    val m = if (mode == MotionMode.MIX) mixPool[kotlin.random.Random(seed.toLong() * 131 + 5).nextInt(mixPool.size)] else mode
     if (m == MotionMode.OFF) { content(); return }
     val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "motion")
     val p = t.animateFloat(
@@ -777,6 +780,28 @@ private fun MotionBox(mode: MotionMode, speed: MotionSpeed, seed: Int, content: 
                         translationX = (v - 0.5f) * 2f * dirX * size.width * 0.02f
                         translationY = (v - 0.5f) * 2f * dirY * size.height * 0.02f
                     }
+                    // A gentle vertical bob.
+                    MotionMode.FLOAT -> { scaleX = 1.05f; scaleY = 1.05f; translationY = (v - 0.5f) * 2f * size.height * 0.018f }
+                    // A pendulum swing, pivoting near the top edge.
+                    MotionMode.SWING -> { scaleX = 1.07f; scaleY = 1.07f; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f); rotationZ = (v - 0.5f) * 2f * 1.4f }
+                    // A firm scale pulse.
+                    MotionMode.PULSE -> { val s = 1f + 0.07f * v; scaleX = s; scaleY = s }
+                    // A subtle 3-D tilt around the vertical axis.
+                    MotionMode.TILT -> { cameraDistance = 16f * density; scaleX = 1.08f; scaleY = 1.08f; rotationY = (v - 0.5f) * 2f * 6f }
+                    // A subtle 3-D tilt around the horizontal axis.
+                    MotionMode.TILTY -> { cameraDistance = 16f * density; scaleX = 1.08f; scaleY = 1.08f; rotationX = (v - 0.5f) * 2f * 6f }
+                    // Slow zoom while rising up the frame.
+                    MotionMode.RISE -> { val s = 1.06f + 0.06f * v; scaleX = s; scaleY = s; translationY = -(v - 0.5f) * 2f * size.height * 0.02f }
+                    // Slow zoom while settling down the frame.
+                    MotionMode.FALL -> { val s = 1.06f + 0.06f * v; scaleX = s; scaleY = s; translationY = (v - 0.5f) * 2f * size.height * 0.02f }
+                    // A straight horizontal pan across a slightly enlarged photo.
+                    MotionMode.SLIDEX -> { scaleX = 1.07f; scaleY = 1.07f; translationX = (v - 0.5f) * 2f * dirX * size.width * 0.028f }
+                    // A soft wobble: a little turn with a little scale.
+                    MotionMode.WOBBLE -> { val s = 1.05f + 0.02f * v; scaleX = s; scaleY = s; rotationZ = (v - 0.5f) * 2f * 1.0f }
+                    // Parallax: zoom one way while drifting the other.
+                    MotionMode.PARALLAX -> { val s = 1.08f - 0.04f * v; scaleX = s; scaleY = s; translationX = (v - 0.5f) * 2f * dirX * size.width * 0.02f }
+                    // ROCK: a wider, slower rotation than SWAY.
+                    MotionMode.ROCK -> { scaleX = 1.07f; scaleY = 1.07f; rotationZ = (v - 0.5f) * 2f * 1.8f }
                     else -> {}
                 }
             },
@@ -785,6 +810,10 @@ private fun MotionBox(mode: MotionMode, speed: MotionSpeed, seed: Int, content: 
         // cream mat or black backing show through).
         if (m == MotionMode.BREATHE) {
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.22f * p.value }.background(Color.Black))
+        }
+        // GLOW: a soft brighten and back, as a white veil.
+        if (m == MotionMode.GLOW) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.16f * p.value }.background(Color.White))
         }
     }
 }

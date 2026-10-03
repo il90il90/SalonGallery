@@ -2911,10 +2911,12 @@ private fun layoutPreviewItems(key: String, w: Float, h: Float): List<Placement>
 private val LAYOUTS = listOf(
     // "random" (sent to the Display) is shown as "Mix" — it mixes the layouts, it isn't disorderly.
     "random" to "Mix", "single" to "Single", "mosaic" to "Mosaic", "scatter" to "Scatter", "grid" to "Grid",
-    "window" to "Window", "polaroid" to "Polaroids", "filmstrip" to "Film strip", "stack" to "Stack", "fan" to "Fan",
-    "gallery" to "Gallery wall", "clothesline" to "Clothesline", "bubbles" to "Bubbles",
-    "magazine" to "Magazine", "columns" to "Columns", "carousel" to "Carousel", "collage" to "Collage",
-    "frames" to "Frames", "patchwork" to "Patchwork", "overlap" to "Overlap", "diagonal" to "Diagonal",
+    "window" to "Window", "quilt" to "Quilt", "triptych" to "Triptych", "rows" to "Rows", "columns" to "Columns",
+    "masonry" to "Masonry", "polaroid" to "Polaroids", "filmstrip" to "Film strip", "stack" to "Stack", "fan" to "Fan",
+    "gallery" to "Gallery wall", "clothesline" to "Clothesline", "bubbles" to "Bubbles", "magazine" to "Magazine",
+    "carousel" to "Carousel", "pyramid" to "Pyramid", "diamond" to "Diamond", "cross" to "Cross", "corners" to "Corners",
+    "spiral" to "Spiral", "wave" to "Wave", "spotlight" to "Spotlight", "postcards" to "Postcards",
+    "collage" to "Collage", "frames" to "Frames", "patchwork" to "Patchwork", "overlap" to "Overlap", "diagonal" to "Diagonal",
 )
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -2983,14 +2985,14 @@ private fun SlideshowSheet(
                     val mixes = listOf("always", "often", "sometimes", "rarely")
                     SegRow(listOf("Always", "Often", "Sometimes", "Rarely"), mixes.indexOf(spreadMix).coerceAtLeast(0)) { onSpreadMix(mixes[it]) }
                 }
-                SettingsToggleCard(stringResource(R.string.slideshow_reveal_eyebrow), stringResource(R.string.slideshow_stagger), stringResource(R.string.slideshow_stagger_hint), stagger, onStagger)
+                SettingsToggleCard(stringResource(R.string.slideshow_reveal_eyebrow), stringResource(R.string.slideshow_stagger), stringResource(R.string.slideshow_stagger_hint), stagger, onStagger) { RevealIllustration() }
             }
 
             // MOTION
             SettingsCard(stringResource(R.string.slideshow_motion_eyebrow), stringResource(R.string.slideshow_motion_title), stringResource(R.string.slideshow_motion_hint)) {
-                val motions = listOf("off", "zoom", "drift", "breathe", "sway", "glide", "mix")
-                val labels = listOf("Off", "Zoom", "Drift", "Fade", "Sway", "Glide", "Mix")
-                // Uniform grid, four per row, sized to the card width.
+                // Mix first; then Off and every effect. Each tile previews its own motion live.
+                val motions = listOf("mix", "off", "zoom", "drift", "breathe", "sway", "glide", "float", "swing", "pulse", "tilt", "tilty", "rise", "fall", "slidex", "wobble", "parallax", "glow", "rock")
+                val labels = listOf("Mix", "Off", "Zoom", "Drift", "Fade", "Sway", "Glide", "Float", "Swing", "Pulse", "Tilt", "Tilt Y", "Rise", "Fall", "Slide", "Wobble", "Parallax", "Glow", "Rock")
                 val gap = 8.dp
                 BoxWithConstraints {
                     val tileW = (maxWidth - gap * 3) / 4
@@ -3001,10 +3003,15 @@ private fun SlideshowSheet(
                     }
                 }
                 if (motion != "off") {
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(14.dp))
                     FieldLabel(stringResource(R.string.slideshow_motion_speed))
+                    Spacer(Modifier.height(4.dp))
                     val speeds = listOf("slow", "medium", "fast")
-                    SegRow(listOf("Slow", "Medium", "Fast"), speeds.indexOf(motionSpeed).coerceAtLeast(0)) { onMotionSpeed(speeds[it]) }
+                    StepSlider(
+                        labels = listOf("Slow", "Medium", "Fast"),
+                        index = speeds.indexOf(motionSpeed).coerceAtLeast(0),
+                        onChange = { onMotionSpeed(speeds[it]) },
+                    )
                 }
             }
 
@@ -3056,21 +3063,55 @@ private fun SettingsCard(eyebrow: String, title: String, explain: String, conten
 
 /** A card whose control is a single on/off switch. */
 @Composable
-private fun SettingsToggleCard(eyebrow: String, title: String, explain: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SettingsToggleCard(
+    eyebrow: String, title: String, explain: String, checked: Boolean, onChange: (Boolean) -> Unit,
+    illustration: @Composable (() -> Unit)? = null,
+) {
     Box(
         Modifier.fillMaxWidth().padding(bottom = 14.dp).clip(RoundedCornerShape(18.dp))
             .background(ElecSurface).border(1.dp, ElecBorder, RoundedCornerShape(18.dp)).padding(16.dp),
     ) {
         // Text is centred across the full card width (to match the other cards); the switch stays
         // pinned to the end.
-        Column(Modifier.fillMaxWidth().padding(end = 52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = AccentWarm, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(3.dp))
-            Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(4.dp))
-            Text(explain, style = MaterialTheme.typography.bodySmall, color = TextSecondary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.fillMaxWidth().padding(end = 52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = AccentWarm, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(3.dp))
+                Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(4.dp))
+                Text(explain, style = MaterialTheme.typography.bodySmall, color = TextSecondary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            }
+            if (illustration != null) {
+                Spacer(Modifier.height(14.dp))
+                illustration()
+            }
         }
-        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.align(Alignment.CenterEnd))
+        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.align(Alignment.TopEnd))
+    }
+}
+
+/** A looping demo of a multi-photo slide whose tiles fade in one after another. */
+@Composable
+private fun RevealIllustration() {
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "rev")
+    val v by t.animateFloat(
+        0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(2600, easing = androidx.compose.animation.core.LinearEasing),
+        ), label = "revv",
+    )
+    val count = 4
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        repeat(count) { i ->
+            // Each tile's reveal window is staggered across the loop.
+            val start = i / (count + 1f)
+            val a = ((v - start) / 0.28f).coerceIn(0f, 1f)
+            Box(
+                Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(8.dp))
+                    .graphicsLayer { alpha = 0.18f + 0.82f * a }
+                    .background(Brush.linearGradient(listOf(CreamTile, Color(0xFFD8CAB4)))),
+            )
+        }
     }
 }
 
@@ -3129,6 +3170,18 @@ private fun MotionIllustration(key: String) {
                     "breathe" -> { alpha = 0.3f + 0.7f * v }
                     "sway" -> { rotationZ = (v - 0.5f) * 24f }
                     "glide" -> { val s = 0.9f + 0.2f * v; scaleX = s; scaleY = s; translationX = (v - 0.5f) * 16f; translationY = (v - 0.5f) * 10f }
+                    "float" -> { translationY = (v - 0.5f) * 20f }
+                    "swing" -> { transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f); rotationZ = (v - 0.5f) * 28f }
+                    "pulse" -> { val s = 0.84f + 0.3f * v; scaleX = s; scaleY = s }
+                    "tilt" -> { cameraDistance = 12f * density; rotationY = (v - 0.5f) * 60f }
+                    "tilty" -> { cameraDistance = 12f * density; rotationX = (v - 0.5f) * 60f }
+                    "rise" -> { val s = 0.9f + 0.18f * v; scaleX = s; scaleY = s; translationY = -(v - 0.5f) * 16f }
+                    "fall" -> { val s = 0.9f + 0.18f * v; scaleX = s; scaleY = s; translationY = (v - 0.5f) * 16f }
+                    "slidex" -> { translationX = (v - 0.5f) * 26f }
+                    "wobble" -> { val s = 0.9f + 0.1f * v; scaleX = s; scaleY = s; rotationZ = (v - 0.5f) * 18f }
+                    "parallax" -> { val s = 1.0f - 0.16f * v; scaleX = s; scaleY = s; translationX = (v - 0.5f) * 18f }
+                    "glow" -> { alpha = 0.55f + 0.45f * v }
+                    "rock" -> { rotationZ = (v - 0.5f) * 34f }
                     "mix" -> { val s = 0.86f + 0.22f * v; scaleX = s; scaleY = s; alpha = 0.5f + 0.5f * v }
                     else -> {}
                 }
@@ -3165,7 +3218,7 @@ private fun TextSheet(
     var colorIdx by remember { mutableIntStateOf(0) }
     var fontIdx by remember { mutableIntStateOf(0) }
     var clock by remember { mutableStateOf(false) }
-    var clockPosIdx by remember { mutableIntStateOf(0) }
+    var clockPosIdx by remember { mutableIntStateOf(2) }   // bottom-left by default
     var clockDate by remember { mutableStateOf(true) }
     var clockStyle by remember { mutableStateOf("digital") }
     var clockSizeIdx by remember { mutableIntStateOf(1) }
@@ -3772,13 +3825,39 @@ private fun SegRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit)
                     .padding(horizontal = 4.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                // Centre, and let a long label wrap to two tidy lines rather than clip mid-word.
+                // One line at a compact size so every segment is the same height and nothing wraps/clips.
                 Text(
-                    label, style = MaterialTheme.typography.labelMedium,
+                    label, style = MaterialTheme.typography.labelSmall,
                     color = if (sel) Color(0xFF07121F) else TextPrimary,
-                    textAlign = TextAlign.Center, maxLines = 2,
-                    lineHeight = 14.sp,
+                    textAlign = TextAlign.Center, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
+            }
+        }
+    }
+}
+
+/** A flexible slider that snaps to a small set of labelled steps (e.g. Slow·Medium·Fast, S·M·L). */
+@Composable
+private fun StepSlider(labels: List<String>, index: Int, onChange: (Int) -> Unit) {
+    val n = labels.size
+    var pos by remember(index) { mutableStateOf(index.toFloat()) }
+    val sel = Math.round(pos).coerceIn(0, n - 1)
+    Column(Modifier.fillMaxWidth()) {
+        Slider(
+            value = pos,
+            onValueChange = { pos = it },
+            onValueChangeFinished = { onChange(Math.round(pos).coerceIn(0, n - 1)) },
+            valueRange = 0f..(n - 1).toFloat(),
+            steps = (n - 2).coerceAtLeast(0),
+            colors = SliderDefaults.colors(
+                thumbColor = NeonCyan, activeTrackColor = NeonCyan,
+                inactiveTrackColor = ElecBorder, activeTickColor = NeonCyan.copy(alpha = 0.5f), inactiveTickColor = ElecBorder,
+            ),
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            labels.forEachIndexed { i, l ->
+                Text(l, style = MaterialTheme.typography.labelSmall, color = if (i == sel) NeonCyan else TextTertiary)
             }
         }
     }

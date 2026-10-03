@@ -22,7 +22,8 @@ enum class SlideEffect {
  * mat, a SCATTER of tilted prints on a table, and the planned layouts (GRID … COLUMNS, see
  * ui/SpreadLayouts.kt) — or RANDOM, a seeded per-slide mix of single photos and every spread.
  */
-enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, WINDOW, POLAROID, FILMSTRIP, STACK, FAN, GALLERY, CLOTHESLINE, BUBBLES, MAGAZINE, COLUMNS, CAROUSEL,
+enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, WINDOW, QUILT, TRIPTYCH, ROWS, COLUMNS, MASONRY, POLAROID, FILMSTRIP, STACK, FAN, GALLERY,
+    CLOTHESLINE, BUBBLES, MAGAZINE, CAROUSEL, PYRAMID, DIAMOND, CROSS, CORNERS, SPIRAL, WAVE, SPOTLIGHT, POSTCARDS,
     COLLAGE, FRAMES, PATCHWORK, OVERLAP, DIAGONAL, RANDOM;
     val isSpread get() = this != SINGLE && this != RANDOM
     companion object {
@@ -36,7 +37,8 @@ enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, WINDOW, POLAROID, FILMSTR
  * and out), a gentle DRIFT (pan across a slightly enlarged photo), a soft BREATHE (fade down and back
  * up), or MIX — a seeded pick of the three per slide. OFF keeps the photo perfectly still.
  */
-enum class MotionMode { OFF, ZOOM, DRIFT, BREATHE, SWAY, GLIDE, MIX;
+enum class MotionMode { OFF, ZOOM, DRIFT, BREATHE, SWAY, GLIDE,
+    FLOAT, SWING, PULSE, TILT, TILTY, RISE, FALL, SLIDEX, WOBBLE, PARALLAX, GLOW, ROCK, MIX;
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: OFF
     }
@@ -97,7 +99,7 @@ enum class ClockStyle { DIGITAL, ANALOG, MINIMAL, MONO, BOLD, LED, CARD;
 /** The clock / date overlay configuration. */
 data class ClockConfig(
     val on: Boolean = false,
-    val pos: ClockPos = ClockPos.TOP_START,
+    val pos: ClockPos = ClockPos.BOTTOM_START,
     val showDate: Boolean = true,
     val style: ClockStyle = ClockStyle.DIGITAL,
     val size: String = "m",   // s | m | l — scales the clock
