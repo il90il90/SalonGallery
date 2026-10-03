@@ -6,8 +6,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +28,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -52,6 +65,33 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+/** Shows the previous run's crash report (stack trace + memory snapshot) in a scrollable dialog. */
+@Composable
+private fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.crash_title)) },
+        text = {
+            Column(
+                Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(stringResource(R.string.crash_explain))
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    report,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.crash_dismiss)) }
+        },
+    )
 }
 
 @Composable
@@ -177,6 +217,16 @@ private fun AppRoot(prefs: RolePreferences) {
             } else {
                 RemoteModeScreen(actions)
             }
+        }
+    }
+
+    // If the previous run crashed, show the saved report on this launch so an unattended screen's
+    // failure is visible. Dismissing clears it.
+    var crashReport by remember { mutableStateOf(com.il90.salongallery.diag.CrashLog.pending(context)) }
+    crashReport?.let { report ->
+        CrashReportDialog(report) {
+            com.il90.salongallery.diag.CrashLog.clear(context)
+            crashReport = null
         }
     }
 

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Salon Gallery</string>
+    <string name="crash_title">The app restarted after a problem</string>
+    <string name="crash_explain">Last time, the app closed unexpectedly. Here are the technical details so the issue can be diagnosed:</string>
+    <string name="crash_dismiss">Dismiss</string>
     <string name="notif_channel_screen">Screen status</string>
     <string name="notif_screen_offline_title">Screen offline</string>
     <string name="notif_screen_offline_body">\"%1$s\" isn\'t responding — it may be off, restarting, or off the Wi-Fi.</string>

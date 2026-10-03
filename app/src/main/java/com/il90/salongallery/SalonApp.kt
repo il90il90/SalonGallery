@@ -15,6 +15,14 @@ import coil.memory.MemoryCache
  * collage cell and full-screen alike — so a spread never shows an empty cell while a photo decodes.
  */
 class SalonApp : Application(), ImageLoaderFactory {
+
+    override fun onCreate() {
+        super.onCreate()
+        // Record any uncaught crash to a file so the NEXT launch can show what went wrong — a screen
+        // at the salon crashes unattended, so this is the only way we learn why.
+        com.il90.salongallery.diag.CrashLog.install(this)
+    }
+
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
             .allowHardware(true)

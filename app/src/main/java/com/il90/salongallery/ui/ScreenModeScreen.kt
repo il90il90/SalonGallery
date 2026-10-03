@@ -564,9 +564,32 @@ private fun Slideshow(
     // spread layout. [spreadMix] decides how often a slide is a spread at all — the others show one
     // photo. A layout that needs more photos than there are falls back to a Grid. Needs 4+ stills.
     val stillCount = remember(files) { files.count { !isVideoName(it.name) } }
+
+    // Smart, live memory budget: how many photos a spread may hold RIGHT NOW — derived from the
+    // device's RAM, how much is free this moment, and the cost of one photo at the decode size, rather
+    // than a fixed number. Re-checked on a slow ticker so it adapts as memory frees up or tightens,
+    // without churning every frame (which would make a spread's photo count flicker mid-slide).
+    val memCtx = androidx.compose.ui.platform.LocalContext.current
+    var spreadBudget by remember {
+        mutableStateOf(com.il90.salongallery.diag.MemoryGovernor.assess(memCtx, slidePx(memCtx)))
+    }
+    LaunchedEffect(files) {
+        while (true) {
+            spreadBudget = com.il90.salongallery.diag.MemoryGovernor.assess(memCtx, slidePx(memCtx))
+            delay(3000)
+        }
+    }
+
     fun rangeOf(m: LayoutMode): IntRange = when (m) {
         LayoutMode.MOSAIC, LayoutMode.SCATTER -> 4..5
         else -> SpreadStyle.valueOf(m.name).let { maxOf(it.minN, 4)..it.maxN }
+    }
+    // Settle on a spread we can actually fill: if the library is too small OR the live memory budget
+    // is below the layout's minimum photo count, drop to a light Grid (min 4) instead of rendering a
+    // heavy layout (e.g. a 8–12 cell patchwork) with empty cells or under memory strain.
+    fun resolveSpread(m: LayoutMode): LayoutMode {
+        val need = rangeOf(m).first
+        return if (stillCount < need || spreadBudget.maxSpreadPhotos < need) LayoutMode.GRID else m
     }
     fun spreadAt(from: Int): LayoutMode? {
         if (stillCount < 4 || layout == LayoutMode.SINGLE) return null
@@ -582,11 +605,11 @@ private fun Slideshow(
             if (rr.nextFloat() >= chance) return null
             val pool = if (gappy) AUTO_FILL_SPREADS else AUTO_VARIETY_SPREADS
             val m = pool[rr.nextInt(pool.size)]
-            return if (stillCount < rangeOf(m).first) LayoutMode.GRID else m
+            return resolveSpread(m)
         }
         if (rr.nextFloat() >= spreadMix.chance) return null
         val m = if (layout == LayoutMode.RANDOM) LayoutMode.SPREADS[rr.nextInt(LayoutMode.SPREADS.size)] else layout
-        return if (stillCount < rangeOf(m).first) LayoutMode.GRID else m
+        return resolveSpread(m)
     }
 
     fun membersAt(from: Int): List<Int> {
@@ -597,7 +620,7 @@ private fun Slideshow(
         spreadAt(from)?.let { m ->
             val range = rangeOf(m)
             val want = (range.first + kotlin.random.Random(from.toLong() * 31 + 3).nextInt(range.last - range.first + 1))
-                .coerceAtMost(minOf(stillCount, MAX_SPREAD_PHOTOS))
+                .coerceAtMost(minOf(stillCount, spreadBudget.maxSpreadPhotos))
             // Smart grouping: once dominant colours are known, fill the spread with the stills most
             // similar in colour to the anchor (within a forward window) instead of the next in order.
             if (smartGroup && colorsReady) {
@@ -1472,12 +1495,9 @@ internal fun focusAlignment(focus: PhotoFocus?, boxW: Float, boxH: Float): Align
  *  memory and the app no longer crashes after a run of busy slides. */
 private const val SLIDE_MAX_PX = 1600
 
-/** Hard cap on how many photos any one spread decodes/shows at once, so a 12-cell quilt/patchwork
- *  can't blow memory on a low-RAM device. 9 still fills every planned layout (max min-count is 8). */
-private const val MAX_SPREAD_PHOTOS = 9
-
 /** How many of a spread's cells we force-decode before switching to it; the rest crossfade in from
- *  the warm pass. Bounds the burst of simultaneous full-size decodes at a transition. */
+ *  the warm pass. Bounds the burst of simultaneous full-size decodes at a transition. The total
+ *  number of photos a spread may hold is decided live by [com.il90.salongallery.diag.MemoryGovernor]. */
 private const val SLIDE_READY_CAP = 6
 private fun slidePx(ctx: android.content.Context): Int =
     ctx.resources.displayMetrics.let { minOf(maxOf(it.widthPixels, it.heightPixels), SLIDE_MAX_PX) }
