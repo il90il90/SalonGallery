@@ -36,7 +36,7 @@ interface ScreenCommands {
     fun onMotion(mode: String, speed: String) // off | zoom | drift | breathe | mix ; slow | medium | fast
     fun onText(content: String, pos: String, size: String, color: String, font: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String)
-    fun onWeather(on: Boolean, place: String, lat: Double, lon: Double, units: String, pos: String)
+    fun onWeather(on: Boolean, place: String, lat: Double, lon: Double, units: String, pos: String, style: String = "pill")
     fun overlaysJson(): String             // current clock/weather/text state, so the Remote reflects reality
     fun onOpenScreensaver()
     fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean)
@@ -224,7 +224,8 @@ class PhotoServer(
                     session.parameters["lat"]?.firstOrNull()?.toDoubleOrNull() ?: 0.0,
                     session.parameters["lon"]?.firstOrNull()?.toDoubleOrNull() ?: 0.0,
                     session.parameters["units"]?.firstOrNull() ?: "c",
-                    session.parameters["pos"]?.firstOrNull() ?: "top_end",
+                    session.parameters["pos"]?.firstOrNull() ?: "bottom_start",
+                    session.parameters["style"]?.firstOrNull() ?: "pill",
                 ); ok()
             }
             session.method == Method.GET && uri == "/orientation" -> {

@@ -1583,25 +1583,48 @@ private fun clockStackHeight(size: String): androidx.compose.ui.unit.Dp = when (
     else -> 74.dp
 }
 
-/** A tasteful weather pill: icon, temperature and place name. */
+/** The weather overlay, in one of several styles: pill, minimal, card or stacked. */
 @Composable
 private fun BoxScope.WeatherBadge(cfg: com.il90.salongallery.net.WeatherConfig, now: com.il90.salongallery.net.WeatherNow, modifier: Modifier) {
-    Row(
-        modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.42f))
-            .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(50))
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(weatherGlyph(now.code), style = TextStyle(fontSize = 34.sp))
-        Column {
-            Text(
-                "${now.temp}°${cfg.units.uppercase()}",
-                style = TextStyle(fontFamily = com.il90.salongallery.ui.theme.Display, fontSize = 34.sp, fontWeight = FontWeight(500), color = Color.White, shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 2f), 10f)),
-            )
-            if (cfg.place.isNotBlank()) Text(
-                cfg.place,
-                style = TextStyle(fontFamily = com.il90.salongallery.ui.theme.Body, fontSize = 15.sp, fontWeight = FontWeight(500), color = Color.White.copy(0.9f), letterSpacing = 0.4.sp),
-            )
+    val temp = "${now.temp}°${cfg.units.uppercase()}"
+    val glyph = weatherGlyph(now.code)
+    val shadow = Shadow(Color.Black.copy(0.6f), Offset(0f, 2f), 10f)
+    fun tempStyle(sz: Int) = TextStyle(fontFamily = com.il90.salongallery.ui.theme.Display, fontSize = sz.sp, fontWeight = FontWeight(500), color = Color.White, shadow = shadow)
+    fun placeStyle(sz: Int) = TextStyle(fontFamily = com.il90.salongallery.ui.theme.Body, fontSize = sz.sp, fontWeight = FontWeight(500), color = Color.White.copy(0.9f), letterSpacing = 0.4.sp, shadow = shadow)
+    when (cfg.style) {
+        "minimal" -> Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(glyph, style = TextStyle(fontSize = 30.sp))
+            Text(temp, style = tempStyle(30))
+        }
+        "stacked" -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(glyph, style = TextStyle(fontSize = 40.sp))
+            Text(temp, style = tempStyle(30))
+            if (cfg.place.isNotBlank()) Text(cfg.place, style = placeStyle(14))
+        }
+        "card" -> Row(
+            modifier.clip(RoundedCornerShape(18.dp))
+                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.Black.copy(alpha = 0.32f))))
+                .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(18.dp))
+                .padding(horizontal = 22.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(glyph, style = TextStyle(fontSize = 42.sp))
+            Column {
+                Text(temp, style = tempStyle(36))
+                if (cfg.place.isNotBlank()) Text(cfg.place, style = placeStyle(15))
+            }
+        }
+        else -> Row(   // "pill"
+            modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.42f))
+                .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(50))
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(glyph, style = TextStyle(fontSize = 34.sp))
+            Column {
+                Text(temp, style = tempStyle(34))
+                if (cfg.place.isNotBlank()) Text(cfg.place, style = placeStyle(15))
+            }
         }
     }
 }

@@ -406,8 +406,8 @@ object PhotoSender {
         get(host, port, "/text?content=${enc(content)}&pos=$pos&size=$size&color=$color&font=$font")
 
     /** Turn weather on/off on the wall. Uses Open-Meteo (no API key); [place]/[lat]/[lon] from geocode(). */
-    suspend fun setWeather(host: String, port: Int, on: Boolean, place: String = "", lat: Double = 0.0, lon: Double = 0.0, units: String = "c", pos: String = "top_end") =
-        get(host, port, "/weather?on=${if (on) 1 else 0}&place=${enc(place)}&lat=$lat&lon=$lon&units=$units&pos=$pos")
+    suspend fun setWeather(host: String, port: Int, on: Boolean, place: String = "", lat: Double = 0.0, lon: Double = 0.0, units: String = "c", pos: String = "bottom_start", style: String = "pill") =
+        get(host, port, "/weather?on=${if (on) 1 else 0}&place=${enc(place)}&lat=$lat&lon=$lon&units=$units&pos=$pos&style=$style")
 
     /** A place matched for a typed city name, via Open-Meteo's free geocoding (no key). */
     data class GeoPlace(val name: String, val country: String, val lat: Double, val lon: Double)
@@ -464,7 +464,7 @@ object PhotoSender {
     /** Current on-screen overlay state (clock / weather / text) as the Display really has it. */
     data class OverlayState(
         val clockOn: Boolean, val clockPos: String, val clockDate: Boolean, val clockStyle: String, val clockSize: String,
-        val weatherOn: Boolean, val weatherPlace: String, val weatherLat: Double, val weatherLon: Double, val weatherUnits: String, val weatherPos: String,
+        val weatherOn: Boolean, val weatherPlace: String, val weatherLat: Double, val weatherLon: Double, val weatherUnits: String, val weatherPos: String, val weatherStyle: String,
         val textContent: String, val textPos: String, val textSize: String, val textColor: String, val textFont: String,
     )
 
@@ -483,7 +483,8 @@ object PhotoSender {
                 clockDate = c.optBoolean("date", true), clockStyle = c.optString("style", "digital"), clockSize = c.optString("size", "m"),
                 weatherOn = w.optBoolean("on", false), weatherPlace = w.optString("place", ""),
                 weatherLat = w.optDouble("lat", 0.0), weatherLon = w.optDouble("lon", 0.0),
-                weatherUnits = w.optString("units", "c"), weatherPos = w.optString("pos", "top_end"),
+                weatherUnits = w.optString("units", "c"), weatherPos = w.optString("pos", "bottom_start"),
+                weatherStyle = w.optString("style", "pill"),
                 textContent = t.optString("content", ""), textPos = t.optString("pos", "bottom"),
                 textSize = t.optString("size", "m"), textColor = t.optString("color", "white"), textFont = t.optString("font", "classic"),
             )

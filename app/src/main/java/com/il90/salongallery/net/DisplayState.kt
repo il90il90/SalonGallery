@@ -123,6 +123,7 @@ data class WeatherConfig(
     val lon: Double = 0.0,
     val units: String = "c",
     val pos: ClockPos = ClockPos.BOTTOM_START,
+    val style: String = "pill",   // pill | minimal | card | stacked
 )
 data class WeatherNow(val temp: Int = 0, val code: Int = -1, val ok: Boolean = false)
 

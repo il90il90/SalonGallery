@@ -280,6 +280,8 @@
     <string name="weather_city">Search a city…</string>
     <string name="weather_searching">Searching…</string>
     <string name="weather_units">Units</string>
+    <string name="weather_style">Style</string>
+    <string name="weather_position">Weather position</string>
     <string name="slideshow_sub">How your photos play on the wall.</string>
     <string name="slideshow_fit_eyebrow">Photo fit</string>
     <string name="slideshow_fit_title">How a photo fills the frame</string>

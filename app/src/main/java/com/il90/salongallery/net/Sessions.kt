@@ -115,7 +115,7 @@ class ScreenSession(
         ClockConfig(prefs.clockOn, ClockPos.from(prefs.clockPos), prefs.clockDate, ClockStyle.from(prefs.clockStyle), prefs.clockSize)
     )
     val weather = MutableStateFlow(
-        WeatherConfig(prefs.weatherOn, prefs.weatherPlace, prefs.weatherLat, prefs.weatherLon, prefs.weatherUnits, ClockPos.from(prefs.weatherPos))
+        WeatherConfig(prefs.weatherOn, prefs.weatherPlace, prefs.weatherLat, prefs.weatherLon, prefs.weatherUnits, ClockPos.from(prefs.weatherPos), prefs.weatherStyle)
     )
     val weatherNow = MutableStateFlow(WeatherNow())
     // Generation guard for the weather-refresh thread; declared before init so restoring an "on"
@@ -420,10 +420,10 @@ class ScreenSession(
         prefs.textContent = content; prefs.textPos = pos; prefs.textSize = size; prefs.textColor = color; prefs.textFont = font
     }
 
-    override fun onWeather(on: Boolean, place: String, lat: Double, lon: Double, units: String, pos: String) {
-        weather.value = WeatherConfig(on, place, lat, lon, units, ClockPos.from(pos))
+    override fun onWeather(on: Boolean, place: String, lat: Double, lon: Double, units: String, pos: String, style: String) {
+        weather.value = WeatherConfig(on, place, lat, lon, units, ClockPos.from(pos), style.ifBlank { "pill" })
         prefs.weatherOn = on; prefs.weatherPlace = place; prefs.weatherLat = lat; prefs.weatherLon = lon
-        prefs.weatherUnits = units; prefs.weatherPos = pos
+        prefs.weatherUnits = units; prefs.weatherPos = pos; prefs.weatherStyle = style.ifBlank { "pill" }
         // Only fetch once a real location is set (lat 0 is open ocean, i.e. "no city yet").
         if (on && lat != 0.0) fetchWeather() else weatherNow.value = WeatherNow()
     }
@@ -468,7 +468,7 @@ class ScreenSession(
         return """{"clock":{"on":${c.on},"pos":"${c.pos.name.lowercase()}","date":${c.showDate},""" +
             """"style":"${c.style.name.lowercase()}","size":"${esc(c.size)}"},""" +
             """"weather":{"on":${w.on},"place":"${esc(w.place)}","lat":${w.lat},"lon":${w.lon},""" +
-            """"units":"${esc(w.units)}","pos":"${w.pos.name.lowercase()}"},""" +
+            """"units":"${esc(w.units)}","pos":"${w.pos.name.lowercase()}","style":"${esc(w.style)}"},""" +
             """"text":{"content":"${esc(t.content)}","pos":"${t.pos.name.lowercase()}","size":"${esc(t.size)}",""" +
             """"color":"${esc(t.color)}","font":"${esc(t.font)}"}}"""
     }

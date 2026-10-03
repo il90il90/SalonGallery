@@ -1091,8 +1091,8 @@ private fun ControlPanel(
             onClock = { on, pos, date, style, size ->
                 scope.launch { PhotoSender.setClock(screen.host, screen.port, on, pos, date, style, size) }
             },
-            onWeather = { on, place, lat, lon, units, pos ->
-                scope.launch { PhotoSender.setWeather(screen.host, screen.port, on, place, lat, lon, units, pos) }
+            onWeather = { on, place, lat, lon, units, pos, style ->
+                scope.launch { PhotoSender.setWeather(screen.host, screen.port, on, place, lat, lon, units, pos, style) }
             },
             onClear = {
                 scope.launch {
@@ -3233,7 +3233,7 @@ private fun TextSheet(
     screen: DiscoveredScreen,
     onText: (String, String, String, String, String) -> Unit,
     onClock: (Boolean, String, Boolean, String, String) -> Unit,
-    onWeather: (Boolean, String, Double, Double, String, String) -> Unit,
+    onWeather: (Boolean, String, Double, Double, String, String, String) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -3251,6 +3251,7 @@ private fun TextSheet(
     // Gate the auto-push effects until the Display's real state has loaded, so initialising the
     // fields from the server doesn't echo straight back as a "change".
     var loaded by remember { mutableStateOf(false) }
+    var overlayTab by remember { mutableStateOf("text") }
     val positions = listOf("top", "center", "bottom")
     val sizes = listOf("s", "m", "l")
     val colors = listOf("white", "black", "gold", "cyan", "violet")
@@ -3266,6 +3267,8 @@ private fun TextSheet(
     var weatherOn by remember { mutableStateOf(false) }
     var weatherUnitsIdx by remember { mutableIntStateOf(0) }
     var weatherPosIdx by remember { mutableIntStateOf(2) }   // bottom-left by default
+    val weatherStyles = listOf("pill", "minimal", "card", "stacked")
+    var weatherStyleIdx by remember { mutableIntStateOf(0) }
     var weatherPlace by remember { mutableStateOf("") }
     var weatherLat by remember { mutableStateOf(0.0) }
     var weatherLon by remember { mutableStateOf(0.0) }
@@ -3276,7 +3279,7 @@ private fun TextSheet(
 
     // Weather can be on even before a city is picked (the toggle persists); the Display just won't
     // fetch until a location is set. So push the real toggle state, not "on only if a city exists".
-    fun pushWeather() = onWeather(weatherOn, weatherPlace, weatherLat, weatherLon, weatherUnits[weatherUnitsIdx], clockPositions[weatherPosIdx])
+    fun pushWeather() = onWeather(weatherOn, weatherPlace, weatherLat, weatherLon, weatherUnits[weatherUnitsIdx], clockPositions[weatherPosIdx], weatherStyles[weatherStyleIdx])
 
     // Load the Display's real overlay state once when the sheet opens, so the toggles and fields show
     // what is actually on the wall instead of fresh defaults. Pushes are gated on `loaded` so this
@@ -3299,6 +3302,7 @@ private fun TextSheet(
             weatherLon = o.weatherLon
             weatherUnitsIdx = weatherUnits.indexOf(o.weatherUnits).coerceAtLeast(0)
             weatherPosIdx = clockPositions.indexOf(o.weatherPos).coerceAtLeast(0)
+            weatherStyleIdx = weatherStyles.indexOf(o.weatherStyle).coerceAtLeast(0)
         }
         loaded = true
     }
@@ -3319,7 +3323,15 @@ private fun TextSheet(
             Spacer(Modifier.height(4.dp))
             Text(stringResource(R.string.overlays_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
 
+            // One section at a time, so the screen stays tidy (Text / Clock / Weather).
+            Spacer(Modifier.height(16.dp))
+            val overlayTabs = listOf("text", "clock", "weather")
+            SegRow(listOf(stringResource(R.string.overlays_text), stringResource(R.string.overlays_clock), stringResource(R.string.overlays_weather)), overlayTabs.indexOf(overlayTab).coerceAtLeast(0)) {
+                overlayTab = overlayTabs[it]
+            }
+
             // ---- TEXT ----
+            if (overlayTab == "text") {
             Spacer(Modifier.height(20.dp))
             SheetSection(stringResource(R.string.overlays_text))
             Spacer(Modifier.height(12.dp))
@@ -3345,9 +3357,11 @@ private fun TextSheet(
             Spacer(Modifier.height(14.dp))
             FieldLabel(stringResource(R.string.text_color))
             SegRow(listOf("White", "Black", "Gold", "Cyan", "Violet"), colorIdx) { colorIdx = it }
+            }
 
             // ---- CLOCK ----
-            Spacer(Modifier.height(22.dp))
+            if (overlayTab == "clock") {
+            Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SheetSection(stringResource(R.string.overlays_clock), Modifier.weight(1f))
                 Switch(checked = clock, onCheckedChange = { clock = it })
@@ -3370,9 +3384,11 @@ private fun TextSheet(
                     Switch(checked = clockDate, onCheckedChange = { clockDate = it })
                 }
             }
+            }
 
             // ---- WEATHER ----
-            Spacer(Modifier.height(22.dp))
+            if (overlayTab == "weather") {
+            Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SheetSection(stringResource(R.string.overlays_weather), Modifier.weight(1f))
                 Switch(checked = weatherOn, onCheckedChange = { weatherOn = it; pushWeather() })
@@ -3419,11 +3435,15 @@ private fun TextSheet(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+                FieldLabel(stringResource(R.string.weather_style))
+                SegRow(listOf("Pill", "Minimal", "Card", "Stacked"), weatherStyleIdx) { weatherStyleIdx = it; pushWeather() }
+                Spacer(Modifier.height(12.dp))
                 FieldLabel(stringResource(R.string.weather_units))
                 SegRow(listOf("\u00B0C", "\u00B0F"), weatherUnitsIdx) { weatherUnitsIdx = it; pushWeather() }
                 Spacer(Modifier.height(12.dp))
-                FieldLabel(stringResource(R.string.clock_position))
+                FieldLabel(stringResource(R.string.weather_position))
                 SegRow(listOf("\u2196", "\u2197", "\u2199", "\u2198", "\u2022"), weatherPosIdx) { weatherPosIdx = it; pushWeather() }
+            }
             }
 
             Spacer(Modifier.height(22.dp))
