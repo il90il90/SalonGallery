@@ -53,7 +53,11 @@ class ScreenWatchWorker(context: Context, params: WorkerParameters) : CoroutineW
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true).setContentIntent(pi)
             .build()
-        runCatching { NotificationManagerCompat.from(ctx).notify(NOTIF_ID, n) }
+        // On Android 13+ posting needs the runtime POST_NOTIFICATIONS grant; check before notifying.
+        val canPost = android.os.Build.VERSION.SDK_INT < 33 ||
+            androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (canPost) runCatching { NotificationManagerCompat.from(ctx).notify(NOTIF_ID, n) }
     }
 
     private fun ensureChannel(ctx: Context) {
