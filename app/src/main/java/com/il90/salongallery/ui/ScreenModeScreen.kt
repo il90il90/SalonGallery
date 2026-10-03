@@ -580,17 +580,25 @@ private fun Slideshow(
         }
     }
 
-    // Periodic memory hygiene: when the device is under real pressure, drop Coil's idle in-memory
-    // cache so bitmaps from past/warmed slides are released instead of piling up. The slide ON screen
-    // is held by its composables, not only the cache, so it does not blank; only off-screen extras go.
-    // Throttled (at most ~every 40s) so we never thrash by re-decoding the visible slide over and over.
+    // Proactive memory hygiene: don't wait for the device to be critical — start freeing early. Every
+    // 10s we read the pressure and, once it crosses ~70% (climbing toward trouble), drop Coil's idle
+    // in-memory cache so bitmaps from past/warmed slides are released and usage shrinks back down; the
+    // next slides simply decode fresh again. The slide ON screen is held by its composables, not only
+    // the cache, so it never blanks — only off-screen extras go. The throttle scales with pressure:
+    // the tighter things are, the sooner we're allowed to clear again (but never so often we thrash).
     LaunchedEffect(files) {
         var lastTrim = 0L
         while (true) {
-            delay(15_000)
+            delay(10_000)
             val pressure = com.il90.salongallery.diag.MemoryGovernor.assess(memCtx, slidePx(memCtx)).pressure
             val now = System.currentTimeMillis()
-            if (pressure >= 0.85f && now - lastTrim > 40_000) {
+            val minGapMs = when {
+                pressure >= 0.85f -> 20_000L   // very tight: clear as often as every 20s
+                pressure >= 0.78f -> 30_000L
+                pressure >= 0.70f -> 45_000L   // just over the line: gentle, infrequent clears
+                else -> Long.MAX_VALUE          // plenty of headroom: leave the cache alone
+            }
+            if (now - lastTrim >= minGapMs) {
                 runCatching { coil.Coil.imageLoader(memCtx).memoryCache?.clear() }
                 lastTrim = now
             }
