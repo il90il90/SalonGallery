@@ -22,10 +22,11 @@ enum class SlideEffect {
  * mat, a SCATTER of tilted prints on a table, and the planned layouts (GRID … COLUMNS, see
  * ui/SpreadLayouts.kt) — or RANDOM, a seeded per-slide mix of single photos and every spread.
  */
-enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, WINDOW, QUILT, TRIPTYCH, ROWS, COLUMNS, MASONRY, POLAROID, FILMSTRIP, STACK, FAN, GALLERY,
+enum class LayoutMode { SINGLE, AUTO, MOSAIC, SCATTER, GRID, WINDOW, QUILT, TRIPTYCH, ROWS, COLUMNS, MASONRY, POLAROID, FILMSTRIP, STACK, FAN, GALLERY,
     CLOTHESLINE, BUBBLES, MAGAZINE, CAROUSEL, PYRAMID, DIAMOND, CROSS, CORNERS, SPIRAL, WAVE, SPOTLIGHT, POSTCARDS,
     COLLAGE, FRAMES, PATCHWORK, OVERLAP, DIAGONAL, RANDOM;
-    val isSpread get() = this != SINGLE && this != RANDOM
+    // AUTO and RANDOM are meta-modes (they pick spreads per slide), not spreads themselves.
+    val isSpread get() = this != SINGLE && this != RANDOM && this != AUTO
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: SINGLE
         val SPREADS = entries.filter { it.isSpread }

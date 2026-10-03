@@ -571,6 +571,19 @@ private fun Slideshow(
     fun spreadAt(from: Int): LayoutMode? {
         if (stillCount < 4 || layout == LayoutMode.SINGLE) return null
         val rr = kotlin.random.Random(from.toLong() * 7919 + 17)
+        // AUTO adapts to the photo on screen: a shot that already fills the wall is usually shown
+        // alone (with the odd decorative spread for variety); a shot whose orientation is opposite
+        // the screen — which would otherwise leave big side/top gaps — is grouped into a spread that
+        // tiles several photos to fill the space. Seeded, so a slide always renders the same way.
+        if (layout == LayoutMode.AUTO) {
+            val portrait = orientationMap[files[from].name]
+            val gappy = portrait != null && portrait == screenLandscape
+            val chance = if (gappy) 0.85f else 0.28f
+            if (rr.nextFloat() >= chance) return null
+            val pool = if (gappy) AUTO_FILL_SPREADS else AUTO_VARIETY_SPREADS
+            val m = pool[rr.nextInt(pool.size)]
+            return if (stillCount < rangeOf(m).first) LayoutMode.GRID else m
+        }
         if (rr.nextFloat() >= spreadMix.chance) return null
         val m = if (layout == LayoutMode.RANDOM) LayoutMode.SPREADS[rr.nextInt(LayoutMode.SPREADS.size)] else layout
         return if (stillCount < rangeOf(m).first) LayoutMode.GRID else m
@@ -1295,6 +1308,16 @@ internal fun dominantColor(f: java.io.File): Color? = runCatching {
         ?: return null
     Color(c)
 }.getOrNull()
+
+// AUTO layout pools. FILL spreads tile several same-ish photos edge to edge to cover a wall a single
+// mis-oriented photo would leave gappy; VARIETY spreads are the occasional decorative grouping used
+// when the photo already fits. All have a low minimum count so they work with modest libraries.
+private val AUTO_FILL_SPREADS = listOf(
+    LayoutMode.GRID, LayoutMode.ROWS, LayoutMode.COLUMNS, LayoutMode.TRIPTYCH, LayoutMode.CAROUSEL, LayoutMode.MAGAZINE,
+)
+private val AUTO_VARIETY_SPREADS = listOf(
+    LayoutMode.MOSAIC, LayoutMode.GALLERY, LayoutMode.POLAROID, LayoutMode.SCATTER,
+)
 
 /** A ColorFilter for the colour-matrix "looks" (null = leave the image untouched). */
 /** Resolves the "Random" look to a per-photo filter from [pool] (seeded by slide index). */

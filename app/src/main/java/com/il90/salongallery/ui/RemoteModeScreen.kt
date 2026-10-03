@@ -2970,7 +2970,20 @@ private fun LayoutPreviewTile(key: String, label: String, selected: Boolean, mod
                 .border(if (selected) 2.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            if (key == "random") {
+            if (key == "auto") {
+                // "Auto": a tall print beside two stacked ones — the wall fits the photos itself.
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(7.dp)) {
+                    val c = Color(0xFFF2EEE6)
+                    val g = size.width * 0.05f
+                    val leftW = size.width * 0.46f
+                    drawRoundRect(c, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Size(leftW, size.height), androidx.compose.ui.geometry.CornerRadius(3f))
+                    val rx = leftW + g
+                    val rw = size.width - rx
+                    val rh = (size.height - g) / 2f
+                    drawRoundRect(c, androidx.compose.ui.geometry.Offset(rx, 0f), androidx.compose.ui.geometry.Size(rw, rh), androidx.compose.ui.geometry.CornerRadius(3f))
+                    drawRoundRect(c, androidx.compose.ui.geometry.Offset(rx, rh + g), androidx.compose.ui.geometry.Size(rw, rh), androidx.compose.ui.geometry.CornerRadius(3f))
+                }
+            } else if (key == "random") {
                 // "Mix": a few overlapping mini shapes to say "a bit of each layout".
                 androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(6.dp)) {
                     val c = Color(0xFFF2EEE6)
@@ -3025,8 +3038,9 @@ private fun layoutPreviewItems(key: String, w: Float, h: Float): List<Placement>
 
 /** Slide layouts offered in the Slideshow sheet: key sent to the Display → chip label. */
 private val LAYOUTS = listOf(
-    // "random" (sent to the Display) is shown as "Mix" — it mixes the layouts, it isn't disorderly.
-    "random" to "Mix", "single" to "Single", "mosaic" to "Mosaic", "scatter" to "Scatter", "grid" to "Grid",
+    // "auto" lets the Display choose the arrangement per slide to suit the photos; "random" (shown
+    // as "Mix") mixes every layout — it mixes the layouts, it isn't disorderly.
+    "auto" to "Auto", "random" to "Mix", "single" to "Single", "mosaic" to "Mosaic", "scatter" to "Scatter", "grid" to "Grid",
     "window" to "Window", "quilt" to "Quilt", "triptych" to "Triptych", "rows" to "Rows", "columns" to "Columns",
     "masonry" to "Masonry", "polaroid" to "Polaroids", "filmstrip" to "Film strip", "stack" to "Stack", "fan" to "Fan",
     "gallery" to "Gallery wall", "clothesline" to "Clothesline", "bubbles" to "Bubbles", "magazine" to "Magazine",
@@ -3096,11 +3110,13 @@ private fun SlideshowSheet(
                 }
             }
 
-            // COLLAGE FREQUENCY (only meaningful for a multi-photo layout)
+            // COLLAGE FREQUENCY (only meaningful for a multi-photo layout; Auto sets its own rhythm)
             if (layout != "single") {
-                SettingsCard(stringResource(R.string.slideshow_freq_eyebrow), stringResource(R.string.slideshow_freq_title), stringResource(R.string.slideshow_freq_explain)) {
-                    val mixes = listOf("always", "often", "sometimes", "rarely")
-                    SegRow(listOf("Always", "Often", "Sometimes", "Rarely"), mixes.indexOf(spreadMix).coerceAtLeast(0)) { onSpreadMix(mixes[it]) }
+                if (layout != "auto") {
+                    SettingsCard(stringResource(R.string.slideshow_freq_eyebrow), stringResource(R.string.slideshow_freq_title), stringResource(R.string.slideshow_freq_explain)) {
+                        val mixes = listOf("always", "often", "sometimes", "rarely")
+                        SegRow(listOf("Always", "Often", "Sometimes", "Rarely"), mixes.indexOf(spreadMix).coerceAtLeast(0)) { onSpreadMix(mixes[it]) }
+                    }
                 }
                 SettingsToggleCard(stringResource(R.string.slideshow_reveal_eyebrow), stringResource(R.string.slideshow_stagger), stringResource(R.string.slideshow_stagger_hint), stagger, onStagger) { RevealIllustration() }
                 SettingsToggleCard(stringResource(R.string.slideshow_smart_eyebrow), stringResource(R.string.slideshow_smart_title), stringResource(R.string.slideshow_smart_hint), smartGroup, onSmartGroup)
