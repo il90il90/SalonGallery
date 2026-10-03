@@ -3036,12 +3036,13 @@ private fun SettingsCard(eyebrow: String, title: String, explain: String, conten
     Column(
         Modifier.fillMaxWidth().padding(bottom = 14.dp).clip(RoundedCornerShape(18.dp))
             .background(ElecSurface).border(1.dp, ElecBorder, RoundedCornerShape(18.dp)).padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = AccentWarm, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+        Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = AccentWarm, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(3.dp))
-        Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(6.dp))
-        Text(explain, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        Text(explain, style = MaterialTheme.typography.bodySmall, color = TextSecondary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(14.dp))
         content()
     }
@@ -3050,20 +3051,20 @@ private fun SettingsCard(eyebrow: String, title: String, explain: String, conten
 /** A card whose control is a single on/off switch. */
 @Composable
 private fun SettingsToggleCard(eyebrow: String, title: String, explain: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
+    Box(
         Modifier.fillMaxWidth().padding(bottom = 14.dp).clip(RoundedCornerShape(18.dp))
             .background(ElecSurface).border(1.dp, ElecBorder, RoundedCornerShape(18.dp)).padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = AccentWarm, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+        // Text is centred across the full card width (to match the other cards); the switch stays
+        // pinned to the end.
+        Column(Modifier.fillMaxWidth().padding(end = 52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(eyebrow.uppercase(), style = MaterialTheme.typography.labelSmall, color = AccentWarm, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(3.dp))
-            Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display, fontWeight = FontWeight.SemiBold)
+            Text(title, style = MaterialTheme.typography.titleLarge, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(4.dp))
-            Text(explain, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            Text(explain, style = MaterialTheme.typography.bodySmall, color = TextSecondary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
-        Spacer(Modifier.width(12.dp))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = onChange, modifier = Modifier.align(Alignment.CenterEnd))
     }
 }
 
