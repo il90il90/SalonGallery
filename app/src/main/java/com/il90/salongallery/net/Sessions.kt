@@ -101,6 +101,25 @@ class ScreenSession(
         recvFuture?.cancel(false)
         recvFuture = recvExec.schedule({ receiving.value = false }, 2500, java.util.concurrent.TimeUnit.MILLISECONDS)
     }
+
+    // Coalesce the "a new photo just arrived" wall update. Importing hundreds of photos at once would
+    // otherwise bump the library version and jump the slideshow to each new photo hundreds of times in
+    // a row — making the wall re-decode a fresh full-size slide for every single arrival while it is
+    // still receiving, which spikes memory and can crash a weak TV box. Each photo is still saved
+    // immediately; we just refresh the wall at most ~every 700 ms, showing the most recent arrival.
+    @Volatile private var lastArrivedName: String? = null
+    @Volatile private var arriveFuture: java.util.concurrent.ScheduledFuture<*>? = null
+    private fun onMediaArrived(name: String) {
+        lastArrivedName = name
+        markReceiving()
+        if (arriveFuture?.isDone == false) return   // an update is already pending; it will show the latest
+        arriveFuture = recvExec.schedule({
+            runCatching {
+                libraryVersion.value = System.currentTimeMillis()
+                lastArrivedName?.let { showNewest(it) }
+            }
+        }, 700, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
     /** How often a spread appears instead of a single photo. */
     val spreadMix = MutableStateFlow(SpreadMix.from(prefs.spreadMix))
     /** Subtle motion while a still waits on screen, and how fast it runs. */
@@ -226,9 +245,7 @@ class ScreenSession(
             val f = library.add(bytes) ?: return@runCatching   // skip exact duplicates
             targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
             mode.value = DisplayMode.SLIDESHOW
-            libraryVersion.value = System.currentTimeMillis()
-            showNewest(f.name)
-            markReceiving()
+            onMediaArrived(f.name)
             autoOrient(f)
         }
     }
@@ -262,9 +279,7 @@ class ScreenSession(
                     sources.set(f.name, url)
                     if (!albums.isAllActive()) albums.addToAlbum(albums.activeId, f.name)
                     mode.value = DisplayMode.SLIDESHOW
-                    libraryVersion.value = System.currentTimeMillis()
-                    showNewest(f.name)
-                    markReceiving()
+                    onMediaArrived(f.name)
                     autoOrient(f)
                 }
             }
@@ -291,9 +306,7 @@ class ScreenSession(
             targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
             mode.value = DisplayMode.SLIDESHOW
             videoVersion.value = System.currentTimeMillis()
-            libraryVersion.value = System.currentTimeMillis()
-            showNewest(f.name)
-            markReceiving()
+            onMediaArrived(f.name)
         }
     }
 
