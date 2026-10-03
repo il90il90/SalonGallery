@@ -19,6 +19,8 @@ class SalonApp : Application(), ImageLoaderFactory {
         ImageLoader.Builder(this)
             .allowHardware(true)
             .crossfade(180)
-            .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.35).build() }
+            // Leaner in-memory cache (was 0.35) so a cheap TV box keeps headroom for the bitmaps a
+            // multi-photo spread holds live while it is on screen; the disk cache still backs fast reuse.
+            .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.25).build() }
             .build()
 }

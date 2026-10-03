@@ -596,7 +596,8 @@ private fun Slideshow(
         // within the layout's range, seeded per slide, never more than the library holds.
         spreadAt(from)?.let { m ->
             val range = rangeOf(m)
-            val want = (range.first + kotlin.random.Random(from.toLong() * 31 + 3).nextInt(range.last - range.first + 1)).coerceAtMost(stillCount)
+            val want = (range.first + kotlin.random.Random(from.toLong() * 31 + 3).nextInt(range.last - range.first + 1))
+                .coerceAtMost(minOf(stillCount, MAX_SPREAD_PHOTOS))
             // Smart grouping: once dominant colours are known, fill the spread with the stills most
             // similar in colour to the anchor (within a forward window) instead of the next in order.
             if (smartGroup && colorsReady) {
@@ -656,7 +657,9 @@ private fun Slideshow(
         val spx = slidePx(ctx)
         val loader = coil.Coil.imageLoader(ctx)
         coroutineScope {
-            membersAt(index).map { files[it] }.filter { !isVideoName(it.name) }.map { f ->
+            // Only the first few cells are force-decoded here; a big spread's remaining cells arrive
+            // from the warm pass and crossfade in, so we never hold a dozen full-size decodes at once.
+            membersAt(index).map { files[it] }.filter { !isVideoName(it.name) }.take(SLIDE_READY_CAP).map { f ->
                 async(Dispatchers.IO) {
                     runCatching {
                         loader.execute(
@@ -689,11 +692,12 @@ private fun Slideshow(
         reportSlide(style, m.map { files[it].name }, idx)
     }
 
-    // Warm the WHOLE next slide into Coil's cache ahead of time, decoded at screen size, so a spread
-    // (or a big photo) never shows its empty mat/frame first and then pops the pictures in a second
-    // later. We warm every member of the slide that follows the current one — and, for good measure,
-    // the slide after that — at the display resolution, so the bitmaps are ready the instant the
-    // transition starts. (Shuffle can't be predicted, so there we just warm a few upcoming files.)
+    // Warm the next slide into Coil's cache ahead of time, decoded at screen size, so a spread (or a
+    // big photo) never shows its empty mat/frame first and then pops the pictures in a second later.
+    // We warm ONLY the slide that immediately follows the current one (not two ahead) and cap how many
+    // of its cells we pre-decode, so the warm buffer can never pile a dozen full-size bitmaps on top of
+    // the slide already on screen — that pile-up was crashing modest TV boxes after a run of spreads.
+    // (Shuffle can't be predicted, so there we just warm a few upcoming files.)
     LaunchedEffect(idx, files.size, layout, shuffle, spreadMix) {
         if (files.size <= 1) return@LaunchedEffect
         val spx = slidePx(ctx)
@@ -707,16 +711,11 @@ private fun Slideshow(
             )
         }
         if (shuffle) {
-            repeat(6) { warm(files[(idx + 1 + it) % files.size]) }
+            repeat(4) { warm(files[(idx + 1 + it) % files.size]) }
             return@LaunchedEffect
         }
-        var start = (idx + membersAt(idx).size) % files.size
-        // Two slides ahead, so there's always a ready buffer even on fast intervals.
-        repeat(2) {
-            val m = membersAt(start)
-            m.forEach { warm(files[it]) }
-            start = (start + m.size) % files.size
-        }
+        val start = (idx + membersAt(idx).size) % files.size
+        membersAt(start).take(SLIDE_READY_CAP).forEach { warm(files[it]) }
     }
     val poolEnums = remember(effectPool) { effectPool.map { SlideEffect.from(it) }.filter { it != SlideEffect.RANDOM } }
     // Resolve the effect for a given slide: a seeded random from the pool when RANDOM.
@@ -1467,8 +1466,19 @@ internal fun focusAlignment(focus: PhotoFocus?, boxW: Float, boxH: Float): Align
 }
 
 /** The one decode size every slideshow image shares, capped so a hardware-bitmap texture is always
- *  safe and so each photo is decoded ONCE and reused by its collage cell and full-screen alike. */
-private const val SLIDE_MAX_PX = 2048
+ *  safe and so each photo is decoded ONCE and reused by its collage cell and full-screen alike.
+ *  Kept at 1600 (plenty sharp on a 1080p/1440p wall) so a landscape photo is ~5 MB, not ~9 MB — a
+ *  spread of several photos plus the warmed next slide then stays well within a cheap TV box's
+ *  memory and the app no longer crashes after a run of busy slides. */
+private const val SLIDE_MAX_PX = 1600
+
+/** Hard cap on how many photos any one spread decodes/shows at once, so a 12-cell quilt/patchwork
+ *  can't blow memory on a low-RAM device. 9 still fills every planned layout (max min-count is 8). */
+private const val MAX_SPREAD_PHOTOS = 9
+
+/** How many of a spread's cells we force-decode before switching to it; the rest crossfade in from
+ *  the warm pass. Bounds the burst of simultaneous full-size decodes at a transition. */
+private const val SLIDE_READY_CAP = 6
 private fun slidePx(ctx: android.content.Context): Int =
     ctx.resources.displayMetrics.let { minOf(maxOf(it.widthPixels, it.heightPixels), SLIDE_MAX_PX) }
 @Composable
