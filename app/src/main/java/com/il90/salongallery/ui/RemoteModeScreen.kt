@@ -3246,7 +3246,12 @@ private fun OptionTile(label: String, selected: Boolean, modifier: Modifier = Mo
     ) {
         Box(Modifier.height(44.dp).fillMaxWidth(), contentAlignment = Alignment.Center) { illustration() }
         Spacer(Modifier.height(7.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium, color = if (selected) NeonCyan else TextPrimary, maxLines = 1)
+        // Compact + centred + 2 lines so narrow tiles (e.g. 5-across Background) never clip "Warm"/"White".
+        Text(
+            label, style = MaterialTheme.typography.labelSmall,
+            color = if (selected) NeonCyan else TextPrimary,
+            maxLines = 2, textAlign = TextAlign.Center, lineHeight = 13.sp,
+        )
     }
 }
 

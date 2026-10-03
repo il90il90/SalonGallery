@@ -733,14 +733,14 @@ private fun Slideshow(
             val sp = spreadAt(i)
             MotionBox(motion, motionSpeed, seed = i) {
                 when (sp) {
-                    LayoutMode.MOSAIC -> MosaicSlide(mf, filter = eff, seed = i, landscape = screenLandscape, rotOf = rotOf, focusOf = focusOf, stagger = stagger)
+                    LayoutMode.MOSAIC -> MosaicSlide(mf, filter = eff, seed = i, landscape = screenLandscape, rotOf = rotOf, focusOf = focusOf, stagger = stagger, bg = bg)
                     LayoutMode.SCATTER -> ScatterSlide(mf, filter = eff, seed = i, rotOf = rotOf, focusOf = focusOf, stagger = stagger)
-                    else -> PlannedSpread(mf, SpreadStyle.valueOf(sp!!.name), filter = eff, seed = i, rotOf = rotOf, focusOf = focusOf, stagger = stagger)
+                    else -> PlannedSpread(mf, SpreadStyle.valueOf(sp!!.name), filter = eff, seed = i, rotOf = rotOf, focusOf = focusOf, stagger = stagger, bg = bg)
                 }
             }
         } else if (members.size >= 2) {
             MotionBox(motion, motionSpeed, seed = i) {
-                CollageSlide(members.map { files[it] }, filter = eff, horizontal = screenLandscape, rotOf = { transformOf(it).rotNorm }, focusOf = focusOf)
+                CollageSlide(members.map { files[it] }, filter = eff, horizontal = screenLandscape, rotOf = { transformOf(it).rotNorm }, focusOf = focusOf, bg = bg)
             }
         } else {
             val kb = if (effAt(i) == SlideEffect.KENBURNS) {
@@ -892,9 +892,9 @@ private fun MotionBox(mode: MotionMode, speed: MotionSpeed, seed: Int, content: 
  * template is chosen by [seed] so each slide gets a different but stable arrangement.
  */
 @Composable
-private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, landscape: Boolean, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }, stagger: Boolean = false) {
+private fun MosaicSlide(files: List<File>, filter: PhotoFilter, seed: Int, landscape: Boolean, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }, stagger: Boolean = false, bg: Color = Color(0xFFEBE4D7)) {
     val cf = lookFilter(filter)
-    val mat = Color(0xFFEBE4D7)
+    val mat = bg   // the gutters follow the chosen Background colour
     val gap = 10.dp
     val r = kotlin.random.Random(seed.toLong() * 104729 + 7)
     val n = files.size.coerceIn(3, 5)
@@ -1048,17 +1048,17 @@ private fun Modifier.staggered(v: androidx.compose.runtime.State<Float>): Modifi
 }
 
 /** The surface a planned spread sits on. */
-private fun surfaceBrush(s: SpreadSurface): Brush = when (s) {
-    SpreadSurface.MAT -> SolidColor(Color(0xFFEBE4D7))
+// The plain "paper"/"mat"/"white" surfaces follow the user's Background colour, so choosing Black
+// gives a dark wall instead of a bright page. The deliberately-textured surfaces (cork, velvet,
+// film, wall, linen, table) keep their look — they sit on the [bg] anyway.
+private fun surfaceBrush(s: SpreadSurface, bg: Color = Color.Black): Brush = when (s) {
+    SpreadSurface.MAT, SpreadSurface.PAPER, SpreadSurface.WHITE, SpreadSurface.BLACK -> SolidColor(bg)
     SpreadSurface.TABLE -> Brush.radialGradient(listOf(Color(0xFF3A312A), Color(0xFF1C1714)))
     SpreadSurface.CORK -> Brush.radialGradient(listOf(Color(0xFFC79D6E), Color(0xFF9C7149)))
     SpreadSurface.FILM -> Brush.radialGradient(listOf(Color(0xFF2E2D33), Color(0xFF111114)))
     SpreadSurface.VELVET -> Brush.radialGradient(listOf(Color(0xFF4A1F2C), Color(0xFF1C0A11)))
     SpreadSurface.WALL -> Brush.verticalGradient(listOf(Color(0xFFE9E4DC), Color(0xFFD6CFC2)))
     SpreadSurface.LINEN -> Brush.verticalGradient(listOf(Color(0xFFF1ECE3), Color(0xFFDFD7C8)))
-    SpreadSurface.PAPER -> SolidColor(Color(0xFFF7F5F0))
-    SpreadSurface.BLACK -> SolidColor(Color(0xFF0A0A0A))
-    SpreadSurface.WHITE -> Brush.verticalGradient(listOf(Color(0xFFF7F7F5), Color(0xFFEDEDEA)))
 }
 
 /**
@@ -1070,9 +1070,10 @@ private fun surfaceBrush(s: SpreadSurface): Brush = when (s) {
 private fun PlannedSpread(
     files: List<File>, style: SpreadStyle, filter: PhotoFilter, seed: Int,
     rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }, stagger: Boolean = false,
+    bg: Color = Color.Black,
 ) {
     val cf = lookFilter(filter)
-    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(surfaceBrush(style.surface))) {
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().background(surfaceBrush(style.surface, bg))) {
         val w = maxWidth.value; val h = maxHeight.value
         val plan = remember(style, files.size, w, h, seed) { placeSpread(style, files.size, w, h, seed) }
         val density = androidx.compose.ui.platform.LocalDensity.current.density
@@ -1176,9 +1177,9 @@ private fun PlannedSpread(
 }
 
 @Composable
-private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boolean, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }) {
+private fun CollageSlide(files: List<File>, filter: PhotoFilter, horizontal: Boolean, rotOf: (File) -> Int = { 0 }, focusOf: (File) -> PhotoFocus? = { null }, bg: Color = Color(0xFFEBE4D7)) {
     val cf = lookFilter(filter)
-    val mat = Color(0xFFEBE4D7)      // warm gallery mat
+    val mat = bg      // gutters follow the chosen Background colour
     val gap = 12.dp
     Box(Modifier.fillMaxSize().background(mat).padding(gap)) {
         if (horizontal) {
