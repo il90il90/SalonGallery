@@ -552,10 +552,15 @@ private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit)
     var sleepEnd by remember(screen.host, screen.port) { mutableIntStateOf(420) }
     var confirmReset by remember { mutableStateOf(false) }
 
+    // Load the screen's real name / PIN / schedule, retrying until it succeeds so a single flaky
+    // request doesn't leave the fields blank (which looks like the settings were never saved).
     LaunchedEffect(screen.host, screen.port) {
-        PhotoSender.getSettings(screen.host, screen.port)?.let {
-            name = it.name; hasPin = it.hasPin; schedOn = it.schedOn
-            sleepStart = it.sleepStart; sleepEnd = it.sleepEnd; loaded = true
+        while (!loaded) {
+            val s = PhotoSender.getSettings(screen.host, screen.port)
+            if (s != null) {
+                name = s.name; hasPin = s.hasPin; schedOn = s.schedOn
+                sleepStart = s.sleepStart; sleepEnd = s.sleepEnd; loaded = true
+            } else kotlinx.coroutines.delay(1500)
         }
     }
 
