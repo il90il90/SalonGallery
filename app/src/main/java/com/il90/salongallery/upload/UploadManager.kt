@@ -30,7 +30,7 @@ object UploadManager {
     private val _progress = MutableStateFlow(Progress(0, 0, false))
     val progress: StateFlow<Progress> = _progress
 
-    private val queue = ConcurrentLinkedQueue<Unit>()
+    private val queue = ConcurrentLinkedQueue<Item>()
     private val total = AtomicInteger(0)
     private val done = AtomicInteger(0)
     @Volatile private var running = false
