@@ -585,7 +585,9 @@ private fun Slideshow(
         if (files.size <= 1) return
         val next = if (shuffle) (files.indices - from).randomOrNull() ?: from
         else (from + membersAt(from).size) % files.size
-        onNext(next)
+        // Never land back on the same index (e.g. a spread that spans the whole library) — that would
+        // leave `idx` unchanged, so the advance timer never re-arms and the wall freezes. Step on.
+        onNext(if (next == from) (from + 1) % files.size else next)
     }
 
     // Still photos advance on their own duration (or the slideshow default); videos advance when they end.
@@ -1131,11 +1133,20 @@ private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, vignette: Boole
     LaunchedEffect(volume) { player.volume = volume }
     // Optional per-clip cap: cut to the next item after capSec seconds.
     if (!loop && capSec > 0) LaunchedEffect(file.path) { delay(capSec * 1000L); finishOnce() }
+    // Watchdog: if the clip never starts playing (unsupported codec, corrupt file, stuck buffering),
+    // move on instead of freezing the wall on it forever. A playable clip reaches READY within a few
+    // seconds, so this never cuts a good video short.
+    if (!loop) LaunchedEffect(file.path) {
+        delay(15_000)
+        if (player.playbackState != Player.STATE_READY && player.playbackState != Player.STATE_ENDED) finishOnce()
+    }
     DisposableEffect(file.path) {
         val l = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED && !loop) finishOnce()
             }
+            // A load/decode failure must not freeze the slideshow — skip to the next item.
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) { if (!loop) finishOnce() }
         }
         player.addListener(l)
         onDispose { player.removeListener(l); player.release() }
