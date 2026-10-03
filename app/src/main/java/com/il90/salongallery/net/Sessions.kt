@@ -20,6 +20,9 @@ class ScreenSession(
 ) : ScreenCommands {
 
     private val app = context.applicationContext
+    // Largest streamed video we'll accept (to disk, not memory) — generous for salon clips while
+    // refusing anything that would fill storage.
+    private val MAX_VIDEO_UPLOAD_BYTES = 2L * 1024 * 1024 * 1024
     private val nsd = NsdController(app)
     private val audio = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var server: PhotoServer? = null
@@ -303,6 +306,34 @@ class ScreenSession(
             // Videos now live in the unified library and play inline in the slideshow,
             // so photos and clips can be mixed on the wall.
             val f = library.addVideo(bytes) ?: return@runCatching   // skip exact duplicates
+            targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
+            mode.value = DisplayMode.SLIDESHOW
+            videoVersion.value = System.currentTimeMillis()
+            onMediaArrived(f.name)
+        }
+    }
+
+    override fun onVideoStream(input: java.io.InputStream, length: Long, album: String?) {
+        runCatching {
+            // Refuse an absurd/huge clip rather than filling the disk; otherwise stream it straight to a
+            // temp file (never held whole in memory — videos keep their original quality), then hand it
+            // to the library which dedups and moves it in.
+            if (length <= 0L || length > MAX_VIDEO_UPLOAD_BYTES) return@runCatching
+            val tmp = File.createTempFile("upv_", ".mp4", app.cacheDir)
+            var total = 0L
+            runCatching {
+                tmp.outputStream().use { out ->
+                    val buf = ByteArray(1 shl 16)
+                    while (total < length) {
+                        val want = minOf(buf.size.toLong(), length - total).toInt()
+                        val r = input.read(buf, 0, want)
+                        if (r <= 0) break
+                        out.write(buf, 0, r); total += r
+                    }
+                }
+            }
+            if (total != length) { runCatching { tmp.delete() }; return@runCatching }
+            val f = library.addVideoFile(tmp) ?: return@runCatching   // duplicate or failure (tmp cleaned up)
             targetAlbum(album)?.let { albums.addToAlbum(it, f.name) }
             mode.value = DisplayMode.SLIDESHOW
             videoVersion.value = System.currentTimeMillis()

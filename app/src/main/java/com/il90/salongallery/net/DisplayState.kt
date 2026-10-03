@@ -186,6 +186,37 @@ class LibraryStore(private val dir: File) {
         return f
     }
 
+    /** Content signature of a file, computed by streaming it (so a huge video is never held in memory).
+     *  Same format as [sigOf]: "size:md5". */
+    private fun sigOfFile(f: File): String = runCatching {
+        val md = java.security.MessageDigest.getInstance("MD5")
+        f.inputStream().use { ins ->
+            val buf = ByteArray(1 shl 16)
+            while (true) { val r = ins.read(buf); if (r <= 0) break; md.update(buf, 0, r) }
+        }
+        f.length().toString() + ":" + md.digest().joinToString("") { "%02x".format(it) }
+    }.getOrDefault(f.length().toString())
+
+    /**
+     * Adds a video that has already been streamed to [src] on disk (so the clip was never held whole
+     * in memory). Dedups by content — a duplicate deletes [src] and returns null — otherwise moves it
+     * into the library as a `v_*.mp4`. Returns the stored file, or null on duplicate/failure.
+     */
+    @Synchronized
+    fun addVideoFile(src: File): File? {
+        if (!src.exists() || src.length() <= 0L) { runCatching { src.delete() }; return null }
+        val sig = sigOfFile(src)
+        if (sig in sigs.values) { runCatching { src.delete() }; return null }   // duplicate — skip
+        val dest = File(dir, "v_${stamp()}.mp4")
+        val moved = runCatching { src.renameTo(dest) }.getOrDefault(false) ||
+            runCatching { src.copyTo(dest, overwrite = true); src.delete(); true }.getOrDefault(false)
+        if (!moved || !dest.exists()) { runCatching { src.delete() }; return null }
+        runCatching { orderFile.appendText(dest.name + "\n") }
+        sigs[dest.name] = sig
+        runCatching { sigFile.appendText("${dest.name}\t$sig\n") }
+        return dest
+    }
+
     private fun stamp() = "${System.currentTimeMillis()}_${(0..99999).random()}"
 
     /** Files in the saved order, with pinned items floated to the front. */

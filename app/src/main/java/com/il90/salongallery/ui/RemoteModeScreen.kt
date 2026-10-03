@@ -212,6 +212,63 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** How photos are uploaded: downscaled for the wall, or exactly as taken. (Videos are never altered.) */
+enum class UploadQuality { OPTIMIZED, ORIGINAL }
+
+/** Longest edge, in px, an "Optimized" photo is scaled down to — well above the wall's 1600px decode so
+ *  it still looks crisp and allows some zoom, while being a fraction of a modern phone photo's size. */
+private const val OPTIMIZE_MAX_EDGE = 2560
+
+/**
+ * For the "Optimized" upload choice: downscale a photo to a wall-friendly size and re-encode it, so it
+ * transfers fast, stores small and never forces a huge decode on the screen. The EXIF orientation is
+ * baked into the pixels (so the re-encoded JPEG still shows upright even though EXIF is dropped). Any
+ * failure — or a photo already small enough and needing no rotation — returns the original bytes.
+ */
+private fun optimizePhotoForUpload(bytes: ByteArray): ByteArray = runCatching {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
+    if (longEdge <= 0) return@runCatching bytes
+    val exifRot = runCatching {
+        when (android.media.ExifInterface(java.io.ByteArrayInputStream(bytes))
+            .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+    }.getOrDefault(0f)
+    // Already small and upright → leave it exactly as it is.
+    if (longEdge <= OPTIMIZE_MAX_EDGE && exifRot == 0f && bytes.size <= 2_500_000) return@runCatching bytes
+    var sample = 1
+    while (longEdge / sample > OPTIMIZE_MAX_EDGE * 2) sample *= 2
+    val decoded = android.graphics.BitmapFactory.decodeByteArray(
+        bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
+    ) ?: return@runCatching bytes
+    val scale = OPTIMIZE_MAX_EDGE.toFloat() / maxOf(decoded.width, decoded.height)
+    val scaled = if (scale < 1f)
+        android.graphics.Bitmap.createScaledBitmap(
+            decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true,
+        )
+    else decoded
+    val upright = if (exifRot != 0f)
+        android.graphics.Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, android.graphics.Matrix().apply { postRotate(exifRot) }, true)
+    else scaled
+    val bos = java.io.ByteArrayOutputStream()
+    upright.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, bos)
+    if (upright !== scaled) upright.recycle()
+    if (scaled !== decoded) scaled.recycle()
+    decoded.recycle()
+    val out = bos.toByteArray()
+    if (out.isNotEmpty() && out.size < bytes.size) out else bytes
+}.getOrDefault(bytes)
+
+/** Exact byte length of a content Uri, or -1 if unknown (then the caller buffers instead of streaming). */
+private fun uriLength(cr: android.content.ContentResolver, uri: Uri): Long = runCatching {
+    cr.openAssetFileDescriptor(uri, "r")?.use { val l = it.length; if (l >= 0) l else -1L } ?: -1L
+}.getOrElse { -1L }
+
 @Composable
 fun RemoteModeScreen(actions: AppActions) {
     val context = LocalContext.current
@@ -892,7 +949,9 @@ private fun ControlPanel(
     // landing in "All".
     var pendingMedia by remember { mutableStateOf<List<Uri>?>(null) }
     var destAlbums by remember { mutableStateOf<List<AlbumInfo>>(emptyList()) }
-    suspend fun uploadMedia(uris: List<Uri>, album: String?) {
+    // After an album is chosen (or none needed), we ask the quality once, then this runs the upload.
+    var pendingUpload by remember { mutableStateOf<Pair<List<Uri>, String?>?>(null) }
+    suspend fun uploadMedia(uris: List<Uri>, album: String?, quality: UploadQuality) {
         busy = true; status = null; progress = 0 to uris.size
         // Activate the album BEFORE uploading, not after: a Display on an older build ignores
         // ?album= and files uploads into whatever album is active — so activating first makes
@@ -902,12 +961,24 @@ private fun ControlPanel(
         try {
             uris.forEachIndexed { i, uri ->
                 val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true
-                val bytes = readBytes(uri)
-                if (bytes != null) {
-                    val err = if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, bytes, album)
-                        else PhotoSender.sendPhoto(screen.host, screen.port, bytes, album)
-                    if (err == null) ok++
+                val err = if (isVideo) {
+                    // Videos keep their original quality and stream straight through (never buffered
+                    // whole in memory) when their length is known; buffered only as a last resort.
+                    val len = uriLength(context.contentResolver, uri)
+                    if (len > 0) PhotoSender.sendVideoStream(screen.host, screen.port, len, album) { context.contentResolver.openInputStream(uri) }
+                    else {
+                        val vb = readBytes(uri)
+                        if (vb != null) PhotoSender.sendVideo(screen.host, screen.port, vb, album) else "read"
+                    }
+                } else {
+                    val raw = readBytes(uri)
+                    if (raw == null) "read"
+                    else {
+                        val b = if (quality == UploadQuality.OPTIMIZED) withContext(Dispatchers.IO) { optimizePhotoForUpload(raw) } else raw
+                        PhotoSender.sendPhoto(screen.host, screen.port, b, album)
+                    }
                 }
+                if (err == null) ok++
                 progress = (i + 1) to uris.size
             }
         } finally {
@@ -916,6 +987,8 @@ private fun ControlPanel(
         status = "Added $ok / ${uris.size} ✓"
         onInfoRefresh(scope); refreshLib()
     }
+    // Every upload path funnels here: show the quality chooser, then run the upload with the choice.
+    fun beginUpload(uris: List<Uri>, album: String?) { pendingUpload = uris to album }
     // The Android Photo Picker — the familiar gallery grid, filtered to photos / videos / both. It
     // caps a selection at the system limit (usually 100); for sending a whole camera roll at once
     // the "Whole folder" option below has no cap.
@@ -957,8 +1030,9 @@ private fun ControlPanel(
         scope.launch {
             val uris = withContext(Dispatchers.IO) { runCatching { mediaInTree(context, android.net.Uri.parse(saved), "all") }.getOrDefault(emptyList()) }
             if (uris.isEmpty()) { busy = false; status = context.getString(R.string.folder_empty); return@launch }
-            // Upload straight into the active album (or All); duplicates are dropped by the Display.
-            uploadMedia(uris, null)   // lands in the Display's active album; dups are skipped
+            busy = false
+            // Ask quality, then upload straight into the active album (or All); dups dropped by Display.
+            beginUpload(uris, null)
         }
     }
     val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
@@ -1156,16 +1230,29 @@ private fun ControlPanel(
     pendingMedia?.let { uris ->
         DestinationSheet(
             count = uris.size, albums = destAlbums,
-            onPick = { id -> pendingMedia = null; scope.launch { uploadMedia(uris, id) } },
+            onPick = { id -> pendingMedia = null; beginUpload(uris, id) },
             onCreate = { name ->
                 pendingMedia = null
                 scope.launch {
                     // If the album can't be created, say so — never quietly dump the photos into All.
                     val id = PhotoSender.createAlbum(screen.host, screen.port, name)
-                    if (id == null) status = errCreateAlbum else uploadMedia(uris, id)
+                    if (id == null) status = errCreateAlbum else beginUpload(uris, id)
                 }
             },
             onDismiss = { pendingMedia = null },
+        )
+    }
+    // After the destination is known, ask the upload quality once (default = last choice), then upload.
+    pendingUpload?.let { (uris, album) ->
+        QualityChooser(
+            count = uris.size,
+            initial = runCatching { UploadQuality.valueOf(remotePrefs.getString("upload_quality", "") ?: "") }.getOrDefault(UploadQuality.OPTIMIZED),
+            onPick = { q ->
+                remotePrefs.edit().putString("upload_quality", q.name).apply()
+                pendingUpload = null
+                scope.launch { uploadMedia(uris, album, q) }
+            },
+            onDismiss = { pendingUpload = null },
         )
     }
     if (showText) {
@@ -1504,27 +1591,39 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     LaunchedEffect(libVersion) { if (libVersion != 0L) refresh() }
 
     var pendingMedia by remember { mutableStateOf<List<Uri>?>(null) }
-    suspend fun uploadMedia(uris: List<Uri>, album: String?) {
+    var pendingUpload by remember { mutableStateOf<Pair<List<Uri>, String?>?>(null) }
+    val libPrefs = remember { context.getSharedPreferences("salon_remote", android.content.Context.MODE_PRIVATE) }
+    suspend fun uploadMedia(uris: List<Uri>, album: String?, quality: UploadQuality) {
         busy = true
         // Activate first so an older Display (which ignores ?album=) still files these correctly.
         if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
         uris.forEach { u ->
             val isVideo = context.contentResolver.getType(u)?.startsWith("video") == true
-            val b = withContext(Dispatchers.IO) {
-                runCatching { context.contentResolver.openInputStream(u)?.use { it.readBytes() } }.getOrNull()
-            }
-            if (b != null) {
-                if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, b, album)
-                else PhotoSender.sendPhoto(screen.host, screen.port, b, album)
+            if (isVideo) {
+                // Original quality, streamed to disk (never buffered whole) when the length is known.
+                val len = uriLength(context.contentResolver, u)
+                if (len > 0) PhotoSender.sendVideoStream(screen.host, screen.port, len, album) { context.contentResolver.openInputStream(u) }
+                else withContext(Dispatchers.IO) {
+                    runCatching { context.contentResolver.openInputStream(u)?.use { it.readBytes() } }.getOrNull()
+                }?.let { PhotoSender.sendVideo(screen.host, screen.port, it, album) }
+            } else {
+                val raw = withContext(Dispatchers.IO) {
+                    runCatching { context.contentResolver.openInputStream(u)?.use { it.readBytes() } }.getOrNull()
+                }
+                if (raw != null) {
+                    val b = if (quality == UploadQuality.OPTIMIZED) withContext(Dispatchers.IO) { optimizePhotoForUpload(raw) } else raw
+                    PhotoSender.sendPhoto(screen.host, screen.port, b, album)
+                }
             }
         }
         busy = false; refresh()
     }
+    fun beginUpload(uris: List<Uri>, album: String?) { pendingUpload = uris to album }
     // The gallery Photo Picker for adding into an album.
     val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         // Inside an album, add straight into it; from "All", ask where these should go.
-        if (activeId != "all") scope.launch { uploadMedia(uris, activeId) } else pendingMedia = uris
+        if (activeId != "all") beginUpload(uris, activeId) else pendingMedia = uris
     }
 
     // Media-type filter: "all" (default) | "photo" | "video". Purely a view over `items` — the
@@ -1813,15 +1912,27 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     pendingMedia?.let { uris ->
         DestinationSheet(
             count = uris.size, albums = albums,
-            onPick = { id -> pendingMedia = null; scope.launch { uploadMedia(uris, id) } },
+            onPick = { id -> pendingMedia = null; beginUpload(uris, id) },
             onCreate = { name ->
                 pendingMedia = null
                 scope.launch {
                     val id = PhotoSender.createAlbum(screen.host, screen.port, name)
-                    if (id != null) uploadMedia(uris, id) else refresh()
+                    if (id != null) beginUpload(uris, id) else refresh()
                 }
             },
             onDismiss = { pendingMedia = null },
+        )
+    }
+    pendingUpload?.let { (uris, album) ->
+        QualityChooser(
+            count = uris.size,
+            initial = runCatching { UploadQuality.valueOf(libPrefs.getString("upload_quality", "") ?: "") }.getOrDefault(UploadQuality.OPTIMIZED),
+            onPick = { q ->
+                libPrefs.edit().putString("upload_quality", q.name).apply()
+                pendingUpload = null
+                scope.launch { uploadMedia(uris, album, q) }
+            },
+            onDismiss = { pendingUpload = null },
         )
     }
     if (showNew) {
@@ -2321,6 +2432,64 @@ private fun DestinationSheet(
             // Put the cursor in the name field as soon as it appears (first album, or "+ New album").
             LaunchedEffect(creating) { if (creating) { delay(150); runCatching { nameFocus.requestFocus() } } }
             Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+/**
+ * Asks how photos should be sent — "Optimized" (resized for the wall; recommended) or "Original"
+ * (full resolution). Shown on every upload path. Videos are always sent at original quality, so this
+ * only affects photos. [initial] is the remembered last choice, shown as the highlighted default.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QualityChooser(count: Int, initial: UploadQuality, onPick: (UploadQuality) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = com.il90.salongallery.ui.theme.ElecBg) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
+            Text(stringResource(R.string.quality_title), style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.quality_subtitle, count), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            Spacer(Modifier.height(16.dp))
+            QualityOption(
+                title = stringResource(R.string.quality_optimized_title),
+                desc = stringResource(R.string.quality_optimized_desc),
+                badge = stringResource(R.string.quality_recommended),
+                highlighted = initial == UploadQuality.OPTIMIZED,
+            ) { onPick(UploadQuality.OPTIMIZED) }
+            Spacer(Modifier.height(10.dp))
+            QualityOption(
+                title = stringResource(R.string.quality_original_title),
+                desc = stringResource(R.string.quality_original_desc),
+                badge = null,
+                highlighted = initial == UploadQuality.ORIGINAL,
+            ) { onPick(UploadQuality.ORIGINAL) }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun QualityOption(title: String, desc: String, badge: String?, highlighted: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .border(if (highlighted) 2.dp else 1.dp, if (highlighted) NeonCyan else ElecBorder, RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+            .padding(16.dp),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                if (badge != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        Modifier.clip(RoundedCornerShape(6.dp)).background(NeonCyan.copy(alpha = 0.18f)).padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) { Text(badge, style = MaterialTheme.typography.labelSmall, color = NeonCyan) }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(desc, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
         }
     }
 }

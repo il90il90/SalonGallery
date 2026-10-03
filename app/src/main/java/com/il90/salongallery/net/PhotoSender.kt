@@ -294,6 +294,36 @@ object PhotoSender {
     suspend fun sendVideo(host: String, port: Int, bytes: ByteArray, album: String? = null) =
         sendMedia(host, port, "/video" + albumQuery(album), bytes, "video/mp4")
 
+    /**
+     * Streams a video to the Display from [openStream] without ever holding the whole clip in memory
+     * (neither here nor on the Display). [length] must be the exact byte count. Returns null on
+     * success, or a short error string.
+     */
+    suspend fun sendVideoStream(
+        host: String, port: Int, length: Long, album: String?, openStream: () -> java.io.InputStream?,
+    ): String? = withContext(Dispatchers.IO) {
+        try {
+            val input = openStream() ?: return@withContext "no stream"
+            input.use { ins ->
+                val conn = open("http://$host:$port/video" + albumQuery(album), "POST").apply {
+                    doOutput = true
+                    readTimeout = 60_000
+                    setRequestProperty("Content-Type", "video/mp4")
+                    setFixedLengthStreamingMode(length)
+                }
+                conn.outputStream.use { out ->
+                    val buf = ByteArray(1 shl 16)
+                    while (true) { val r = ins.read(buf); if (r <= 0) break; out.write(buf, 0, r) }
+                }
+                val code = conn.responseCode
+                conn.disconnect()
+                if (code in 200..299) null else "HTTP $code"
+            }
+        } catch (e: Exception) {
+            e.message ?: e.javaClass.simpleName
+        }
+    }
+
     /** POSTs a track to the music library. Returns null on success, or a short error string. */
     suspend fun sendMusic(host: String, port: Int, bytes: ByteArray, title: String) =
         sendMedia(host, port, "/music?name=${enc(title)}", bytes, "audio/mpeg")

@@ -4,6 +4,13 @@
     <string name="crash_title">The app restarted after a problem</string>
     <string name="crash_explain">Last time, the app closed unexpectedly. Here are the technical details so the issue can be diagnosed:</string>
     <string name="crash_dismiss">Dismiss</string>
+    <string name="quality_title">Upload quality</string>
+    <string name="quality_subtitle">%1$d item(s) · choose how photos are sent. Videos are always sent at original quality.</string>
+    <string name="quality_recommended">Recommended</string>
+    <string name="quality_optimized_title">Optimized</string>
+    <string name="quality_optimized_desc">Resized to fit the screen beautifully — much smaller, faster to send, and easier on the screen\'s memory.</string>
+    <string name="quality_original_title">Original</string>
+    <string name="quality_original_desc">Full resolution, exactly as taken — largest files and most storage used.</string>
     <string name="notif_channel_screen">Screen status</string>
     <string name="notif_screen_offline_title">Screen offline</string>
     <string name="notif_screen_offline_body">\"%1$s\" isn\'t responding — it may be off, restarting, or off the Wi-Fi.</string>

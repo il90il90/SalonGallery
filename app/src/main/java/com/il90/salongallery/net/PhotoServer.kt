@@ -9,6 +9,9 @@ interface ScreenCommands {
     fun removeByUrl(url: String)           // remove library items that came from this url
     fun sourcesJson(): String              // {"urls":[...]} of source urls currently on the wall
     fun onVideo(bytes: ByteArray, album: String? = null)   // add this clip (into [album] when given)
+    // Streamed video upload: read exactly [length] bytes from [input] straight to disk, so a large
+    // clip is never buffered whole in memory. Kept at original quality (no re-encode).
+    fun onVideoStream(input: java.io.InputStream, length: Long, album: String? = null)
     fun onMusic(bytes: ByteArray, title: String) // add to the music library
     // Music library
     fun musicListJson(): String
@@ -119,7 +122,13 @@ class PhotoServer(
             session.method == Method.GET && uri == "/sources" -> json(commands.sourcesJson())
             session.method == Method.POST && uri == "/video" -> {
                 val album = session.parameters["album"]?.firstOrNull()?.takeIf { it.isNotBlank() }
-                readBody(session)?.let { commands.onVideo(it, album) }; ok()
+                // Stream the clip straight to disk when its length is known (the normal case), so a big
+                // video never allocates a huge in-memory buffer. Fall back to the buffered path only if
+                // the client didn't send a usable Content-Length.
+                val len = session.headers["content-length"]?.toLongOrNull() ?: -1L
+                if (len > 0) commands.onVideoStream(session.inputStream, len, album)
+                else readBody(session)?.let { commands.onVideo(it, album) }
+                ok()
             }
             session.method == Method.POST && uri == "/music" -> {
                 val title = session.parameters["name"]?.firstOrNull().orEmpty()
