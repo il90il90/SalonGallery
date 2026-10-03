@@ -213,6 +213,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.il90.salongallery.upload.UploadManager
 import com.il90.salongallery.upload.UploadQuality
+import kotlinx.coroutines.flow.collect
 
 @Composable
 fun RemoteModeScreen(actions: AppActions) {

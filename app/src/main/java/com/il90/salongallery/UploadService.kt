@@ -53,7 +53,7 @@ class UploadService : Service() {
                     }
                 } finally {
                     UploadManager.onFinished()
-                    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                    runCatching { stopForeground(Service.STOP_FOREGROUND_REMOVE) }
                     stopSelf()
                 }
             }

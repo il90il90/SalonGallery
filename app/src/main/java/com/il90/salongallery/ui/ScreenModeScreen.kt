@@ -607,7 +607,10 @@ private fun Slideshow(
 
     fun rangeOf(m: LayoutMode): IntRange = when (m) {
         LayoutMode.MOSAIC, LayoutMode.SCATTER -> 4..5
-        else -> SpreadStyle.valueOf(m.name).let { maxOf(it.minN, 4)..it.maxN }
+        // Prefer at least 4 photos, but never exceed the style's own max — Triptych is exactly 3, so
+        // maxOf(minN,4)=4 would make an EMPTY 4..3 range and crash Random.nextInt. Clamp the low end
+        // to maxN so the range is always valid.
+        else -> SpreadStyle.valueOf(m.name).let { minOf(maxOf(it.minN, 4), it.maxN)..it.maxN }
     }
     // Settle on a spread we can actually fill: if the library is too small OR the live memory budget
     // is below the layout's minimum photo count, drop to a light Grid (min 4) instead of rendering a
