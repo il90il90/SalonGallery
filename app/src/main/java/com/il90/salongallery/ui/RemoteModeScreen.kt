@@ -1490,6 +1490,16 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     val scope = rememberCoroutineScope()
     var items by remember { mutableStateOf<List<String>>(emptyList()) }
     var current by remember { mutableIntStateOf(0) }
+    // Every photo in the collage currently on the wall (not just the anchor), so the list can mark
+    // them all "NOW". Empty when the wall is showing a single photo.
+    var nowMembers by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val ni = runCatching { PhotoSender.getNow(screen.host, screen.port) }.getOrNull()
+            nowMembers = if (ni != null && ni.members.size > 1 && ni.style != "single") ni.members.toSet() else emptySet()
+            kotlinx.coroutines.delay(2500)
+        }
+    }
     var pinned by remember { mutableStateOf<Set<String>>(emptySet()) }
     var durations by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var byteMap by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
@@ -1704,8 +1714,9 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                 ReorderableItem(reorderState, key = name) { isDragging ->
                                     // Position in the FULL library — "#n", NOW/NEXT and delete all refer to it.
                                     val i = items.indexOf(name)
-                                    val isNow = i == current
-                                    val isNext = items.size > 1 && i == (current + 1) % items.size
+                                    // "NOW" marks the anchor AND every other photo in the collage on screen.
+                                    val isNow = i == current || name in nowMembers
+                                    val isNext = items.size > 1 && i == (current + 1) % items.size && !isNow
                                     val isPinned = name in pinned
                                     val isVideo = name.startsWith("v_")
                                     val isPicked = name in picked
