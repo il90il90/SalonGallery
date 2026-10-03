@@ -172,7 +172,12 @@
     <string name="album_none_yet">No albums yet — create one below.</string>
     <string name="cancel">Cancel</string>
     <string name="delete">Delete</string>
+    <string name="delete_permanent">Delete from device</string>
     <string name="album_remove_from">Remove from album</string>
+    <string name="album_delete_confirm">Delete this album and the %1$d photos in it? This can\'t be undone.</string>
+    <string name="album_delete_title">Delete album?</string>
+    <string name="delete_permanent_confirm">Delete %1$d items from the device? They are removed everywhere, not just this album. This can\'t be undone.</string>
+    <string name="library_jump_now">Jump to the photo now on the screen</string>
     <string name="studio_edit">Edit in Studio</string>
     <string name="studio_title">Studio</string>
     <string name="studio_hint">Pinch to zoom · drag to position · preview matches the screen</string>

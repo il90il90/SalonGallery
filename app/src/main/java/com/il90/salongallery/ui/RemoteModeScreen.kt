@@ -1357,6 +1357,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     var selecting by remember { mutableStateOf(false) }
     val picked = remember { mutableStateListOf<String>() }
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmAlbumDelete by remember { mutableStateOf(false) }
     fun exitSelect() { selecting = false; picked.clear() }
     fun toggle(name: String) {
         if (name in picked) picked.remove(name) else picked.add(name)
@@ -1471,6 +1472,15 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                 style = MaterialTheme.typography.headlineSmall, color = TextPrimary,
                             )
                             Spacer(Modifier.weight(1f))
+                            // Jump straight to the photo currently on the wall — no scrolling to hunt for it.
+                            val nowName = items.getOrNull(current)
+                            val nowInShown = nowName?.let { shown.indexOf(it) } ?: -1
+                            if (nowInShown >= 0) {
+                                RoundIconBtn(Icons.Outlined.Tv, desc = stringResource(R.string.library_jump_now)) {
+                                    scope.launch { lazyState.animateScrollToItem(nowInShown) }
+                                }
+                                Spacer(Modifier.size(8.dp))
+                            }
                             if (busy) CircularProgressIndicator(color = NeonCyan, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
                             else Box {
                                 RoundIconBtn(Icons.Outlined.Add, accent = true) { addMenu = true }
@@ -1507,17 +1517,13 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                     }
                     if (!isAll) {
                         Spacer(Modifier.height(6.dp))
-                        Text(
-                            stringResource(R.string.album_delete),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color(0xFFF87171),
-                            modifier = Modifier
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                    val id = activeId
-                                    scope.launch { PhotoSender.deleteAlbum(screen.host, screen.port, id); PhotoSender.setActiveAlbum(screen.host, screen.port, "all"); refresh() }
-                                }
-                                .padding(vertical = 4.dp),
-                        )
+                        // Delete-this-album is now a small red trash icon (not a text link); it confirms
+                        // first because a stray tap here removes the album AND the photos inside it.
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SmallBtn(Icons.Outlined.Delete, Color(0xFFF87171), desc = stringResource(R.string.album_delete)) {
+                                confirmAlbumDelete = true
+                            }
+                        }
                     }
 
                     Spacer(Modifier.height(10.dp))
@@ -1656,11 +1662,19 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                                                 onDuration = { durationTarget = name },
                                                 onPin = { scope.launch { PhotoSender.setPinned(screen.host, screen.port, name, !isPinned); refresh() } },
                                                 onAddAlbum = { addTarget = listOf(name) },
+                                                onRemoveFromAlbum = {
+                                                    items = items.filterIndexed { j, _ -> j != i }
+                                                    scope.launch {
+                                                        PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, name)
+                                                        refresh()
+                                                    }
+                                                },
+                                                // Always a real delete from the device — in an album too, so
+                                                // "deleted" photos don't linger in All / on the wall.
                                                 onDelete = {
                                                     items = items.filterIndexed { j, _ -> j != i }
                                                     scope.launch {
-                                                        if (isAll) PhotoSender.deletePhoto(screen.host, screen.port, name)
-                                                        else PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, name)
+                                                        PhotoSender.deletePhoto(screen.host, screen.port, name)
                                                         refresh()
                                                     }
                                                 },
@@ -1719,24 +1733,60 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     }
     if (confirmDelete) {
         val n = picked.size
+        val red = Color(0xFFF87171)
+        fun doDelete() {
+            confirmDelete = false
+            val names = picked.toList()
+            items = items.filter { it !in names }   // optimistic, so the list reacts instantly
+            scope.launch { PhotoSender.deletePhotos(screen.host, screen.port, names); exitSelect(); refresh() }
+        }
+        fun doRemoveFromAlbum() {
+            confirmDelete = false
+            val names = picked.toList()
+            items = items.filter { it !in names }
+            scope.launch { names.forEach { PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, it) }; exitSelect(); refresh() }
+        }
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             containerColor = com.il90.salongallery.ui.theme.ElecSurface,
-            title = { Text(stringResource(if (isAll) R.string.delete else R.string.album_remove_from), color = TextPrimary) },
-            text = { Text(stringResource(R.string.delete_selected_confirm, n), color = TextSecondary) },
+            title = { Text(stringResource(R.string.delete), color = TextPrimary) },
+            text = {
+                Text(
+                    stringResource(if (isAll) R.string.delete_selected_confirm else R.string.delete_permanent_confirm, n),
+                    color = TextSecondary,
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    val names = picked.toList()
-                    items = items.filter { it !in names }   // optimistic, so the list reacts instantly
-                    scope.launch {
-                        if (isAll) PhotoSender.deletePhotos(screen.host, screen.port, names)
-                        else names.forEach { PhotoSender.removeFromAlbum(screen.host, screen.port, activeId, it) }
-                        exitSelect(); refresh()
+                // In an album, deleting and un-filing are different actions — offer both, delete first.
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { doDelete() }) { Text(stringResource(R.string.delete), color = red) }
+                    if (!isAll) TextButton(onClick = { doRemoveFromAlbum() }) {
+                        Text(stringResource(R.string.album_remove_from), color = NeonBlue)
                     }
-                }) { Text(stringResource(if (isAll) R.string.delete else R.string.album_remove_from), color = Color(0xFFF87171)) }
+                }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel), color = TextSecondary) } },
+        )
+    }
+    if (confirmAlbumDelete) {
+        val count = albums.find { it.id == activeId }?.count ?: items.size
+        AlertDialog(
+            onDismissRequest = { confirmAlbumDelete = false },
+            containerColor = com.il90.salongallery.ui.theme.ElecSurface,
+            title = { Text(stringResource(R.string.album_delete_title), color = TextPrimary) },
+            text = { Text(stringResource(R.string.album_delete_confirm, count), color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmAlbumDelete = false
+                    val id = activeId
+                    scope.launch {
+                        PhotoSender.deleteAlbum(screen.host, screen.port, id)
+                        PhotoSender.setActiveAlbum(screen.host, screen.port, "all")
+                        refresh()
+                    }
+                }) { Text(stringResource(R.string.delete), color = Color(0xFFF87171)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmAlbumDelete = false }) { Text(stringResource(R.string.cancel), color = TextSecondary) } },
         )
     }
     studioPhoto?.let { photo ->
@@ -1757,7 +1807,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
 private fun RowOverflow(
     isAll: Boolean, isPinned: Boolean,
     onEdit: () -> Unit, onRotate: () -> Unit, onDuration: () -> Unit, onPin: () -> Unit,
-    onAddAlbum: () -> Unit, onDelete: () -> Unit,
+    onAddAlbum: () -> Unit, onRemoveFromAlbum: () -> Unit, onDelete: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
@@ -1788,9 +1838,18 @@ private fun RowOverflow(
                 leadingIcon = { Icon(Icons.Outlined.Folder, null, tint = NeonTeal) },
                 onClick = { open = false; onAddAlbum() },
             )
+            // Inside an album: "Remove from album" only un-files the photo (it stays on the device),
+            // while "Delete from device" really removes it everywhere. In "All" there is just Delete.
+            if (!isAll) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.album_remove_from), color = TextPrimary) },
+                    leadingIcon = { Icon(Icons.Outlined.Close, null, tint = NeonBlue) },
+                    onClick = { open = false; onRemoveFromAlbum() },
+                )
+            }
             DropdownMenuItem(
-                text = { Text(stringResource(if (isAll) R.string.delete else R.string.album_remove_from), color = Color(0xFFF87171)) },
-                leadingIcon = { Icon(Icons.Outlined.Close, null, tint = Color(0xFFF87171)) },
+                text = { Text(stringResource(if (isAll) R.string.delete else R.string.delete_permanent), color = Color(0xFFF87171)) },
+                leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = Color(0xFFF87171)) },
                 onClick = { open = false; onDelete() },
             )
         }
