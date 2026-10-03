@@ -146,6 +146,10 @@ class DisplayPrefs(context: Context) {
     var orientation: String
         get() = sp.getString("orient", "auto") ?: "auto"
         set(v) = sp.edit().putString("orient", v).apply()
+    /** Group visually-similar photos (by dominant colour) into each multi-photo spread. */
+    var smartGroup: Boolean
+        get() = sp.getBoolean("smartgroup", false)
+        set(v) = sp.edit().putBoolean("smartgroup", v).apply()
 
     /** True if, right now, the schedule says the frame should be asleep. */
     fun isSleepingNow(nowMinOfDay: Int = currentMinOfDay()): Boolean {

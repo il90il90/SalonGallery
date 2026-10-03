@@ -86,6 +86,8 @@ class ScreenSession(
     val layout = MutableStateFlow(LayoutMode.from(prefs.layout))
     /** Spread photos appear one by one (a staggered entrance) instead of all at once. */
     val spreadStagger = MutableStateFlow(prefs.spreadStagger)
+    /** Group visually-similar photos (dominant colour) into each spread. */
+    val smartGroup = MutableStateFlow(prefs.smartGroup)
     /** The slide on the wall right now, so the Remote can show exactly what the wall shows. */
     val nowSlide = MutableStateFlow<NowSlide?>(null)
     /** True while photos are actively streaming in (so the wall shows "Receiving…" instead of black). */
@@ -207,7 +209,7 @@ class ScreenSession(
             """"mspeed":"${motionSpeed.value.name.lowercase()}","fit":"${photoFit.value.name.lowercase()}",""" +
             """"bg":"${esc(bgColor.value)}","spreadmix":"${spreadMix.value.name.lowercase()}",""" +
             """"stagger":${spreadStagger.value},"shuffle":${shuffle.value},"collage":${collage.value},""" +
-            """"orient":"${orientation.value.name.lowercase()}",""" +
+            """"orient":"${orientation.value.name.lowercase()}","smartgroup":${smartGroup.value},""" +
             // "lib" changes on every library mutation (add/delete/clear/rotate/reorder) so the Remote can
             // refresh what it shows from a single poll instead of guessing after each of its own actions.
             """"brightness":$b,"volume":${volume.value},"interval":${intervalMs.value},"lib":${libraryVersion.value}}"""
@@ -403,6 +405,8 @@ class ScreenSession(
     override fun onLayout(mode: String) { layout.value = LayoutMode.from(mode); prefs.layout = mode }
 
     override fun onStagger(on: Boolean) { spreadStagger.value = on; prefs.spreadStagger = on }
+
+    override fun onSmartGroup(on: Boolean) { smartGroup.value = on; prefs.smartGroup = on }
 
     override fun onSpreadMix(level: String) { spreadMix.value = SpreadMix.from(level); prefs.spreadMix = level }
 

@@ -290,6 +290,9 @@
     <string name="slideshow_freq_title">How often a collage shows</string>
     <string name="slideshow_freq_explain">The slides in between show a single photo.</string>
     <string name="slideshow_reveal_eyebrow">Reveal</string>
+    <string name="slideshow_smart_eyebrow">Smart grouping</string>
+    <string name="slideshow_smart_title">Group similar photos together</string>
+    <string name="slideshow_smart_hint">A collage gathers photos that look alike (similar colours) instead of whatever comes next, so a spread feels like one moment — not a family photo beside an unrelated car.</string>
     <string name="slideshow_motion_eyebrow">Motion</string>
     <string name="slideshow_motion_title">Gentle movement while a photo waits</string>
     <string name="slideshow_order_eyebrow">Order</string>

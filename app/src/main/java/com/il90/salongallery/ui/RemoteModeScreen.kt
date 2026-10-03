@@ -743,6 +743,7 @@ private fun ControlPanel(
     var layout by remember { mutableStateOf("single") }
     var motion by remember { mutableStateOf("off") }
     var stagger by remember { mutableStateOf(false) }
+    var smartGroup by remember { mutableStateOf(false) }
     var spreadMix by remember { mutableStateOf("always") }
     var mediaMenu by remember { mutableStateOf(false) }   // Photos / Videos / Both / folder chooser for "Add"
     var folderKindMenu by remember { mutableStateOf(false) }  // Photos / Videos / All for the chosen folder
@@ -782,7 +783,7 @@ private fun ControlPanel(
             layout = it.layout; motion = it.motion; motionSpeed = it.motionSpeed
             fit = it.fit; bgColor = it.bg; spreadMix = it.spreadMix
             stagger = it.stagger; shuffle = it.shuffle; collage = it.collage
-            orientation = it.orientation; intervalMs = it.intervalMs
+            orientation = it.orientation; intervalMs = it.intervalMs; smartGroup = it.smartGroup
         }
     }
     // Re-list whenever the Display reports its library changed (fixes "cleared photos still shown").
@@ -1045,6 +1046,8 @@ private fun ControlPanel(
             motion = motion, motionSpeed = motionSpeed,
             stagger = stagger,
             spreadMix = spreadMix,
+            smartGroup = smartGroup,
+            onSmartGroup = { smartGroup = it; scope.launch { PhotoSender.setSmartGroup(screen.host, screen.port, it) } },
             onSpreadMix = { spreadMix = it; scope.launch { PhotoSender.setSpreadMix(screen.host, screen.port, it) } },
             onStagger = { stagger = it; scope.launch { PhotoSender.setStagger(screen.host, screen.port, it) } },
             onMotion = { motion = it; scope.launch { PhotoSender.setMotion(screen.host, screen.port, it, motionSpeed) } },
@@ -2926,6 +2929,7 @@ private fun SlideshowSheet(
     layout: String = "single", onLayout: (String) -> Unit = {},
     motion: String = "off", motionSpeed: String = "medium",
     stagger: Boolean = false, onStagger: (Boolean) -> Unit = {},
+    smartGroup: Boolean = false, onSmartGroup: (Boolean) -> Unit = {},
     spreadMix: String = "always", onSpreadMix: (String) -> Unit = {},
     onMotion: (String) -> Unit = {}, onMotionSpeed: (String) -> Unit = {},
     onShuffle: (Boolean) -> Unit, onInterval: (Long) -> Unit, onOrientation: (String) -> Unit,
@@ -2986,6 +2990,7 @@ private fun SlideshowSheet(
                     SegRow(listOf("Always", "Often", "Sometimes", "Rarely"), mixes.indexOf(spreadMix).coerceAtLeast(0)) { onSpreadMix(mixes[it]) }
                 }
                 SettingsToggleCard(stringResource(R.string.slideshow_reveal_eyebrow), stringResource(R.string.slideshow_stagger), stringResource(R.string.slideshow_stagger_hint), stagger, onStagger) { RevealIllustration() }
+                SettingsToggleCard(stringResource(R.string.slideshow_smart_eyebrow), stringResource(R.string.slideshow_smart_title), stringResource(R.string.slideshow_smart_hint), smartGroup, onSmartGroup)
             }
 
             // MOTION

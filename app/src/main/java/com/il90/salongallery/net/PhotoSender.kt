@@ -33,6 +33,7 @@ data class ScreenInfo(
     val shuffle: Boolean = false,
     val collage: Boolean = false,
     val orientation: String = "auto",
+    val smartGroup: Boolean = false,
 )
 
 /** The Display's current (active-album) library, as seen by the Remote. */
@@ -238,6 +239,7 @@ object PhotoSender {
                 shuffle = o.optBoolean("shuffle", false),
                 collage = o.optBoolean("collage", false),
                 orientation = o.optString("orient", "auto"),
+                smartGroup = o.optBoolean("smartgroup", false),
             )
         } catch (e: Exception) {
             null
@@ -391,6 +393,8 @@ object PhotoSender {
     /** Whether a spread's photos appear one after another instead of all at once. */
     suspend fun setStagger(host: String, port: Int, on: Boolean) =
         get(host, port, "/stagger?on=${if (on) 1 else 0}")
+    suspend fun setSmartGroup(host: String, port: Int, on: Boolean) =
+        get(host, port, "/smartgroup?on=${if (on) 1 else 0}")
     /** Gentle motion while a photo waits: off | zoom | drift | breathe | mix, at slow | medium | fast. */
     suspend fun setMotion(host: String, port: Int, mode: String, speed: String) =
         get(host, port, "/motion?mode=$mode&speed=$speed")

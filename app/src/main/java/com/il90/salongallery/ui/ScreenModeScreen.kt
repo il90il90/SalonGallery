@@ -98,6 +98,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -157,6 +158,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
 
@@ -197,6 +199,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val layout by session.layout.collectAsStateWithLifecycle()
     val motion by session.motion.collectAsStateWithLifecycle()
     val spreadStagger by session.spreadStagger.collectAsStateWithLifecycle()
+    val smartGroup by session.smartGroup.collectAsStateWithLifecycle()
     val spreadMix by session.spreadMix.collectAsStateWithLifecycle()
     val motionSpeed by session.motionSpeed.collectAsStateWithLifecycle()
     val textOverlay by session.textOverlay.collectAsStateWithLifecycle()
@@ -405,6 +408,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         layout = layout,
                         motion = motion,
                         stagger = spreadStagger,
+                        smartGroup = smartGroup,
                         spreadMix = spreadMix,
                         motionSpeed = motionSpeed,
                         orientationMap = orientationMap,
@@ -518,6 +522,7 @@ private fun Slideshow(
     layout: LayoutMode = LayoutMode.SINGLE,
     motion: MotionMode = MotionMode.OFF,
     stagger: Boolean = false,
+    smartGroup: Boolean = false,
     spreadMix: SpreadMix = SpreadMix.ALWAYS,
     motionSpeed: MotionSpeed = MotionSpeed.MEDIUM,
     orientationMap: Map<String, Boolean>,
@@ -531,6 +536,21 @@ private fun Slideshow(
     val idx = currentIndex.coerceIn(0, files.size - 1)
     val currentIsVideo = isVideoName(files[idx].name)
     val screenLandscape = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp >= it.screenHeightDp }
+
+    // Smart grouping: a background-built cache of each photo's dominant colour (packed ARGB). While it
+    // fills, grouping falls back to sequential; once ready, spreads gather similar-coloured photos.
+    val colorCache = remember(files) { java.util.concurrent.ConcurrentHashMap<String, Int>() }
+    var colorsReady by remember(files, smartGroup) { mutableStateOf(false) }
+    LaunchedEffect(files, smartGroup) {
+        colorsReady = false
+        if (!smartGroup) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            files.forEach { f ->
+                if (!isVideoName(f.name)) colorCache.getOrPut(f.name) { dominantColor(f)?.toArgb() ?: 0 }
+            }
+        }
+        colorsReady = true
+    }
 
     // Which items (by index) form the slide starting at [from]: a collage of same-orientation
     // photos that would otherwise leave big side gaps, or just the single item.
@@ -559,6 +579,21 @@ private fun Slideshow(
         spreadAt(from)?.let { m ->
             val range = rangeOf(m)
             val want = (range.first + kotlin.random.Random(from.toLong() * 31 + 3).nextInt(range.last - range.first + 1)).coerceAtMost(stillCount)
+            // Smart grouping: once dominant colours are known, fill the spread with the stills most
+            // similar in colour to the anchor (within a forward window) instead of the next in order.
+            if (smartGroup && colorsReady) {
+                val anchor = colorCache[files[from].name] ?: 0
+                val window = mutableListOf<Int>()
+                var j = from; var scanned = 0
+                while (window.size < 80 && scanned < files.size) {
+                    j = (j + 1) % files.size; scanned++
+                    if (j == from) break
+                    if (!isVideoName(files[j].name)) window.add(j)
+                }
+                val picked = window.sortedBy { colorDistance(anchor, colorCache[files[it].name] ?: 0) }.take(want - 1)
+                val out = (listOf(from) + picked)
+                if (out.size >= 3) return out
+            }
             val out = mutableListOf(from)
             var j = from
             while (out.size < want) {
@@ -1235,6 +1270,14 @@ private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, vignette: Boole
 }
 
 /** Extracts a pleasing dominant colour from a photo for the Adaptive frame. */
+/** Squared RGB distance between two packed-ARGB colours (0 = identical). */
+private fun colorDistance(a: Int, b: Int): Int {
+    val dr = ((a shr 16) and 0xFF) - ((b shr 16) and 0xFF)
+    val dg = ((a shr 8) and 0xFF) - ((b shr 8) and 0xFF)
+    val db = (a and 0xFF) - (b and 0xFF)
+    return dr * dr + dg * dg + db * db
+}
+
 internal fun dominantColor(f: java.io.File): Color? = runCatching {
     val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
     val bmp = android.graphics.BitmapFactory.decodeFile(f.path, opts) ?: return null

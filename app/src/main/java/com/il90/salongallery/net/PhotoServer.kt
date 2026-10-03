@@ -31,6 +31,7 @@ interface ScreenCommands {
     fun onCollage(on: Boolean)
     fun onLayout(mode: String)             // single | mosaic | scatter | random
     fun onStagger(on: Boolean)             // spread photos appear one by one
+    fun onSmartGroup(on: Boolean)          // group visually-similar photos into each spread
     fun onSpreadMix(level: String)         // always | often | sometimes | rarely
     fun onMotion(mode: String, speed: String) // off | zoom | drift | breathe | mix ; slow | medium | fast
     fun onText(content: String, pos: String, size: String, color: String, font: String)
@@ -185,6 +186,9 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/stagger" -> {
                 commands.onStagger(session.parameters["on"]?.firstOrNull() == "1"); ok()
+            }
+            session.method == Method.GET && uri == "/smartgroup" -> {
+                commands.onSmartGroup(session.parameters["on"]?.firstOrNull() == "1"); ok()
             }
             session.method == Method.GET && uri == "/motion" -> {
                 commands.onMotion(
