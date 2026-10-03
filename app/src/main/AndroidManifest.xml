@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- So the phone can finish uploading photos to the screen even when the app is closed / screen off. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- So a SCREEN device can relaunch itself after the TV box powers back on (opt-in). -->
@@ -65,6 +67,12 @@
             android:name=".DisplayService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Phone-side: keeps a photo/video upload running to completion in the background. -->
+        <service
+            android:name=".UploadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".SalonDreamService"

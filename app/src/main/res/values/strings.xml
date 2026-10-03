@@ -11,6 +11,10 @@
     <string name="quality_optimized_desc">Resized to fit the screen beautifully — much smaller, faster to send, and easier on the screen\'s memory.</string>
     <string name="quality_original_title">Original</string>
     <string name="quality_original_desc">Full resolution, exactly as taken — largest files and most storage used.</string>
+    <string name="upload_notif_channel">Uploads</string>
+    <string name="upload_notif_title">Sending photos to the screen</string>
+    <string name="upload_notif_progress">Sent %1$d of %2$d</string>
+    <string name="upload_notif_working">Uploading…</string>
     <string name="notif_channel_screen">Screen status</string>
     <string name="notif_screen_offline_title">Screen offline</string>
     <string name="notif_screen_offline_body">\"%1$s\" isn\'t responding — it may be off, restarting, or off the Wi-Fi.</string>

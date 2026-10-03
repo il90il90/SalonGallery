@@ -211,63 +211,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-/** How photos are uploaded: downscaled for the wall, or exactly as taken. (Videos are never altered.) */
-enum class UploadQuality { OPTIMIZED, ORIGINAL }
-
-/** Longest edge, in px, an "Optimized" photo is scaled down to — well above the wall's 1600px decode so
- *  it still looks crisp and allows some zoom, while being a fraction of a modern phone photo's size. */
-private const val OPTIMIZE_MAX_EDGE = 2560
-
-/**
- * For the "Optimized" upload choice: downscale a photo to a wall-friendly size and re-encode it, so it
- * transfers fast, stores small and never forces a huge decode on the screen. The EXIF orientation is
- * baked into the pixels (so the re-encoded JPEG still shows upright even though EXIF is dropped). Any
- * failure — or a photo already small enough and needing no rotation — returns the original bytes.
- */
-private fun optimizePhotoForUpload(bytes: ByteArray): ByteArray = runCatching {
-    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-    val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
-    if (longEdge <= 0) return@runCatching bytes
-    val exifRot = runCatching {
-        when (android.media.ExifInterface(java.io.ByteArrayInputStream(bytes))
-            .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)) {
-            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-            else -> 0f
-        }
-    }.getOrDefault(0f)
-    // Already small and upright → leave it exactly as it is.
-    if (longEdge <= OPTIMIZE_MAX_EDGE && exifRot == 0f && bytes.size <= 2_500_000) return@runCatching bytes
-    var sample = 1
-    while (longEdge / sample > OPTIMIZE_MAX_EDGE * 2) sample *= 2
-    val decoded = android.graphics.BitmapFactory.decodeByteArray(
-        bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
-    ) ?: return@runCatching bytes
-    val scale = OPTIMIZE_MAX_EDGE.toFloat() / maxOf(decoded.width, decoded.height)
-    val scaled = if (scale < 1f)
-        android.graphics.Bitmap.createScaledBitmap(
-            decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true,
-        )
-    else decoded
-    val upright = if (exifRot != 0f)
-        android.graphics.Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, android.graphics.Matrix().apply { postRotate(exifRot) }, true)
-    else scaled
-    val bos = java.io.ByteArrayOutputStream()
-    upright.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, bos)
-    if (upright !== scaled) upright.recycle()
-    if (scaled !== decoded) scaled.recycle()
-    decoded.recycle()
-    val out = bos.toByteArray()
-    if (out.isNotEmpty() && out.size < bytes.size) out else bytes
-}.getOrDefault(bytes)
-
-/** Exact byte length of a content Uri, or -1 if unknown (then the caller buffers instead of streaming). */
-private fun uriLength(cr: android.content.ContentResolver, uri: Uri): Long = runCatching {
-    cr.openAssetFileDescriptor(uri, "r")?.use { val l = it.length; if (l >= 0) l else -1L } ?: -1L
-}.getOrElse { -1L }
+import com.il90.salongallery.upload.UploadManager
+import com.il90.salongallery.upload.UploadQuality
 
 @Composable
 fun RemoteModeScreen(actions: AppActions) {
@@ -949,46 +894,35 @@ private fun ControlPanel(
     // landing in "All".
     var pendingMedia by remember { mutableStateOf<List<Uri>?>(null) }
     var destAlbums by remember { mutableStateOf<List<AlbumInfo>>(emptyList()) }
-    // After an album is chosen (or none needed), we ask the quality once, then this runs the upload.
+    // After an album is chosen (or none needed), we ask the quality once, then hand the batch to the
+    // background upload service so it finishes even if the app is closed or the screen turns off.
     var pendingUpload by remember { mutableStateOf<Pair<List<Uri>, String?>?>(null) }
-    suspend fun uploadMedia(uris: List<Uri>, album: String?, quality: UploadQuality) {
-        busy = true; status = null; progress = 0 to uris.size
-        // Activate the album BEFORE uploading, not after: a Display on an older build ignores
-        // ?album= and files uploads into whatever album is active — so activating first makes
-        // the new album receive the photos on every server version, and the wall shows them.
-        if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
-        var ok = 0
-        try {
-            uris.forEachIndexed { i, uri ->
-                val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true
-                val err = if (isVideo) {
-                    // Videos keep their original quality and stream straight through (never buffered
-                    // whole in memory) when their length is known; buffered only as a last resort.
-                    val len = uriLength(context.contentResolver, uri)
-                    if (len > 0) PhotoSender.sendVideoStream(screen.host, screen.port, len, album) { context.contentResolver.openInputStream(uri) }
-                    else {
-                        val vb = readBytes(uri)
-                        if (vb != null) PhotoSender.sendVideo(screen.host, screen.port, vb, album) else "read"
-                    }
-                } else {
-                    val raw = readBytes(uri)
-                    if (raw == null) "read"
-                    else {
-                        val b = if (quality == UploadQuality.OPTIMIZED) withContext(Dispatchers.IO) { optimizePhotoForUpload(raw) } else raw
-                        PhotoSender.sendPhoto(screen.host, screen.port, b, album)
-                    }
-                }
-                if (err == null) ok++
-                progress = (i + 1) to uris.size
-            }
-        } finally {
-            busy = false   // always clear, even if a send throws, so the UI never stays stuck
-        }
-        status = "Added $ok / ${uris.size} ✓"
-        onInfoRefresh(scope); refreshLib()
+    fun uploadMedia(uris: List<Uri>, album: String?, quality: UploadQuality) {
+        if (uris.isEmpty()) return
+        status = null
+        UploadManager.enqueue(context, screen.host, screen.port, album, quality, uris)
     }
-    // Every upload path funnels here: show the quality chooser, then run the upload with the choice.
+    // Every upload path funnels here: show the quality chooser, then enqueue with the choice.
     fun beginUpload(uris: List<Uri>, album: String?) { pendingUpload = uris to album }
+
+    // Mirror the background upload's live progress into the on-screen banner, and refresh the library
+    // once a batch finishes. Because the service outlives this screen, re-opening the app resumes the
+    // live count from wherever the upload has got to.
+    LaunchedEffect(Unit) {
+        var wasRunning = false
+        UploadManager.progress.collect { up ->
+            if (up.running) { busy = true; progress = up.done to up.total; status = null }
+            else {
+                busy = false
+                if (wasRunning && up.total > 0) {
+                    progress = 0 to 0
+                    status = "Added ${up.done} / ${up.total} ✓"
+                    onInfoRefresh(scope); refreshLib()
+                }
+            }
+            wasRunning = up.running
+        }
+    }
     // The Android Photo Picker — the familiar gallery grid, filtered to photos / videos / both. It
     // caps a selection at the system limit (usually 100); for sending a whole camera roll at once
     // the "Whole folder" option below has no cap.
@@ -1250,7 +1184,7 @@ private fun ControlPanel(
             onPick = { q ->
                 remotePrefs.edit().putString("upload_quality", q.name).apply()
                 pendingUpload = null
-                scope.launch { uploadMedia(uris, album, q) }
+                uploadMedia(uris, album, q)
             },
             onDismiss = { pendingUpload = null },
         )
@@ -1593,32 +1527,21 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     var pendingMedia by remember { mutableStateOf<List<Uri>?>(null) }
     var pendingUpload by remember { mutableStateOf<Pair<List<Uri>, String?>?>(null) }
     val libPrefs = remember { context.getSharedPreferences("salon_remote", android.content.Context.MODE_PRIVATE) }
-    suspend fun uploadMedia(uris: List<Uri>, album: String?, quality: UploadQuality) {
-        busy = true
-        // Activate first so an older Display (which ignores ?album=) still files these correctly.
-        if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
-        uris.forEach { u ->
-            val isVideo = context.contentResolver.getType(u)?.startsWith("video") == true
-            if (isVideo) {
-                // Original quality, streamed to disk (never buffered whole) when the length is known.
-                val len = uriLength(context.contentResolver, u)
-                if (len > 0) PhotoSender.sendVideoStream(screen.host, screen.port, len, album) { context.contentResolver.openInputStream(u) }
-                else withContext(Dispatchers.IO) {
-                    runCatching { context.contentResolver.openInputStream(u)?.use { it.readBytes() } }.getOrNull()
-                }?.let { PhotoSender.sendVideo(screen.host, screen.port, it, album) }
-            } else {
-                val raw = withContext(Dispatchers.IO) {
-                    runCatching { context.contentResolver.openInputStream(u)?.use { it.readBytes() } }.getOrNull()
-                }
-                if (raw != null) {
-                    val b = if (quality == UploadQuality.OPTIMIZED) withContext(Dispatchers.IO) { optimizePhotoForUpload(raw) } else raw
-                    PhotoSender.sendPhoto(screen.host, screen.port, b, album)
-                }
-            }
-        }
-        busy = false; refresh()
+    // Hand the batch to the background upload service so it finishes even if the app is closed.
+    fun uploadMedia(uris: List<Uri>, album: String?, quality: UploadQuality) {
+        if (uris.isEmpty()) return
+        UploadManager.enqueue(context, screen.host, screen.port, album, quality, uris)
     }
     fun beginUpload(uris: List<Uri>, album: String?) { pendingUpload = uris to album }
+    // Reflect upload progress and refresh the album list each time a batch finishes.
+    LaunchedEffect(Unit) {
+        var wasRunning = false
+        UploadManager.progress.collect { up ->
+            busy = up.running
+            if (wasRunning && !up.running) refresh()
+            wasRunning = up.running
+        }
+    }
     // The gallery Photo Picker for adding into an album.
     val addPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
@@ -1930,7 +1853,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
             onPick = { q ->
                 libPrefs.edit().putString("upload_quality", q.name).apply()
                 pendingUpload = null
-                scope.launch { uploadMedia(uris, album, q) }
+                uploadMedia(uris, album, q)
             },
             onDismiss = { pendingUpload = null },
         )
