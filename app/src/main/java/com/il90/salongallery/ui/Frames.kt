@@ -199,6 +199,79 @@ val FRAMES = listOf(
         28, "Black Mat", "Minimal",
         matColor = Color(0xFF0A0A0C), matFrac = 0.075f, lipColor = Color(0xFF2E2E34),
     ),
+    FrameStyle(
+        29, "Museum", "Minimal", recommended = true,
+        moldingColors = listOf(Color(0xFF1A1A1E), Color(0xFF070708)),
+        moldingFrac = 0.01f, bevelInner = Color(0xFF000000),
+        matColor = Color(0xFFF8F6F1), matFrac = 0.1f, lipColor = Color(0xFFB8B0A2),
+    ),
+    FrameStyle(
+        30, "Linen Mat", "Minimal",
+        matColor = Color(0xFFEDE7D8), matFrac = 0.09f, lipColor = Color(0xFFC6BCA6),
+    ),
+    // ---- More Wood (realistic) ----
+    FrameStyle(
+        31, "Black Wood", "Wood",
+        moldingColors = listOf(Color(0xFF2A2622), Color(0xFF17130F), Color(0xFF070504)),
+        moldingFrac = 0.05f, bevelOuter = Color(0xFF3E3832), bevelInner = Color(0xFF040302),
+        matColor = Color(0xFFF0EADF), matFrac = 0.03f, lipColor = Color(0xFF17130F),
+    ),
+    FrameStyle(
+        32, "Weathered", "Wood",
+        moldingColors = listOf(Color(0xFFA9A294), Color(0xFF7C756A), Color(0xFF514C44)),
+        moldingFrac = 0.05f, bevelOuter = Color(0xFFC3BCAE), bevelInner = Color(0xFF3A362F),
+        matColor = Color(0xFFF1EDE4), matFrac = 0.028f, lipColor = Color(0xFF514C44),
+    ),
+    FrameStyle(
+        33, "Birch", "Wood",
+        moldingColors = listOf(Color(0xFFF0E4C8), Color(0xFFDCC79E), Color(0xFFC2A978)),
+        moldingFrac = 0.042f, bevelOuter = Color(0xFFFBF2DB), bevelInner = Color(0xFF9A8356),
+        matColor = Color(0xFFF8F3E9), matFrac = 0.026f, lipColor = Color(0xFFC2A978),
+    ),
+    FrameStyle(
+        34, "Burlwood", "Classic",
+        moldingColors = listOf(Color(0xFFB07B44), Color(0xFF7E5026), Color(0xFF4A2C12), Color(0xFF8A5E30)),
+        moldingFrac = 0.06f, bevelOuter = Color(0xFFCB9254), bevelInner = Color(0xFF301A0A),
+        matColor = Color(0xFFF0E6D6), matFrac = 0.036f, lipColor = Color(0xFF7E5026),
+    ),
+    // ---- More Metal (realistic) ----
+    FrameStyle(
+        35, "Gunmetal", "Metal",
+        moldingColors = listOf(Color(0xFF5A5E64), Color(0xFF34373C), Color(0xFF1A1C1F), Color(0xFF42464B)),
+        moldingFrac = 0.038f, bevelOuter = Color(0xFF72767C), bevelInner = Color(0xFF101214),
+        matColor = Color(0xFF17181A), matFrac = 0.026f, lipColor = Color(0xFF42464B),
+    ),
+    FrameStyle(
+        36, "Champagne", "Metal",
+        moldingColors = listOf(Color(0xFFF3E8CE), Color(0xFFDCC9A2), Color(0xFFB8A078), Color(0xFFE0D0AC)),
+        moldingFrac = 0.04f, bevelOuter = Color(0xFFFBF3E0), bevelInner = Color(0xFF7E6E4E),
+        matColor = Color(0xFFF6F0E4), matFrac = 0.028f, lipColor = Color(0xFFB8A078),
+    ),
+    FrameStyle(
+        37, "Antique Silver", "Metal",
+        moldingColors = listOf(Color(0xFFD9DDE0), Color(0xFFA7ACB2), Color(0xFF767B82), Color(0xFFBFC4C9)),
+        moldingFrac = 0.044f, bevelOuter = Color(0xFFEFF1F3), bevelInner = Color(0xFF565B61),
+        matColor = Color(0xFFF2F3F5), matFrac = 0.03f, lipColor = Color(0xFF767B82),
+    ),
+    // ---- More Modern ----
+    FrameStyle(
+        38, "Shadow Box", "Modern",
+        moldingColors = listOf(Color(0xFF17181A), Color(0xFF0A0A0B)),
+        moldingFrac = 0.012f, bevelInner = Color(0xFF000000),
+        matColor = Color(0xFF0E0E10), matFrac = 0.085f, lipColor = Color(0xFF26262B),
+    ),
+    FrameStyle(
+        39, "Floating White", "Modern",
+        moldingColors = listOf(Color(0xFFFFFFFF), Color(0xFFE9E9EC)),
+        moldingFrac = 0.02f, bevelOuter = Color(0xFFFFFFFF), bevelInner = Color(0xFFBFC0C4),
+        matColor = Color(0xFFFFFFFF), matFrac = 0.015f, lipColor = Color(0xFFD2D3D7),
+    ),
+    FrameStyle(
+        40, "Gilded", "Classic",
+        moldingColors = listOf(Color(0xFFFFF4CE), Color(0xFFEAC866), Color(0xFFA9842F), Color(0xFFE6C25E)),
+        moldingFrac = 0.072f, bevelOuter = Color(0xFFFFFADF), bevelInner = Color(0xFF5A4316),
+        matColor = Color(0xFFF6EFDC), matFrac = 0.04f, lipColor = Color(0xFFA9842F),
+    ),
 )
 
 fun frameById(id: Int): FrameStyle = FRAMES.firstOrNull { it.id == id } ?: FRAMES[0]
