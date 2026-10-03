@@ -17,6 +17,9 @@
     <string name="upload_notif_working">Uploading…</string>
     <string name="slideshow_mix_pick">Tick the collages Mix should choose from.</string>
     <string name="add_many_files">Many files (no 100 limit)</string>
+    <string name="slideshow_anim_eyebrow">ANIMATED COLLAGES</string>
+    <string name="slideshow_anim_title">Collages that move</string>
+    <string name="slideshow_anim_hint">Optional — off by default. Tap one and the whole collage gently moves on the wall. Tap again elsewhere (or pick a plain layout) to turn it off.</string>
     <string name="notif_channel_screen">Screen status</string>
     <string name="notif_screen_offline_title">Screen offline</string>
     <string name="notif_screen_offline_body">\"%1$s\" isn\'t responding — it may be off, restarting, or off the Wi-Fi.</string>

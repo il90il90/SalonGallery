@@ -1000,6 +1000,9 @@ private fun ControlPanel(
             ConnectionBanner(lostScreen = lostScreen, onChoose = onBack)
             Spacer(Modifier.height(14.dp))
         }
+        // Link status rides at the very top, right under the Salon Gallery header.
+        WallStatusLine(screenName = screen.name, connected = connected, lost = lostScreen)
+        Spacer(Modifier.height(14.dp))
         val nowName = lib?.let { it.items.getOrNull(it.current) }
         NowShowingHero(
             screen = screen,
@@ -1008,8 +1011,6 @@ private fun ControlPanel(
             rots = lib?.rots ?: emptyMap(),
             rot = nowName?.let { lib?.rots?.get(it) } ?: 0,
             onRotate = { nowName?.let { n -> scope.launch { PhotoSender.rotatePhoto(screen.host, screen.port, n); refreshLib() } } },
-            screenName = screen.name,
-            connected = connected, lost = lostScreen,
             onSwipe = { delta ->
                 val items = lib?.items ?: emptyList()
                 if (items.size > 1) {
@@ -1271,12 +1272,31 @@ private fun ConnectionBanner(lostScreen: Boolean, onChoose: () -> Unit) {
     }
 }
 
+/**
+ * The "On the wall · <screen> · Connected" link-status row. Lives at the very top of the control
+ * panel (right under the Salon Gallery header) so the connection state is the first thing seen.
+ */
+@Composable
+private fun WallStatusLine(screenName: String, connected: Boolean, lost: Boolean) {
+    // Status colour tracks the real link state — it must never say "Connected" while the
+    // watchdog is showing the reconnecting banner.
+    val statusColor = when { lost -> Color(0xFFF87171); !connected -> Color(0xFFF2B07A); else -> GoodGreen }
+    val statusText = stringResource(when { lost -> R.string.remote_offline; !connected -> R.string.remote_reconnecting; else -> R.string.remote_connected })
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(9.dp).clip(CircleShape).background(statusColor))
+        Spacer(Modifier.width(9.dp))
+        Text(stringResource(R.string.home_on_wall) + " ", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        Text(screenName, style = MaterialTheme.typography.bodyMedium, fontFamily = com.il90.salongallery.ui.theme.ContentFont, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1)
+        Spacer(Modifier.weight(1f))
+        Text(statusText, style = MaterialTheme.typography.labelMedium, color = statusColor, fontWeight = FontWeight.SemiBold)
+    }
+}
+
 @Composable
 private fun NowShowingHero(
-    screen: DiscoveredScreen, current: String?, screenName: String,
+    screen: DiscoveredScreen, current: String?,
     now: com.il90.salongallery.net.NowInfo? = null, rots: Map<String, Int> = emptyMap(),
     rot: Int = 0, onRotate: () -> Unit = {}, onSwipe: (Int) -> Unit = {},
-    connected: Boolean = true, lost: Boolean = false,
 ) {
     // A spread is on the wall when the current slide has more than one photo. Only when there is
     // actually something on the wall (current != null) — otherwise a just-cleared library would keep
@@ -1347,19 +1367,6 @@ private fun NowShowingHero(
                     }
                 }
             }
-        }
-        Spacer(Modifier.height(13.dp))
-        // Status line tracks the real link state — it must never say "Connected" while the
-        // watchdog is showing the reconnecting banner above.
-        val statusColor = when { lost -> Color(0xFFF87171); !connected -> Color(0xFFF2B07A); else -> GoodGreen }
-        val statusText = stringResource(when { lost -> R.string.remote_offline; !connected -> R.string.remote_reconnecting; else -> R.string.remote_connected })
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(9.dp).clip(CircleShape).background(statusColor))
-            Spacer(Modifier.width(9.dp))
-            Text(stringResource(R.string.home_on_wall) + " ", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-            Text(screenName, style = MaterialTheme.typography.bodyMedium, fontFamily = com.il90.salongallery.ui.theme.ContentFont, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1)
-            Spacer(Modifier.weight(1f))
-            Text(statusText, style = MaterialTheme.typography.labelMedium, color = statusColor, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -1669,9 +1676,15 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                             scope.launch { PhotoSender.setActiveAlbum(screen.host, screen.port, "all"); refresh() }
                         }
                         albums.forEach { al ->
-                            // Wrap the count + size in an LTR isolate (⁦…⁩) so a Hebrew album
-                            // name can't scramble the order into "118.4 · 187 … MB".
-                            val meta = "⁦" + al.count + (formatBytes(al.bytes).takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") + "⁩"
+                            // Wrap the count + size in an LTR isolate (U+2066 … U+2069) so a
+                            // Hebrew album name can't scramble the order into "118.4 · 187 … MB".
+                            // Chars are built from code points at runtime (not string literals)
+                            // so the source stays ASCII — lint rejects literal/escaped bidi
+                            // control chars in string constants as BidiSpoofing.
+                            val lri = String(Character.toChars(0x2066))
+                            val pdi = String(Character.toChars(0x2069))
+                            val sizePart = formatBytes(al.bytes).takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""
+                            val meta = lri + al.count + sizePart + pdi
                             AlbumChip("${al.name} · $meta", activeId == al.id) {
                                 scope.launch { PhotoSender.setActiveAlbum(screen.host, screen.port, al.id); refresh() }
                             }
@@ -3196,6 +3209,21 @@ private val LAYOUTS = listOf(
 /** The spread layout keys (everything except Auto / Mix / Single) — the pool "Mix" can draw from. */
 private val SPREAD_KEYS = LAYOUTS.map { it.first }.filter { it != "auto" && it != "random" && it != "single" }
 
+/** An "animated collage": a spread layout paired with a whole-collage motion. Opt-in, default none. */
+private data class AnimCollage(val label: String, val layout: String, val motion: String)
+private val ANIMATED_COLLAGES = listOf(
+    AnimCollage("Drifting grid", "grid", "drift"),
+    AnimCollage("Breathing mosaic", "mosaic", "breathe"),
+    AnimCollage("Floating windows", "window", "float"),
+    AnimCollage("Swaying gallery", "gallery", "sway"),
+    AnimCollage("Rolling carousel", "carousel", "slidex"),
+    AnimCollage("Parallax quilt", "quilt", "parallax"),
+    AnimCollage("Rising masonry", "masonry", "rise"),
+    AnimCollage("Rocking postcards", "postcards", "rock"),
+    AnimCollage("Glowing frames", "frames", "glow"),
+    AnimCollage("Pulsing patchwork", "patchwork", "pulse"),
+)
+
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun SlideshowSheet(
@@ -3216,6 +3244,57 @@ private fun SlideshowSheet(
             Text(stringResource(R.string.tile_slideshow), style = MaterialTheme.typography.headlineMedium, color = TextPrimary, fontFamily = com.il90.salongallery.ui.theme.Display)
             Text(stringResource(R.string.slideshow_sub), style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
             Spacer(Modifier.height(18.dp))
+
+            // LAYOUT — the most important choice, so it's first. Default is Single (one photo).
+            SettingsCard(stringResource(R.string.slideshow_layout_eyebrow), stringResource(R.string.slideshow_layout_title), stringResource(R.string.slideshow_layout_hint)) {
+                // When "Mix" is chosen, the spread tiles become a multi-select pool — tick the collages
+                // Mix should draw from. Otherwise a tile just picks that one layout.
+                val isMix = layout == "random"
+                if (isMix) {
+                    val allOn = SPREAD_KEYS.all { it in layoutPool }
+                    Text(stringResource(R.string.slideshow_mix_pick), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    EffectChip(stringResource(if (allOn) R.string.pool_clear_all else R.string.pool_select_all), selected = allOn, showCheck = false) {
+                        onLayoutPool(if (allOn) setOf(SPREAD_KEYS.first()) else SPREAD_KEYS.toSet())
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+                val gap = 10.dp
+                BoxWithConstraints {
+                    val tileW = (maxWidth - gap * 2) / 3
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LAYOUTS.forEach { (key, label) ->
+                            if (isMix && key in SPREAD_KEYS) {
+                                val inPool = key in layoutPool
+                                LayoutPreviewTile(key, label, selected = inPool, modifier = Modifier.width(tileW), check = inPool) {
+                                    val np = if (inPool) layoutPool - key else layoutPool + key
+                                    if (np.isNotEmpty()) onLayoutPool(np)   // keep at least one in the mix
+                                }
+                            } else {
+                                LayoutPreviewTile(key, label, selected = key == layout, modifier = Modifier.width(tileW)) { onLayout(key) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ANIMATED COLLAGES — a separate, opt-in set where the WHOLE collage gently moves. Default
+            // none (off): a preset only applies when tapped, setting a spread layout + a whole-collage
+            // motion together. Highlighted when the current layout+motion match a preset.
+            SettingsCard(stringResource(R.string.slideshow_anim_eyebrow), stringResource(R.string.slideshow_anim_title), stringResource(R.string.slideshow_anim_hint)) {
+                val gap = 10.dp
+                BoxWithConstraints {
+                    val tileW = (maxWidth - gap * 2) / 3
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ANIMATED_COLLAGES.forEach { preset ->
+                            val on = layout == preset.layout && motion == preset.motion
+                            LayoutPreviewTile(preset.layout, preset.label, selected = on, modifier = Modifier.width(tileW)) {
+                                onLayout(preset.layout); onMotion(preset.motion)
+                            }
+                        }
+                    }
+                }
+            }
 
             // PHOTO FIT
             SettingsCard(stringResource(R.string.slideshow_fit_eyebrow), stringResource(R.string.slideshow_fit_title), stringResource(R.string.slideshow_fit_explain)) {
@@ -3249,40 +3328,6 @@ private fun SlideshowSheet(
                 }
             }
 
-            // LAYOUT
-            SettingsCard(stringResource(R.string.slideshow_layout_eyebrow), stringResource(R.string.slideshow_layout_title), stringResource(R.string.slideshow_layout_hint)) {
-                // When "Mix" is chosen, the spread tiles become a multi-select pool — tick the collages
-                // Mix should draw from. Otherwise a tile just picks that one layout.
-                val isMix = layout == "random"
-                if (isMix) {
-                    val allOn = SPREAD_KEYS.all { it in layoutPool }
-                    Text(stringResource(R.string.slideshow_mix_pick), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                    Spacer(Modifier.height(8.dp))
-                    EffectChip(stringResource(if (allOn) R.string.pool_clear_all else R.string.pool_select_all), selected = allOn, showCheck = false) {
-                        onLayoutPool(if (allOn) setOf(SPREAD_KEYS.first()) else SPREAD_KEYS.toSet())
-                    }
-                    Spacer(Modifier.height(12.dp))
-                }
-                // Three tiles per row (was two): sized to the card width so they stay uniform and the
-                // whole layout list is easier to scan.
-                val gap = 10.dp
-                BoxWithConstraints {
-                    val tileW = (maxWidth - gap * 2) / 3
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        LAYOUTS.forEach { (key, label) ->
-                            if (isMix && key in SPREAD_KEYS) {
-                                val inPool = key in layoutPool
-                                LayoutPreviewTile(key, label, selected = inPool, modifier = Modifier.width(tileW), check = inPool) {
-                                    val np = if (inPool) layoutPool - key else layoutPool + key
-                                    if (np.isNotEmpty()) onLayoutPool(np)   // keep at least one in the mix
-                                }
-                            } else {
-                                LayoutPreviewTile(key, label, selected = key == layout, modifier = Modifier.width(tileW)) { onLayout(key) }
-                            }
-                        }
-                    }
-                }
-            }
 
             // COLLAGE FREQUENCY (only meaningful for a multi-photo layout; Auto sets its own rhythm)
             if (layout != "single") {
