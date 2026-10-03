@@ -244,7 +244,7 @@ private fun filmstrip(n: Int, w: Float, h: Float): SpreadPlan {
 /** A loose pile of prints, each nudged and turned, the last one on top and nearly straight. */
 private fun stack(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<Placement> {
     val landscape = w >= h
-    val ph = if (landscape) h * 0.56f else w * 0.5f
+    val ph = if (landscape) h * 0.68f else w * 0.6f
     val pw = ph * 1.33f
     return List(n) { k ->
         val last = k == n - 1
@@ -262,7 +262,7 @@ private fun stack(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<Pla
 /** Cards fanned out like a hand of playing cards, pivoting on a point below the screen. */
 private fun fan(n: Int, w: Float, h: Float): List<Placement> {
     val landscape = w >= h
-    val ch = if (landscape) h * 0.6f else h * 0.42f
+    val ch = if (landscape) h * 0.72f else h * 0.5f
     val cw = ch * 0.74f
     val step = if (landscape) 13f else 11f
     val radius = ch * 0.95f
@@ -490,7 +490,7 @@ private fun carousel(n: Int, w: Float, h: Float): List<Placement> {
         val g = w * 0.02f
         val slot = (w - g * (n + 1)) / n
         var pw = slot
-        var ph = min(h * 0.74f, pw / 1.4f)
+        var ph = min(h * 0.92f, pw / 1.4f)
         pw = min(pw, ph * 1.4f)
         val cy = h / 2f
         for (k in 0 until n) {
@@ -501,7 +501,7 @@ private fun carousel(n: Int, w: Float, h: Float): List<Placement> {
         val g = h * 0.02f
         val slot = (h - g * (n + 1)) / n
         var ph = slot
-        var pw = min(w * 0.74f, ph / 1.4f)
+        var pw = min(w * 0.92f, ph / 1.4f)
         ph = min(ph, pw * 1.4f)
         val cx = w / 2f
         for (k in 0 until n) {
@@ -534,7 +534,7 @@ private fun pyramid(n: Int, w: Float, h: Float): List<Placement> {
     val rh = (h - g * (rows.size + 1)) / rows.size
     val out = mutableListOf<Placement>()
     rows.forEachIndexed { ri, cnt ->
-        val cw = min((w - g * (cnt + 1)) / cnt, rh * 1.45f)
+        val cw = min((w - g * (cnt + 1)) / cnt, rh * 1.9f)
         val total = cw * cnt + g * (cnt - 1); val start = (w - total) / 2f
         for (c in 0 until cnt) out += Placement(start + c * (cw + g), g + ri * (rh + g), cw, rh, 0f, PrintStyle.PRINT)
     }
@@ -676,16 +676,16 @@ private fun wave(n: Int, w: Float, h: Float): List<Placement> {
 private fun spotlight(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<Placement> {
     val out = mutableListOf<Placement>()
     val small = n - 1
-    val sw = min(w, h) * 0.26f; val sh = sw * 0.8f
-    // Small prints ringed around the centre, behind the hero.
+    val sw = min(w, h) * 0.34f; val sh = sw * 0.8f
+    // Small prints ringed around the centre, peeking out from behind the big hero.
     for (k in 0 until small) {
         val ang = (k / small.toFloat()) * 2f * Math.PI.toFloat() + 0.4f
-        val rx = w * 0.3f; val ry = h * 0.32f
+        val rx = w * 0.34f; val ry = h * 0.34f
         val cx = w / 2f + (rx * cos(ang.toDouble())).toFloat()
         val cy = h / 2f + (ry * sin(ang.toDouble())).toFloat()
         out += Placement(cx - sw / 2f, cy - sh / 2f, sw, sh, (r.nextFloat() - 0.5f) * 16f, PrintStyle.PRINT)
     }
-    val hw = w * 0.4f; val hh = h * 0.5f
+    val hw = w * 0.52f; val hh = h * 0.62f
     out += Placement(w / 2f - hw / 2f, h / 2f - hh / 2f, hw, hh, 0f, PrintStyle.PRINT)
     return out
 }
