@@ -23,6 +23,15 @@ class SalonApp : Application(), ImageLoaderFactory {
         com.il90.salongallery.diag.CrashLog.install(this)
     }
 
+    // When the system reports memory pressure, release Coil's in-memory bitmaps right away. (Coil also
+    // trims itself, but on a tight TV box this blunt, immediate clear is the safer belt-and-braces.)
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            runCatching { coil.Coil.imageLoader(this).memoryCache?.clear() }
+        }
+    }
+
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
             .allowHardware(true)

@@ -580,6 +580,23 @@ private fun Slideshow(
         }
     }
 
+    // Periodic memory hygiene: when the device is under real pressure, drop Coil's idle in-memory
+    // cache so bitmaps from past/warmed slides are released instead of piling up. The slide ON screen
+    // is held by its composables, not only the cache, so it does not blank; only off-screen extras go.
+    // Throttled (at most ~every 40s) so we never thrash by re-decoding the visible slide over and over.
+    LaunchedEffect(files) {
+        var lastTrim = 0L
+        while (true) {
+            delay(15_000)
+            val pressure = com.il90.salongallery.diag.MemoryGovernor.assess(memCtx, slidePx(memCtx)).pressure
+            val now = System.currentTimeMillis()
+            if (pressure >= 0.85f && now - lastTrim > 40_000) {
+                runCatching { coil.Coil.imageLoader(memCtx).memoryCache?.clear() }
+                lastTrim = now
+            }
+        }
+    }
+
     fun rangeOf(m: LayoutMode): IntRange = when (m) {
         LayoutMode.MOSAIC, LayoutMode.SCATTER -> 4..5
         else -> SpreadStyle.valueOf(m.name).let { maxOf(it.minN, 4)..it.maxN }
