@@ -2911,10 +2911,10 @@ private fun layoutPreviewItems(key: String, w: Float, h: Float): List<Placement>
 private val LAYOUTS = listOf(
     // "random" (sent to the Display) is shown as "Mix" — it mixes the layouts, it isn't disorderly.
     "random" to "Mix", "single" to "Single", "mosaic" to "Mosaic", "scatter" to "Scatter", "grid" to "Grid",
-    "polaroid" to "Polaroids", "filmstrip" to "Film strip", "stack" to "Stack", "fan" to "Fan",
+    "window" to "Window", "polaroid" to "Polaroids", "filmstrip" to "Film strip", "stack" to "Stack", "fan" to "Fan",
     "gallery" to "Gallery wall", "clothesline" to "Clothesline", "bubbles" to "Bubbles",
-    "magazine" to "Magazine", "columns" to "Columns", "collage" to "Collage", "frames" to "Frames",
-    "patchwork" to "Patchwork", "overlap" to "Overlap",
+    "magazine" to "Magazine", "columns" to "Columns", "carousel" to "Carousel", "collage" to "Collage",
+    "frames" to "Frames", "patchwork" to "Patchwork", "overlap" to "Overlap", "diagonal" to "Diagonal",
 )
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -2988,12 +2988,16 @@ private fun SlideshowSheet(
 
             // MOTION
             SettingsCard(stringResource(R.string.slideshow_motion_eyebrow), stringResource(R.string.slideshow_motion_title), stringResource(R.string.slideshow_motion_hint)) {
-                val motions = listOf("off", "zoom", "drift", "breathe", "mix")
-                val labels = listOf("Off", "Zoom", "Drift", "Fade", "Mix")
-                // One uniform row of five, like the Fit / Background / Orientation cards.
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    motions.forEachIndexed { i, key ->
-                        OptionTile(labels[i], selected = motion == key, modifier = Modifier.weight(1f), onClick = { onMotion(key) }) { MotionIllustration(key) }
+                val motions = listOf("off", "zoom", "drift", "breathe", "sway", "glide", "mix")
+                val labels = listOf("Off", "Zoom", "Drift", "Fade", "Sway", "Glide", "Mix")
+                // Uniform grid, four per row, sized to the card width.
+                val gap = 8.dp
+                BoxWithConstraints {
+                    val tileW = (maxWidth - gap * 3) / 4
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(gap)) {
+                        motions.forEachIndexed { i, key ->
+                            OptionTile(labels[i], selected = motion == key, modifier = Modifier.width(tileW), onClick = { onMotion(key) }) { MotionIllustration(key) }
+                        }
                     }
                 }
                 if (motion != "off") {
@@ -3123,6 +3127,8 @@ private fun MotionIllustration(key: String) {
                     "zoom" -> { val s = 0.82f + 0.3f * v; scaleX = s; scaleY = s }
                     "drift" -> { translationX = (v - 0.5f) * 20f }
                     "breathe" -> { alpha = 0.3f + 0.7f * v }
+                    "sway" -> { rotationZ = (v - 0.5f) * 24f }
+                    "glide" -> { val s = 0.9f + 0.2f * v; scaleX = s; scaleY = s; translationX = (v - 0.5f) * 16f; translationY = (v - 0.5f) * 10f }
                     "mix" -> { val s = 0.86f + 0.22f * v; scaleX = s; scaleY = s; alpha = 0.5f + 0.5f * v }
                     else -> {}
                 }

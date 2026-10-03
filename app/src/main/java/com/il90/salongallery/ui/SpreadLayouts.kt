@@ -52,6 +52,12 @@ enum class SpreadStyle(val surface: SpreadSurface, val minN: Int = 3, val maxN: 
     PATCHWORK(SpreadSurface.WHITE, 8, 12),
     /** Large bordered prints overlapping in two staggered rows on a light page. */
     OVERLAP(SpreadSurface.PAPER, 4, 7),
+    /** A denser grid of 6–9 equal cells (a "window" of photos). */
+    WINDOW(SpreadSurface.MAT, 6, 9),
+    /** One centred row (or column) of evenly spaced bordered prints. */
+    CAROUSEL(SpreadSurface.PAPER, 3, 5),
+    /** Prints cascading along the diagonal, each slightly tilted and overlapping. */
+    DIAGONAL(SpreadSurface.TABLE, 3, 5),
 }
 
 /**
@@ -110,6 +116,9 @@ fun placeSpread(style: SpreadStyle, n: Int, w: Float, h: Float, seed: Int): Spre
         SpreadStyle.FRAMES -> SpreadPlan(guillotine(count, w, h, r, gapFrac = 0.02f))
         SpreadStyle.PATCHWORK -> SpreadPlan(guillotine(count, w, h, r, gapFrac = 0.011f))
         SpreadStyle.OVERLAP -> SpreadPlan(overlap(count, w, h, r))
+        SpreadStyle.WINDOW -> SpreadPlan(windowGrid(count, w, h))
+        SpreadStyle.CAROUSEL -> SpreadPlan(carousel(count, w, h))
+        SpreadStyle.DIAGONAL -> SpreadPlan(diagonal(count, w, h, r))
     }
     // Safety pass: shrink anything too big for the slide, then pull it fully inside.
     val margin = min(w, h) * 0.012f
@@ -416,6 +425,68 @@ private fun collage(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<P
     // Draw order: shuffled, with the hero last (on top) — but keep each photo's own slot index.
     val order = (0 until n).filter { it != hero }.shuffled(r) + hero
     return order.map { out[it] }
+}
+
+/** A denser grid of equal cells (6–9), rows balanced for the screen shape; a short last row centres. */
+private fun windowGrid(n: Int, w: Float, h: Float): List<Placement> {
+    val g = min(w, h) * 0.018f
+    val landscape = w >= h
+    val rows: List<Int> = if (landscape) when (n) {
+        6 -> listOf(3, 3); 7 -> listOf(4, 3); 8 -> listOf(4, 4); else -> listOf(3, 3, 3)
+    } else when (n) {
+        6 -> listOf(2, 2, 2); 7 -> listOf(2, 3, 2); 8 -> listOf(3, 2, 3); else -> listOf(3, 3, 3)
+    }
+    val out = mutableListOf<Placement>()
+    val rh = (h - g * (rows.size + 1)) / rows.size
+    rows.forEachIndexed { ri, cnt ->
+        val cw = (w - g * (cnt + 1)) / cnt
+        for (c in 0 until cnt) out += Placement(g + c * (cw + g), g + ri * (rh + g), cw, rh, 0f, PrintStyle.CELL)
+    }
+    return out
+}
+
+/** One centred row of evenly spaced bordered prints (a centred column on a portrait screen). */
+private fun carousel(n: Int, w: Float, h: Float): List<Placement> {
+    val landscape = w >= h
+    val out = mutableListOf<Placement>()
+    if (landscape) {
+        val g = w * 0.02f
+        val slot = (w - g * (n + 1)) / n
+        var pw = slot
+        var ph = min(h * 0.74f, pw / 1.4f)
+        pw = min(pw, ph * 1.4f)
+        val cy = h / 2f
+        for (k in 0 until n) {
+            val cx = g + slot * k + slot / 2f
+            out += Placement(cx - pw / 2f, cy - ph / 2f, pw, ph, 0f, PrintStyle.PRINT)
+        }
+    } else {
+        val g = h * 0.02f
+        val slot = (h - g * (n + 1)) / n
+        var ph = slot
+        var pw = min(w * 0.74f, ph / 1.4f)
+        ph = min(ph, pw * 1.4f)
+        val cx = w / 2f
+        for (k in 0 until n) {
+            val cy = g + slot * k + slot / 2f
+            out += Placement(cx - pw / 2f, cy - ph / 2f, pw, ph, 0f, PrintStyle.PRINT)
+        }
+    }
+    return out
+}
+
+/** Prints cascading along the diagonal, each slightly tilted and overlapping the last. */
+private fun diagonal(n: Int, w: Float, h: Float, r: kotlin.random.Random): List<Placement> {
+    val landscape = w >= h
+    val ph = if (landscape) h * 0.5f else h * 0.4f
+    val pw = ph * (if (landscape) 1.3f else 1.15f)
+    val down = r.nextBoolean()   // top-left→bottom-right, or bottom-left→top-right
+    return List(n) { k ->
+        val t = if (n == 1) 0.5f else k / (n - 1f)
+        val cx = w * (0.24f + 0.52f * t)
+        val cy = h * (if (down) 0.24f + 0.52f * t else 0.76f - 0.52f * t)
+        Placement(cx - pw / 2f, cy - ph / 2f, pw, ph, (r.nextFloat() - 0.5f) * 10f, PrintStyle.PRINT)
+    }
 }
 
 /** Big bordered prints in two staggered, overlapping rows (columns on a portrait screen). */

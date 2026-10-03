@@ -740,7 +740,7 @@ private fun AnimatedContentTransitionScope<Int>.transitionFor(e: SlideEffect): C
 @Composable
 private fun MotionBox(mode: MotionMode, speed: MotionSpeed, seed: Int, content: @Composable () -> Unit) {
     val m = if (mode == MotionMode.MIX)
-        listOf(MotionMode.ZOOM, MotionMode.DRIFT, MotionMode.BREATHE)[kotlin.random.Random(seed.toLong() * 131 + 5).nextInt(3)]
+        listOf(MotionMode.ZOOM, MotionMode.DRIFT, MotionMode.BREATHE, MotionMode.SWAY, MotionMode.GLIDE)[kotlin.random.Random(seed.toLong() * 131 + 5).nextInt(5)]
     else mode
     if (m == MotionMode.OFF) { content(); return }
     val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "motion")
@@ -769,6 +769,14 @@ private fun MotionBox(mode: MotionMode, speed: MotionSpeed, seed: Int, content: 
                         translationY = (v - 0.5f) * 2f * dirY * size.height * 0.02f
                     }
                     MotionMode.BREATHE -> { val s = 1f + 0.015f * v; scaleX = s; scaleY = s }
+                    // A gentle rocking rotation; the slight scale-up hides the corners as it turns.
+                    MotionMode.SWAY -> { scaleX = 1.06f; scaleY = 1.06f; rotationZ = (v - 0.5f) * 2f * 1.1f }
+                    // A cinematic Ken-Burns: slow zoom while panning diagonally.
+                    MotionMode.GLIDE -> {
+                        val s = 1.05f + 0.06f * v; scaleX = s; scaleY = s
+                        translationX = (v - 0.5f) * 2f * dirX * size.width * 0.02f
+                        translationY = (v - 0.5f) * 2f * dirY * size.height * 0.02f
+                    }
                     else -> {}
                 }
             },

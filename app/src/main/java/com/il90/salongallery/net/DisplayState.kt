@@ -22,8 +22,8 @@ enum class SlideEffect {
  * mat, a SCATTER of tilted prints on a table, and the planned layouts (GRID … COLUMNS, see
  * ui/SpreadLayouts.kt) — or RANDOM, a seeded per-slide mix of single photos and every spread.
  */
-enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, POLAROID, FILMSTRIP, STACK, FAN, GALLERY, CLOTHESLINE, BUBBLES, MAGAZINE, COLUMNS,
-    COLLAGE, FRAMES, PATCHWORK, OVERLAP, RANDOM;
+enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, WINDOW, POLAROID, FILMSTRIP, STACK, FAN, GALLERY, CLOTHESLINE, BUBBLES, MAGAZINE, COLUMNS, CAROUSEL,
+    COLLAGE, FRAMES, PATCHWORK, OVERLAP, DIAGONAL, RANDOM;
     val isSpread get() = this != SINGLE && this != RANDOM
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: SINGLE
@@ -36,7 +36,7 @@ enum class LayoutMode { SINGLE, MOSAIC, SCATTER, GRID, POLAROID, FILMSTRIP, STAC
  * and out), a gentle DRIFT (pan across a slightly enlarged photo), a soft BREATHE (fade down and back
  * up), or MIX — a seeded pick of the three per slide. OFF keeps the photo perfectly still.
  */
-enum class MotionMode { OFF, ZOOM, DRIFT, BREATHE, MIX;
+enum class MotionMode { OFF, ZOOM, DRIFT, BREATHE, SWAY, GLIDE, MIX;
     companion object {
         fun from(s: String) = entries.firstOrNull { it.name.equals(s, true) } ?: OFF
     }
