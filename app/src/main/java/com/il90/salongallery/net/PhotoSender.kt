@@ -22,6 +22,17 @@ data class ScreenInfo(
     val libVersion: Long = 0L,
     /** The Display app's versionName — shown in the screen list so an old install is obvious. */
     val version: String = "",
+    // Current slideshow settings, so the Remote reflects the wall's real state (not fresh defaults).
+    val layout: String = "single",
+    val motion: String = "off",
+    val motionSpeed: String = "medium",
+    val fit: String = "fill",
+    val bg: String = "black",
+    val spreadMix: String = "always",
+    val stagger: Boolean = false,
+    val shuffle: Boolean = false,
+    val collage: Boolean = false,
+    val orientation: String = "auto",
 )
 
 /** The Display's current (active-album) library, as seen by the Remote. */
@@ -217,6 +228,16 @@ object PhotoSender {
                 intervalMs = o.optLong("interval", 30000L),
                 libVersion = o.optLong("lib", 0L),
                 version = o.optString("version", ""),
+                layout = o.optString("layout", "single"),
+                motion = o.optString("motion", "off"),
+                motionSpeed = o.optString("mspeed", "medium"),
+                fit = o.optString("fit", "fill"),
+                bg = o.optString("bg", "black"),
+                spreadMix = o.optString("spreadmix", "always"),
+                stagger = o.optBoolean("stagger", false),
+                shuffle = o.optBoolean("shuffle", false),
+                collage = o.optBoolean("collage", false),
+                orientation = o.optString("orient", "auto"),
             )
         } catch (e: Exception) {
             null
@@ -435,6 +456,35 @@ object PhotoSender {
         } catch (e: Exception) { null }
     }
 
+
+    /** Current on-screen overlay state (clock / weather / text) as the Display really has it. */
+    data class OverlayState(
+        val clockOn: Boolean, val clockPos: String, val clockDate: Boolean, val clockStyle: String, val clockSize: String,
+        val weatherOn: Boolean, val weatherPlace: String, val weatherLat: Double, val weatherLon: Double, val weatherUnits: String, val weatherPos: String,
+        val textContent: String, val textPos: String, val textSize: String, val textColor: String, val textFont: String,
+    )
+
+    suspend fun getOverlays(host: String, port: Int): OverlayState? = withContext(Dispatchers.IO) {
+        try {
+            val conn = open("http://$host:$port/overlays", "GET")
+            if (conn.responseCode !in 200..299) { conn.disconnect(); return@withContext null }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val o = JSONObject(body)
+            val c = o.optJSONObject("clock") ?: JSONObject()
+            val w = o.optJSONObject("weather") ?: JSONObject()
+            val t = o.optJSONObject("text") ?: JSONObject()
+            OverlayState(
+                clockOn = c.optBoolean("on", false), clockPos = c.optString("pos", "top_start"),
+                clockDate = c.optBoolean("date", true), clockStyle = c.optString("style", "digital"), clockSize = c.optString("size", "m"),
+                weatherOn = w.optBoolean("on", false), weatherPlace = w.optString("place", ""),
+                weatherLat = w.optDouble("lat", 0.0), weatherLon = w.optDouble("lon", 0.0),
+                weatherUnits = w.optString("units", "c"), weatherPos = w.optString("pos", "top_end"),
+                textContent = t.optString("content", ""), textPos = t.optString("pos", "bottom"),
+                textSize = t.optString("size", "m"), textColor = t.optString("color", "white"), textFont = t.optString("font", "classic"),
+            )
+        } catch (e: Exception) { null }
+    }
 
     suspend fun clearLibrary(host: String, port: Int) =
         get(host, port, "/clear")

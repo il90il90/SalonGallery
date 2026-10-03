@@ -770,7 +770,15 @@ private fun ControlPanel(
     fun refreshLib() { scope.launch { PhotoSender.getList(screen.host, screen.port)?.let { lib = it } } }
     LaunchedEffect(screen.host, screen.port) {
         refreshLib()
-        PhotoSender.getInfo(screen.host, screen.port)?.let { screenBrightness = it.brightness; screenVolume = it.volume }
+        // Load the wall's real current settings on connect so every sheet opens showing what is
+        // actually set (not fresh defaults) — otherwise changes look like they were never saved.
+        PhotoSender.getInfo(screen.host, screen.port)?.let {
+            screenBrightness = it.brightness; screenVolume = it.volume
+            layout = it.layout; motion = it.motion; motionSpeed = it.motionSpeed
+            fit = it.fit; bgColor = it.bg; spreadMix = it.spreadMix
+            stagger = it.stagger; shuffle = it.shuffle; collage = it.collage
+            orientation = it.orientation; intervalMs = it.intervalMs
+        }
     }
     // Re-list whenever the Display reports its library changed (fixes "cleared photos still shown").
     LaunchedEffect(libVersion) { if (libVersion != 0L) refreshLib() }
@@ -1068,6 +1076,7 @@ private fun ControlPanel(
     }
     if (showText) {
         TextSheet(
+            screen = screen,
             onText = { content, pos, size, color, font ->
                 scope.launch { PhotoSender.setText(screen.host, screen.port, content, pos, size, color, font) }
             },
@@ -3128,6 +3137,7 @@ private fun OrientIllustration(key: String) {
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun TextSheet(
+    screen: DiscoveredScreen,
     onText: (String, String, String, String, String) -> Unit,
     onClock: (Boolean, String, Boolean, String, String) -> Unit,
     onWeather: (Boolean, String, Double, Double, String, String) -> Unit,
@@ -3145,6 +3155,9 @@ private fun TextSheet(
     var clockDate by remember { mutableStateOf(true) }
     var clockStyle by remember { mutableStateOf("digital") }
     var clockSizeIdx by remember { mutableIntStateOf(1) }
+    // Gate the auto-push effects until the Display's real state has loaded, so initialising the
+    // fields from the server doesn't echo straight back as a "change".
+    var loaded by remember { mutableStateOf(false) }
     val positions = listOf("top", "center", "bottom")
     val sizes = listOf("s", "m", "l")
     val colors = listOf("white", "black", "gold", "cyan", "violet")
@@ -3168,17 +3181,42 @@ private fun TextSheet(
     var searching by remember { mutableStateOf(false) }
     val weatherUnits = listOf("c", "f")
 
-    fun pushWeather() = onWeather(weatherOn && weatherLat != 0.0, weatherPlace, weatherLat, weatherLon, weatherUnits[weatherUnitsIdx], clockPositions[weatherPosIdx])
+    // Weather can be on even before a city is picked (the toggle persists); the Display just won't
+    // fetch until a location is set. So push the real toggle state, not "on only if a city exists".
+    fun pushWeather() = onWeather(weatherOn, weatherPlace, weatherLat, weatherLon, weatherUnits[weatherUnitsIdx], clockPositions[weatherPosIdx])
 
-    var textTouched by remember { mutableStateOf(false) }
-    LaunchedEffect(content, posIdx, sizeIdx, colorIdx, fontIdx) {
-        if (!textTouched) { textTouched = true; return@LaunchedEffect }
+    // Load the Display's real overlay state once when the sheet opens, so the toggles and fields show
+    // what is actually on the wall instead of fresh defaults. Pushes are gated on `loaded` so this
+    // initialisation doesn't bounce straight back to the server.
+    LaunchedEffect(Unit) {
+        PhotoSender.getOverlays(screen.host, screen.port)?.let { o ->
+            content = o.textContent
+            posIdx = positions.indexOf(o.textPos).coerceAtLeast(0)
+            sizeIdx = sizes.indexOf(o.textSize).coerceAtLeast(0)
+            colorIdx = colors.indexOf(o.textColor).coerceAtLeast(0)
+            fontIdx = fonts.indexOf(o.textFont).coerceAtLeast(0)
+            clock = o.clockOn
+            clockPosIdx = clockPositions.indexOf(o.clockPos).coerceAtLeast(0)
+            clockDate = o.clockDate
+            clockStyle = o.clockStyle
+            clockSizeIdx = clockSizes.indexOf(o.clockSize).coerceAtLeast(0)
+            weatherOn = o.weatherOn
+            weatherPlace = o.weatherPlace
+            weatherLat = o.weatherLat
+            weatherLon = o.weatherLon
+            weatherUnitsIdx = weatherUnits.indexOf(o.weatherUnits).coerceAtLeast(0)
+            weatherPosIdx = clockPositions.indexOf(o.weatherPos).coerceAtLeast(0)
+        }
+        loaded = true
+    }
+
+    LaunchedEffect(content, posIdx, sizeIdx, colorIdx, fontIdx, loaded) {
+        if (!loaded) return@LaunchedEffect
         kotlinx.coroutines.delay(250)
         onText(content, positions[posIdx], sizes[sizeIdx], colors[colorIdx], fonts[fontIdx])
     }
-    var clockTouched by remember { mutableStateOf(false) }
-    LaunchedEffect(clock, clockPosIdx, clockDate, clockStyle, clockSizeIdx) {
-        if (!clockTouched) { clockTouched = true; return@LaunchedEffect }
+    LaunchedEffect(clock, clockPosIdx, clockDate, clockStyle, clockSizeIdx, loaded) {
+        if (!loaded) return@LaunchedEffect
         onClock(clock, clockPositions[clockPosIdx], clockDate, clockStyle, clockSizes[clockSizeIdx])
     }
 

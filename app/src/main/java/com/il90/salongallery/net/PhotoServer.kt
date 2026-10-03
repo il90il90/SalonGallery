@@ -36,6 +36,7 @@ interface ScreenCommands {
     fun onText(content: String, pos: String, size: String, color: String, font: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String)
     fun onWeather(on: Boolean, place: String, lat: Double, lon: Double, units: String, pos: String)
+    fun overlaysJson(): String             // current clock/weather/text state, so the Remote reflects reality
     fun onOpenScreensaver()
     fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean)
     fun rssJson(): String
@@ -236,6 +237,7 @@ class PhotoServer(
                     session.parameters["summary"]?.firstOrNull() == "1",
                 ); ok()
             }
+            session.method == Method.GET && uri == "/overlays" -> json(commands.overlaysJson())
             session.method == Method.GET && uri == "/rss/get" -> json(commands.rssJson())
             session.method == Method.GET && uri == "/screensaver" -> { commands.onOpenScreensaver(); ok() }
             session.method == Method.GET && uri == "/clear" -> { commands.onClear(); ok() }

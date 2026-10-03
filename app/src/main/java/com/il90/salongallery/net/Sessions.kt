@@ -69,23 +69,23 @@ class ScreenSession(
     /** Frame ids to shuffle among when frameRandom is on. */
     val framePool = MutableStateFlow(listOf(1, 3, 4, 8))
     val frameWidth = MutableStateFlow(1f)
-    val intervalMs = MutableStateFlow(30000L)
-    val shuffle = MutableStateFlow(false)
+    val intervalMs = MutableStateFlow(prefs.slideInterval)
+    val shuffle = MutableStateFlow(prefs.slideShuffle)
     val effect = MutableStateFlow(SlideEffect.FADE)
     /** Transitions to shuffle among when effect == RANDOM. */
     val effectPool = MutableStateFlow(listOf("fade", "slide", "zoom", "dissolve"))
     /** Which looks the "Random" look shuffles between (per-photo). */
     val filterPool = MutableStateFlow(listOf("none", "mono", "sepia", "warm", "cool", "vignette"))
-    val photoFit = MutableStateFlow(PhotoFit.FILL)
+    val photoFit = MutableStateFlow(PhotoFit.from(prefs.photoFit))
     /** Backing colour behind photos (and letterbox bars): black | charcoal | slate | warm | white. */
-    val bgColor = MutableStateFlow("black")
+    val bgColor = MutableStateFlow(prefs.bgColor)
     val photoFilter = MutableStateFlow(PhotoFilter.NONE)
     /** Auto-fill the screen with a tasteful collage when a photo's orientation leaves big gaps. */
-    val collage = MutableStateFlow(false)
+    val collage = MutableStateFlow(prefs.collageOn)
     /** Slide composition: single photos, mosaics, scatters, or a random mix. */
-    val layout = MutableStateFlow(LayoutMode.SINGLE)
+    val layout = MutableStateFlow(LayoutMode.from(prefs.layout))
     /** Spread photos appear one by one (a staggered entrance) instead of all at once. */
-    val spreadStagger = MutableStateFlow(false)
+    val spreadStagger = MutableStateFlow(prefs.spreadStagger)
     /** The slide on the wall right now, so the Remote can show exactly what the wall shows. */
     val nowSlide = MutableStateFlow<NowSlide?>(null)
     /** True while photos are actively streaming in (so the wall shows "Receiving…" instead of black). */
@@ -100,20 +100,38 @@ class ScreenSession(
         recvFuture = recvExec.schedule({ receiving.value = false }, 2500, java.util.concurrent.TimeUnit.MILLISECONDS)
     }
     /** How often a spread appears instead of a single photo. */
-    val spreadMix = MutableStateFlow(SpreadMix.ALWAYS)
+    val spreadMix = MutableStateFlow(SpreadMix.from(prefs.spreadMix))
     /** Subtle motion while a still waits on screen, and how fast it runs. */
-    val motion = MutableStateFlow(MotionMode.OFF)
-    val motionSpeed = MutableStateFlow(MotionSpeed.MEDIUM)
-    val textOverlay = MutableStateFlow(TextOverlay())
-    val clock = MutableStateFlow(ClockConfig())
-    val weather = MutableStateFlow(WeatherConfig())
+    val motion = MutableStateFlow(MotionMode.from(prefs.motion))
+    val motionSpeed = MutableStateFlow(MotionSpeed.from(prefs.motionSpeed))
+    // Overlays are restored from disk so they survive a Display restart (and so the Remote reads
+    // their real state). Weather fetching for a restored "on" config is kicked off in init below.
+    val textOverlay = MutableStateFlow(
+        TextOverlay(prefs.textContent, TextPos.from(prefs.textPos), prefs.textSize, prefs.textColor, prefs.textFont)
+    )
+    val clock = MutableStateFlow(
+        ClockConfig(prefs.clockOn, ClockPos.from(prefs.clockPos), prefs.clockDate, ClockStyle.from(prefs.clockStyle), prefs.clockSize)
+    )
+    val weather = MutableStateFlow(
+        WeatherConfig(prefs.weatherOn, prefs.weatherPlace, prefs.weatherLat, prefs.weatherLon, prefs.weatherUnits, ClockPos.from(prefs.weatherPos))
+    )
     val weatherNow = MutableStateFlow(WeatherNow())
+    // Generation guard for the weather-refresh thread; declared before init so restoring an "on"
+    // weather config at startup can safely start the first fetch.
+    @Volatile private var weatherGen = 0
+    init { if (weather.value.on && weather.value.lat != 0.0) fetchWeather() }
     val rssOn = MutableStateFlow(prefs.rssEnabled)
     val rssFeeds = MutableStateFlow(prefs.rssFeeds)
     val rssConfig = MutableStateFlow(
         RssConfig(prefs.rssPos, prefs.rssShowImage, prefs.rssShowSource, prefs.rssShowSummary)
     )
-    val orientation = MutableStateFlow(ScreenOrientation.AUTO)
+    val orientation = MutableStateFlow(
+        when (prefs.orientation.lowercase()) {
+            "portrait" -> ScreenOrientation.PORTRAIT
+            "landscape" -> ScreenOrientation.LANDSCAPE
+            else -> ScreenOrientation.AUTO
+        }
+    )
     val brightness = MutableStateFlow(-1f)
     /** App-level playback volume 0..1, applied directly to the players (reliable on TV). */
     val volume = MutableStateFlow(1f)
@@ -183,6 +201,13 @@ class ScreenSession(
         val b = if (brightness.value < 0f) 1f else brightness.value
         return """{"name":"${esc(effectiveName())}","version":"${esc(versionName)}",""" +
             """"w":$screenW,"h":$screenH,"free":$free,"total":$total,"count":${library.count()},""" +
+            // The current slideshow settings travel with the ping so the Remote shows the wall's real
+            // state (layout, motion, fit, background, …) instead of fresh defaults when a sheet opens.
+            """"layout":"${layout.value.name.lowercase()}","motion":"${motion.value.name.lowercase()}",""" +
+            """"mspeed":"${motionSpeed.value.name.lowercase()}","fit":"${photoFit.value.name.lowercase()}",""" +
+            """"bg":"${esc(bgColor.value)}","spreadmix":"${spreadMix.value.name.lowercase()}",""" +
+            """"stagger":${spreadStagger.value},"shuffle":${shuffle.value},"collage":${collage.value},""" +
+            """"orient":"${orientation.value.name.lowercase()}",""" +
             // "lib" changes on every library mutation (add/delete/clear/rotate/reorder) so the Remote can
             // refresh what it shows from a single poll instead of guessing after each of its own actions.
             """"brightness":$b,"volume":${volume.value},"interval":${intervalMs.value},"lib":${libraryVersion.value}}"""
@@ -342,10 +367,12 @@ class ScreenSession(
     override fun onSlideshow(intervalMs: Long, shuffle: Boolean) {
         this.intervalMs.value = intervalMs.coerceIn(2000L, 86_400_000L)
         this.shuffle.value = shuffle
+        prefs.slideInterval = this.intervalMs.value; prefs.slideShuffle = shuffle
     }
 
     override fun onDefaultDuration(seconds: Int) {
         intervalMs.value = (seconds * 1000L).coerceIn(2000L, 86_400_000L)
+        prefs.slideInterval = intervalMs.value
     }
 
     override fun onEffect(effect: String) {
@@ -362,38 +389,42 @@ class ScreenSession(
 
     override fun onFit(fit: String) {
         this.photoFit.value = PhotoFit.from(fit)
+        prefs.photoFit = fit
     }
 
-    override fun onBackground(color: String) { bgColor.value = color }
+    override fun onBackground(color: String) { bgColor.value = color; prefs.bgColor = color }
 
     override fun onFilter(filter: String) {
         this.photoFilter.value = PhotoFilter.from(filter)
     }
 
-    override fun onCollage(on: Boolean) { collage.value = on }
+    override fun onCollage(on: Boolean) { collage.value = on; prefs.collageOn = on }
 
-    override fun onLayout(mode: String) { layout.value = LayoutMode.from(mode) }
+    override fun onLayout(mode: String) { layout.value = LayoutMode.from(mode); prefs.layout = mode }
 
-    override fun onStagger(on: Boolean) { spreadStagger.value = on }
+    override fun onStagger(on: Boolean) { spreadStagger.value = on; prefs.spreadStagger = on }
 
-    override fun onSpreadMix(level: String) { spreadMix.value = SpreadMix.from(level) }
+    override fun onSpreadMix(level: String) { spreadMix.value = SpreadMix.from(level); prefs.spreadMix = level }
 
     override fun onMotion(mode: String, speed: String) {
-        if (mode.isNotBlank()) motion.value = MotionMode.from(mode)
-        if (speed.isNotBlank()) motionSpeed.value = MotionSpeed.from(speed)
+        if (mode.isNotBlank()) { motion.value = MotionMode.from(mode); prefs.motion = mode }
+        if (speed.isNotBlank()) { motionSpeed.value = MotionSpeed.from(speed); prefs.motionSpeed = speed }
     }
 
     override fun onText(content: String, pos: String, size: String, color: String, font: String) {
         textOverlay.value = TextOverlay(content, TextPos.from(pos), size, color, font)
+        prefs.textContent = content; prefs.textPos = pos; prefs.textSize = size; prefs.textColor = color; prefs.textFont = font
     }
 
     override fun onWeather(on: Boolean, place: String, lat: Double, lon: Double, units: String, pos: String) {
         weather.value = WeatherConfig(on, place, lat, lon, units, ClockPos.from(pos))
-        if (on) fetchWeather() else weatherNow.value = WeatherNow()
+        prefs.weatherOn = on; prefs.weatherPlace = place; prefs.weatherLat = lat; prefs.weatherLon = lon
+        prefs.weatherUnits = units; prefs.weatherPos = pos
+        // Only fetch once a real location is set (lat 0 is open ocean, i.e. "no city yet").
+        if (on && lat != 0.0) fetchWeather() else weatherNow.value = WeatherNow()
     }
 
     // Open-Meteo current weather — free, no API key. Fetched on change and then hourly while on.
-    @Volatile private var weatherGen = 0
     private fun fetchWeather() {
         val gen = ++weatherGen
         val w = weather.value
@@ -424,6 +455,18 @@ class ScreenSession(
 
     override fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String) {
         clock.value = ClockConfig(on, ClockPos.from(pos), showDate, ClockStyle.from(style), size)
+        prefs.clockOn = on; prefs.clockPos = pos; prefs.clockDate = showDate; prefs.clockStyle = style; prefs.clockSize = size
+    }
+
+    /** Current overlay state, so the Remote shows what's really on the wall (not fresh defaults). */
+    override fun overlaysJson(): String {
+        val c = clock.value; val w = weather.value; val t = textOverlay.value
+        return """{"clock":{"on":${c.on},"pos":"${c.pos.name.lowercase()}","date":${c.showDate},""" +
+            """"style":"${c.style.name.lowercase()}","size":"${esc(c.size)}"},""" +
+            """"weather":{"on":${w.on},"place":"${esc(w.place)}","lat":${w.lat},"lon":${w.lon},""" +
+            """"units":"${esc(w.units)}","pos":"${w.pos.name.lowercase()}"},""" +
+            """"text":{"content":"${esc(t.content)}","pos":"${t.pos.name.lowercase()}","size":"${esc(t.size)}",""" +
+            """"color":"${esc(t.color)}","font":"${esc(t.font)}"}}"""
     }
 
     override fun onOpenScreensaver() { screensaverTrigger.value = System.currentTimeMillis() }
@@ -473,6 +516,7 @@ class ScreenSession(
             "landscape" -> ScreenOrientation.LANDSCAPE
             else -> ScreenOrientation.AUTO
         }
+        prefs.orientation = orientation.value.name.lowercase()
     }
 
     override fun onClear() {
