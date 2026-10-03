@@ -2950,7 +2950,8 @@ private fun SlideshowSheet(
             // BACKGROUND
             SettingsCard(stringResource(R.string.slideshow_bg_eyebrow), stringResource(R.string.slideshow_bg_title), stringResource(R.string.slideshow_bg_explain)) {
                 val bgs = listOf("black", "charcoal", "slate", "warm", "white")
-                val bgLabels = listOf("Black", "Charcoal", "Slate", "Warm", "White")
+                // Short labels so none truncate at a fifth of the card width ("Charcoal" → "Grey").
+                val bgLabels = listOf("Black", "Grey", "Slate", "Warm", "White")
                 val bgSwatch = listOf(Color(0xFF000000), Color(0xFF14110E), Color(0xFF2B2F36), Color(0xFF1C140D), Color(0xFFF2EEE6))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     bgs.forEachIndexed { i, key ->
@@ -2980,7 +2981,7 @@ private fun SlideshowSheet(
             if (layout != "single") {
                 SettingsCard(stringResource(R.string.slideshow_freq_eyebrow), stringResource(R.string.slideshow_freq_title), stringResource(R.string.slideshow_freq_explain)) {
                     val mixes = listOf("always", "often", "sometimes", "rarely")
-                    SegRow(listOf("Every slide", "Often", "Sometimes", "Rarely"), mixes.indexOf(spreadMix).coerceAtLeast(0)) { onSpreadMix(mixes[it]) }
+                    SegRow(listOf("Always", "Often", "Sometimes", "Rarely"), mixes.indexOf(spreadMix).coerceAtLeast(0)) { onSpreadMix(mixes[it]) }
                 }
                 SettingsToggleCard(stringResource(R.string.slideshow_reveal_eyebrow), stringResource(R.string.slideshow_stagger), stringResource(R.string.slideshow_stagger_hint), stagger, onStagger)
             }
@@ -2989,9 +2990,10 @@ private fun SlideshowSheet(
             SettingsCard(stringResource(R.string.slideshow_motion_eyebrow), stringResource(R.string.slideshow_motion_title), stringResource(R.string.slideshow_motion_hint)) {
                 val motions = listOf("off", "zoom", "drift", "breathe", "mix")
                 val labels = listOf("Off", "Zoom", "Drift", "Fade", "Mix")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // One uniform row of five, like the Fit / Background / Orientation cards.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     motions.forEachIndexed { i, key ->
-                        OptionTile(labels[i], selected = motion == key, modifier = Modifier.width(88.dp), onClick = { onMotion(key) }) { MotionIllustration(key) }
+                        OptionTile(labels[i], selected = motion == key, modifier = Modifier.weight(1f), onClick = { onMotion(key) }) { MotionIllustration(key) }
                     }
                 }
                 if (motion != "off") {
@@ -3757,13 +3759,20 @@ private fun SegRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit)
         labels.forEachIndexed { i, label ->
             val sel = i == selected
             Box(
-                Modifier.weight(1f).height(42.dp)
+                Modifier.weight(1f).heightIn(min = 44.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .then(if (sel) Modifier.background(AccentGradient) else Modifier.border(1.dp, ElecBorder, RoundedCornerShape(12.dp)))
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(i) },
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(i) }
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = MaterialTheme.typography.labelMedium, color = if (sel) Color(0xFF07121F) else TextPrimary)
+                // Centre, and let a long label wrap to two tidy lines rather than clip mid-word.
+                Text(
+                    label, style = MaterialTheme.typography.labelMedium,
+                    color = if (sel) Color(0xFF07121F) else TextPrimary,
+                    textAlign = TextAlign.Center, maxLines = 2,
+                    lineHeight = 14.sp,
+                )
             }
         }
     }
