@@ -4,12 +4,15 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.il90.salongallery.net.DiscoveredScreen
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 
 /** The role this device plays. */
 enum class DeviceRole { UNSET, SCREEN, REMOTE }
@@ -33,6 +36,19 @@ class RolePreferences(private val context: Context) {
             prefs[roleKey] = role.name
         }
     }
+
+    // Whether a SCREEN device should relaunch itself when the TV box powers back on.
+    private val autoStartKey = booleanPreferencesKey("auto_start_on_boot")
+
+    val autoStartOnBoot: Flow<Boolean> = context.dataStore.data.map { it[autoStartKey] ?: false }
+
+    suspend fun setAutoStartOnBoot(enabled: Boolean) {
+        context.dataStore.edit { it[autoStartKey] = enabled }
+    }
+
+    /** Synchronous reads for the boot receiver (runs with no coroutine scope). */
+    fun roleBlocking(): DeviceRole = runBlocking { role.first() }
+    fun autoStartOnBootBlocking(): Boolean = runBlocking { autoStartOnBoot.first() }
 
     // The screen the Remote last controlled, so reopening the app rejoins it instead of making
     // the user pick (or re-type an IP) every time.

@@ -123,7 +123,7 @@ class DisplayPrefs(context: Context) {
         get() = sp.getString("motion", "off") ?: "off"
         set(v) = sp.edit().putString("motion", v).apply()
     var motionSpeed: String
-        get() = sp.getString("mspeed", "medium") ?: "medium"
+        get() = sp.getString("mspeed", "slow") ?: "slow"
         set(v) = sp.edit().putString("mspeed", v).apply()
     var photoFit: String
         get() = sp.getString("fit", "fill") ?: "fill"

@@ -256,12 +256,27 @@ fun RemoteModeScreen(actions: AppActions) {
     var settingsUnlocked by remember { mutableStateOf(false) }
     var showPinGate by remember { mutableStateOf(false) }
 
-    // Fetch whether the selected screen has a PIN (gates opening its settings from the Remote).
+    // Fetch whether the selected screen has a PIN (gates opening its settings from the Remote). Retry
+    // until it answers so a flaky moment can't leave us thinking there's no PIN (fail-safe, not open).
+    var pinKnown by remember(selected?.key) { mutableStateOf(false) }
     LaunchedEffect(selected?.key) {
-        settingsUnlocked = false
-        screenHasPin = selected?.let { PhotoSender.getSettings(it.host, it.port)?.hasPin } ?: false
+        settingsUnlocked = false; pinKnown = false
+        val s = selected ?: return@LaunchedEffect
+        while (!pinKnown) {
+            val hp = PhotoSender.getSettings(s.host, s.port)?.hasPin
+            if (hp != null) { screenHasPin = hp; pinKnown = true } else kotlinx.coroutines.delay(1500)
+        }
     }
-    fun openSettings() { if (screenHasPin && !settingsUnlocked) showPinGate = true else showSettings = true }
+    fun openSettings() {
+        // Re-check freshly on each open (so a PIN just set/removed is honoured); if the check can't be
+        // reached, fall back to the last known value rather than bypassing the gate.
+        remoteScope.launch {
+            val s = selected
+            val hp = if (s != null) (PhotoSender.getSettings(s.host, s.port)?.hasPin ?: screenHasPin) else screenHasPin
+            screenHasPin = hp
+            if (hp && !settingsUnlocked) showPinGate = true else showSettings = true
+        }
+    }
 
     // The Display's library version as last seen on /ping; every change re-lists the Remote's photos.
     var libVersion by remember { mutableStateOf(0L) }
@@ -748,7 +763,7 @@ private fun ControlPanel(
     var mediaMenu by remember { mutableStateOf(false) }   // Photos / Videos / Both / folder chooser for "Add"
     var folderKindMenu by remember { mutableStateOf(false) }  // Photos / Videos / All for the chosen folder
     var folderKind by remember { mutableStateOf("all") }  // which types the chosen folder should send
-    var motionSpeed by remember { mutableStateOf("medium") }
+    var motionSpeed by remember { mutableStateOf("slow") }
     var showFrames by remember { mutableStateOf(false) }
     var showEffects by remember { mutableStateOf(false) }
     var showSlideshow by remember { mutableStateOf(false) }
@@ -3864,19 +3879,21 @@ private fun SegRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit)
         labels.forEachIndexed { i, label ->
             val sel = i == selected
             Box(
-                Modifier.weight(1f).heightIn(min = 44.dp)
+                // Fixed height for every segment (uniform row), tall enough for a label to wrap to two
+                // lines instead of being cut off — so "Classic"/"Sometimes" show in full.
+                Modifier.weight(1f).height(48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .then(if (sel) Modifier.background(AccentGradient) else Modifier.border(1.dp, ElecBorder, RoundedCornerShape(12.dp)))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(i) }
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                    .padding(horizontal = 3.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                // One line at a compact size so every segment is the same height and nothing wraps/clips.
                 Text(
                     label, style = MaterialTheme.typography.labelSmall,
                     color = if (sel) Color(0xFF07121F) else TextPrimary,
-                    textAlign = TextAlign.Center, maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center, maxLines = 2,
+                    softWrap = true, lineHeight = 13.sp,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
                 )
             }
         }

@@ -13,6 +13,10 @@
     <string name="role_remote_title">Remote</string>
     <string name="role_remote_desc">Send photos from your phone and control the screen</string>
     <string name="role_continue">Continue</string>
+    <string name="autostart_title">Start automatically after power-on?</string>
+    <string name="autostart_desc">Recommended for a wall display: if the TV box loses power or restarts, the gallery will come back on by itself — no need to reopen it manually. You can leave this off if you prefer to start it yourself.</string>
+    <string name="autostart_enable">Enable (recommended)</string>
+    <string name="autostart_skip">Not now</string>
 
     <!-- Home placeholders -->
     <string name="home_screen_mode">Display Screen</string>

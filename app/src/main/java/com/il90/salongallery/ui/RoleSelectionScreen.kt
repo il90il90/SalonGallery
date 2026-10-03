@@ -23,17 +23,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.il90.salongallery.data.RolePreferences
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -65,6 +71,15 @@ fun RoleSelectionScreen(
     modifier: Modifier = Modifier,
 ) {
     var selected by remember { mutableStateOf<DeviceRole?>(null) }
+    var askAutoStart by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val rolePrefs = remember { RolePreferences(context.applicationContext) }
+    fun commitScreen(autoStart: Boolean) {
+        askAutoStart = false
+        scope.launch { rolePrefs.setAutoStartOnBoot(autoStart) }
+        onRoleChosen(DeviceRole.SCREEN)
+    }
     // Android TV: give the first card D-pad focus so the remote can drive the screen.
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
@@ -117,9 +132,20 @@ fun RoleSelectionScreen(
             GradientButton(
                 text = stringResource(R.string.role_continue),
                 enabled = selected != null,
-                onClick = { selected?.let(onRoleChosen) },
+                onClick = { selected?.let { if (it == DeviceRole.SCREEN) askAutoStart = true else onRoleChosen(it) } },
             )
         }
+    }
+
+    if (askAutoStart) {
+        AlertDialog(
+            onDismissRequest = { askAutoStart = false },
+            containerColor = ElecSurface,
+            title = { Text(stringResource(R.string.autostart_title), color = TextPrimary) },
+            text = { Text(stringResource(R.string.autostart_desc), color = TextSecondary) },
+            confirmButton = { TextButton(onClick = { commitScreen(true) }) { Text(stringResource(R.string.autostart_enable), color = NeonCyan) } },
+            dismissButton = { TextButton(onClick = { commitScreen(false) }) { Text(stringResource(R.string.autostart_skip), color = TextSecondary) } },
+        )
     }
 }
 
