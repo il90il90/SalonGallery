@@ -122,7 +122,7 @@ data class WeatherConfig(
     val lat: Double = 0.0,
     val lon: Double = 0.0,
     val units: String = "c",
-    val pos: ClockPos = ClockPos.TOP_END,
+    val pos: ClockPos = ClockPos.BOTTOM_START,
 )
 data class WeatherNow(val temp: Int = 0, val code: Int = -1, val ok: Boolean = false)
 

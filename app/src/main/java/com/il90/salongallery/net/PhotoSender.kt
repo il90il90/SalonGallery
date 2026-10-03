@@ -52,7 +52,7 @@ data class LibraryList(
 /** The slide currently on the wall, for mirroring it in the Remote. */
 data class NowInfo(val style: String, val seed: Int, val members: List<String>, val rots: List<Int> = emptyList())
 
-data class AlbumInfo(val id: String, val name: String, val count: Int)
+data class AlbumInfo(val id: String, val name: String, val count: Int, val bytes: Long = 0L)
 data class AlbumList(val activeId: String, val activeName: String, val albums: List<AlbumInfo>)
 data class RemoteTransform(val scale: Float, val x: Float, val y: Float, val rot: Int = 0)
 
@@ -162,7 +162,7 @@ object PhotoSender {
             val list = buildList {
                 if (arr != null) for (i in 0 until arr.length()) {
                     val a = arr.getJSONObject(i)
-                    add(AlbumInfo(a.optString("id"), a.optString("name"), a.optInt("count")))
+                    add(AlbumInfo(a.optString("id"), a.optString("name"), a.optInt("count"), a.optLong("bytes", 0L)))
                 }
             }
             AlbumList(o.optString("active", "all"), o.optString("activeName", "All"), list)

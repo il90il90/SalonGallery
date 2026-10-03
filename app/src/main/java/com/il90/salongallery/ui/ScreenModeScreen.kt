@@ -152,7 +152,12 @@ import com.il90.salongallery.ui.theme.NeonCyan
 import com.il90.salongallery.ui.theme.TextPrimary
 import com.il90.salongallery.ui.theme.TextSecondary
 import com.il90.salongallery.ui.theme.TextTertiary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import java.io.File
 
 private fun Context.findActivity(): Activity? {
@@ -581,13 +586,34 @@ private fun Slideshow(
         return if (out.size >= 2) out else listOf(from)
     }
 
-    fun advanceFrom(from: Int) {
-        if (files.size <= 1) return
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    fun nextIndexFrom(from: Int): Int {
+        if (files.size <= 1) return from
         val next = if (shuffle) (files.indices - from).randomOrNull() ?: from
         else (from + membersAt(from).size) % files.size
         // Never land back on the same index (e.g. a spread that spans the whole library) — that would
         // leave `idx` unchanged, so the advance timer never re-arms and the wall freezes. Step on.
-        onNext(if (next == from) (from + 1) % files.size else next)
+        return if (next == from) (from + 1) % files.size else next
+    }
+    fun advanceFrom(from: Int) { if (files.size > 1) onNext(nextIndexFrom(from)) }
+
+    // Decode every still of a slide and WAIT until they are all in Coil's memory cache, so the wall
+    // never swaps to a slide whose photos haven't loaded (no blank cell during the transition).
+    suspend fun awaitSlideReady(index: Int) {
+        val spx = slidePx(ctx)
+        val loader = coil.Coil.imageLoader(ctx)
+        coroutineScope {
+            membersAt(index).map { files[it] }.filter { !isVideoName(it.name) }.map { f ->
+                async(Dispatchers.IO) {
+                    runCatching {
+                        loader.execute(
+                            coil.request.ImageRequest.Builder(ctx).data(f)
+                                .size(spx, spx).precision(coil.size.Precision.INEXACT).build()
+                        )
+                    }
+                }
+            }.awaitAll()
+        }
     }
 
     // Still photos advance on their own duration (or the slideshow default); videos advance when they end.
@@ -595,7 +621,11 @@ private fun Slideshow(
         if (currentIsVideo || files.size <= 1) return@LaunchedEffect
         val sec = durationOf(files[idx])
         delay(if (sec > 0) sec * 1000L else intervalMs)
-        advanceFrom(idx)
+        // Make sure the next slide's photos are decoded before switching (cap the wait so a slow
+        // decode can never stall the show), then advance.
+        val next = nextIndexFrom(idx)
+        runCatching { withTimeout(2500) { awaitSlideReady(next) } }
+        onNext(next)
     }
     // Tell the session exactly what this slide is (layout + the photos in it), so the Remote app can
     // mirror the wall instead of only showing the single "current" photo.
@@ -611,7 +641,6 @@ private fun Slideshow(
     // later. We warm every member of the slide that follows the current one — and, for good measure,
     // the slide after that — at the display resolution, so the bitmaps are ready the instant the
     // transition starts. (Shuffle can't be predicted, so there we just warm a few upcoming files.)
-    val ctx = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(idx, files.size, layout, shuffle, spreadMix) {
         if (files.size <= 1) return@LaunchedEffect
         val spx = slidePx(ctx)
@@ -1488,8 +1517,27 @@ internal fun BoxScope.OverlayLayer(
             com.il90.salongallery.net.ClockPos.BOTTOM_END -> androidx.compose.ui.AbsoluteAlignment.BottomRight
             com.il90.salongallery.net.ClockPos.CENTER -> Alignment.Center
         }
-        WeatherBadge(weather, weatherNow, Modifier.align(align).safeDrawingPadding().padding(28.dp))
+        // When the clock and weather share a corner, lift the weather clear of the clock so they
+        // stack neatly instead of overlapping.
+        val sameCorner = clock.on && weather.pos == clock.pos
+        val lift = if (sameCorner) clockStackHeight(clock.size) else 0.dp
+        val isTop = weather.pos == com.il90.salongallery.net.ClockPos.TOP_START || weather.pos == com.il90.salongallery.net.ClockPos.TOP_END
+        WeatherBadge(
+            weather, weatherNow,
+            Modifier.align(align).safeDrawingPadding().padding(
+                start = 28.dp, end = 28.dp,
+                top = 28.dp + (if (sameCorner && isTop) lift else 0.dp),
+                bottom = 28.dp + (if (sameCorner && !isTop) lift else 0.dp),
+            ),
+        )
     }
+}
+
+/** Roughly how tall the clock block is, so a co-located weather badge can clear it. */
+private fun clockStackHeight(size: String): androidx.compose.ui.unit.Dp = when (size) {
+    "s" -> 54.dp
+    "l" -> 104.dp
+    else -> 74.dp
 }
 
 /** A tasteful weather pill: icon, temperature and place name. */

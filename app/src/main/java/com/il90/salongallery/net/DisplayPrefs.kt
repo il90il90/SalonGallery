@@ -93,7 +93,7 @@ class DisplayPrefs(context: Context) {
         get() = sp.getString("wxUnits", "c") ?: "c"
         set(v) = sp.edit().putString("wxUnits", v).apply()
     var weatherPos: String
-        get() = sp.getString("wxPos", "top_end") ?: "top_end"
+        get() = sp.getString("wxPos", "bottom_start") ?: "bottom_start"
         set(v) = sp.edit().putString("wxPos", v).apply()
 
     var textContent: String

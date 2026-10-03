@@ -120,7 +120,8 @@ class AlbumStore(private val file: File, private val library: LibraryStore) {
     @Synchronized fun albumsJson(): String {
         val arr = JSONArray()
         albums.forEach { a ->
-            arr.put(JSONObject().apply { put("id", a.id); put("name", a.name); put("count", a.photos.size) })
+            val bytes = a.photos.mapNotNull { library.fileFor(it)?.length() }.sum()
+            arr.put(JSONObject().apply { put("id", a.id); put("name", a.name); put("count", a.photos.size); put("bytes", bytes) })
         }
         return JSONObject().apply {
             put("active", activeId); put("activeName", activeName()); put("albums", arr)

@@ -1525,7 +1525,7 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                             scope.launch { PhotoSender.setActiveAlbum(screen.host, screen.port, "all"); refresh() }
                         }
                         albums.forEach { al ->
-                            AlbumChip("${al.name} · ${al.count}", activeId == al.id) {
+                            AlbumChip("${al.name} · ${al.count}" + (formatBytes(al.bytes).takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), activeId == al.id) {
                                 scope.launch { PhotoSender.setActiveAlbum(screen.host, screen.port, al.id); refresh() }
                             }
                         }
@@ -3239,7 +3239,7 @@ private fun TextSheet(
     // Weather
     var weatherOn by remember { mutableStateOf(false) }
     var weatherUnitsIdx by remember { mutableIntStateOf(0) }
-    var weatherPosIdx by remember { mutableIntStateOf(1) }
+    var weatherPosIdx by remember { mutableIntStateOf(2) }   // bottom-left by default
     var weatherPlace by remember { mutableStateOf("") }
     var weatherLat by remember { mutableStateOf(0.0) }
     var weatherLon by remember { mutableStateOf(0.0) }
@@ -3315,7 +3315,7 @@ private fun TextSheet(
             SegRow(listOf("Top", "Center", "Bottom"), posIdx) { posIdx = it }
             Spacer(Modifier.height(14.dp))
             FieldLabel(stringResource(R.string.text_size))
-            SegRow(listOf("S", "M", "L"), sizeIdx) { sizeIdx = it }
+            StepSlider(listOf("Small", "Medium", "Large"), sizeIdx) { sizeIdx = it }
             Spacer(Modifier.height(14.dp))
             FieldLabel(stringResource(R.string.text_color))
             SegRow(listOf("White", "Black", "Gold", "Cyan", "Violet"), colorIdx) { colorIdx = it }
@@ -3334,7 +3334,7 @@ private fun TextSheet(
                 }
                 Spacer(Modifier.height(12.dp))
                 FieldLabel(stringResource(R.string.clock_size))
-                SegRow(listOf("S", "M", "L"), clockSizeIdx) { clockSizeIdx = it }
+                StepSlider(listOf("Small", "Medium", "Large"), clockSizeIdx) { clockSizeIdx = it }
                 Spacer(Modifier.height(12.dp))
                 FieldLabel(stringResource(R.string.clock_position))
                 SegRow(listOf("\u2196", "\u2197", "\u2199", "\u2198", "\u2022"), clockPosIdx) { clockPosIdx = it }
