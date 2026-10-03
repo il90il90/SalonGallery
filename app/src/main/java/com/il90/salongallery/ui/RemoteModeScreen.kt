@@ -2557,6 +2557,12 @@ private fun EffectsSheet(
             }
             if (isRandom) {
                 Spacer(Modifier.height(10.dp))
+                val allKeys = TRANSITIONS.map { it.first }.toSet()
+                val allOn = pool.containsAll(allKeys)
+                EffectChip(stringResource(if (allOn) R.string.pool_clear_all else R.string.pool_select_all), selected = allOn, showCheck = false) {
+                    onPool(if (allOn) setOf(TRANSITIONS.first().first) else allKeys)
+                }
+                Spacer(Modifier.height(10.dp))
                 Text(stringResource(R.string.effects_random_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             }
 
@@ -2571,8 +2577,16 @@ private fun EffectsSheet(
                 Spacer(Modifier.height(6.dp))
                 Text(stringResource(R.string.look_random_pick_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             }
+            val allLooks = listOf("none", "mono", "sepia", "warm", "cool", "vignette", "vivid", "noir", "fade", "cinema", "golden", "dusk", "frost", "pop", "matte", "rose")
+            if (lookRandom) {
+                Spacer(Modifier.height(8.dp))
+                val allOn = filterPool.containsAll(allLooks.toSet())
+                EffectChip(stringResource(if (allOn) R.string.pool_clear_all else R.string.pool_select_all), selected = allOn, showCheck = false) {
+                    onFilterPool(if (allOn) setOf(allLooks.first()) else allLooks.toSet())
+                }
+            }
             Spacer(Modifier.height(12.dp))
-            val looks = listOf("none", "mono", "sepia", "warm", "cool", "vignette", "vivid", "noir", "fade", "cinema", "golden", "dusk", "frost", "pop", "matte", "rose")
+            val looks = allLooks
             val labels = listOf("Original", "Mono", "Sepia", "Warm", "Cool", "Vignette", "Vivid", "Noir", "Fade", "Cinema", "Golden", "Dusk", "Frost", "Pop", "Matte", "Rose")
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 looks.forEachIndexed { i, key ->
@@ -2680,6 +2694,13 @@ private fun FrameSheet(
                 }
             }
             if (random) {
+                Spacer(Modifier.height(10.dp))
+                // Pool is every real frame (id 0 = "None" is excluded from the random rotation).
+                val allFrameIds = FRAMES.map { it.id }.filter { it != 0 }.toSet()
+                val allOn = pool.containsAll(allFrameIds)
+                EffectChip(stringResource(if (allOn) R.string.pool_clear_all else R.string.pool_select_all), selected = allOn, showCheck = false) {
+                    onPool(if (allOn) setOf(allFrameIds.first()) else allFrameIds)
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(stringResource(R.string.frame_random_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             } else if (current == adaptiveId) {

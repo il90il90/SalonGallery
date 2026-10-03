@@ -289,6 +289,8 @@
     <string name="slideshow_freq_eyebrow">Collage frequency</string>
     <string name="slideshow_freq_title">How often a collage shows</string>
     <string name="slideshow_freq_explain">The slides in between show a single photo.</string>
+    <string name="pool_select_all">Select all</string>
+    <string name="pool_clear_all">Clear all</string>
     <string name="slideshow_reveal_eyebrow">Reveal</string>
     <string name="slideshow_smart_eyebrow">Smart grouping</string>
     <string name="slideshow_smart_title">Group similar photos together</string>
