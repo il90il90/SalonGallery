@@ -825,7 +825,7 @@ private fun ControlPanel(
     var filter by remember { mutableStateOf("none") }
     var filterPool by remember { mutableStateOf(setOf("none", "mono", "sepia", "warm", "cool", "vignette")) }
     var fit by remember { mutableStateOf("fill") }
-    var bgColor by remember { mutableStateOf("black") }
+    var bgColor by remember { mutableStateOf("auto") }
     var collage by remember { mutableStateOf(false) }
     var layout by remember { mutableStateOf("single") }
     var layoutPool by remember { mutableStateOf(SPREAD_KEYS.toSet()) }
@@ -1669,7 +1669,10 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
                             scope.launch { PhotoSender.setActiveAlbum(screen.host, screen.port, "all"); refresh() }
                         }
                         albums.forEach { al ->
-                            AlbumChip("${al.name} · ${al.count}" + (formatBytes(al.bytes).takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), activeId == al.id) {
+                            // Wrap the count + size in an LTR isolate (⁦…⁩) so a Hebrew album
+                            // name can't scramble the order into "118.4 · 187 … MB".
+                            val meta = "⁦" + al.count + (formatBytes(al.bytes).takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") + "⁩"
+                            AlbumChip("${al.name} · $meta", activeId == al.id) {
                                 scope.launch { PhotoSender.setActiveAlbum(screen.host, screen.port, al.id); refresh() }
                             }
                         }
@@ -2645,6 +2648,11 @@ private fun RssSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     }
     fun push() { scope.launch { PhotoSender.setRss(screen.host, screen.port, on, feeds.toList(), pos, showImage, showSource, showSummary) } }
     val suggestions = listOf(
+        // Israeli feeds first.
+        "Ynet" to "https://www.ynet.co.il/Integration/StoryRss2.xml",
+        "מאקו (Mako)" to "https://rcs.mako.co.il/rss/news-military.xml",
+        "וואלה (Walla)" to "https://rss.walla.co.il/feed/1?type=main",
+        "כלכליסט" to "https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml",
         "BBC News" to "https://feeds.bbci.co.uk/news/rss.xml",
         "The Verge" to "https://www.theverge.com/rss/index.xml",
         "NASA" to "https://www.nasa.gov/rss/dyn/breaking_news.rss",
@@ -3222,14 +3230,20 @@ private fun SlideshowSheet(
 
             // BACKGROUND
             SettingsCard(stringResource(R.string.slideshow_bg_eyebrow), stringResource(R.string.slideshow_bg_title), stringResource(R.string.slideshow_bg_explain)) {
-                val bgs = listOf("black", "charcoal", "slate", "warm", "white")
-                // Short labels so none truncate at a fifth of the card width ("Charcoal" → "Grey").
-                val bgLabels = listOf("Black", "Grey", "Slate", "Warm", "White")
-                val bgSwatch = listOf(Color(0xFF000000), Color(0xFF14110E), Color(0xFF2B2F36), Color(0xFF1C140D), Color(0xFFF2EEE6))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // "Auto" (first, the default) blends the background into each photo's own colour.
+                val bgs = listOf("auto", "black", "charcoal", "slate", "warm", "white")
+                // Short labels so none truncate ("Charcoal" → "Grey").
+                val bgLabels = listOf("Auto", "Black", "Grey", "Slate", "Warm", "White")
+                val bgSwatch = listOf(Color(0xFF000000), Color(0xFF000000), Color(0xFF14110E), Color(0xFF2B2F36), Color(0xFF1C140D), Color(0xFFF2EEE6))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     bgs.forEachIndexed { i, key ->
                         OptionTile(bgLabels[i], selected = bgColor == key, modifier = Modifier.weight(1f), onClick = { onBg(key) }) {
-                            Box(Modifier.size(34.dp).clip(RoundedCornerShape(8.dp)).background(bgSwatch[i]).border(1.dp, Color.White.copy(0.18f), RoundedCornerShape(8.dp)))
+                            val swatchMod = Modifier.size(34.dp).clip(RoundedCornerShape(8.dp))
+                            if (key == "auto") Box(
+                                swatchMod.background(
+                                    Brush.linearGradient(listOf(Color(0xFF3A2E6E), Color(0xFF2B6E6E), Color(0xFF6E5A2B)))
+                                ).border(1.dp, Color.White.copy(0.18f), RoundedCornerShape(8.dp))
+                            ) else Box(swatchMod.background(bgSwatch[i]).border(1.dp, Color.White.copy(0.18f), RoundedCornerShape(8.dp)))
                         }
                     }
                 }

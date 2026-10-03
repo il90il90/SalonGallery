@@ -133,7 +133,7 @@ class DisplayPrefs(context: Context) {
         get() = sp.getString("fit", "fill") ?: "fill"
         set(v) = sp.edit().putString("fit", v).apply()
     var bgColor: String
-        get() = sp.getString("bg", "black") ?: "black"
+        get() = sp.getString("bg", "auto") ?: "auto"
         set(v) = sp.edit().putString("bg", v).apply()
     var spreadMix: String
         get() = sp.getString("spreadmix", "always") ?: "always"

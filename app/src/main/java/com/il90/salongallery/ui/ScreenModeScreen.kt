@@ -333,6 +333,17 @@ fun ScreenModeScreen(actions: AppActions) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { dominantColor(f) } else null
     }
 
+    // "Auto" background: a muted, darkened wash of the current photo's dominant colour, so the bars
+    // around a photo that doesn't fill the screen blend into it. Recomputed per slide; black fallback.
+    var autoBg by remember { mutableStateOf<Color?>(null) }
+    LaunchedEffect(bgColor, currentIndex, libraryVersion) {
+        if (bgColor != "auto") { autoBg = null; return@LaunchedEffect }
+        val f = files.getOrNull(currentIndex.coerceIn(0, maxOf(0, files.size - 1)))
+        autoBg = if (f != null && !isVideoName(f.name))
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { dominantColor(f)?.let { muteDark(it) } } else null
+    }
+    val slideBg = if (bgColor == "auto") (autoBg ?: Color.Black) else bgColorOf(bgColor)
+
     // Orientation map (name -> isPortrait) for the auto-collage, decoded off the main thread.
     var orientationMap by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
     LaunchedEffect(libraryVersion, collage) {
@@ -376,7 +387,7 @@ fun ScreenModeScreen(actions: AppActions) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColorOf(bgColor))
+            .background(slideBg)
             .focusRequester(rootFocus)
             .focusable()
             .onKeyEvent { ev ->
@@ -407,7 +418,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         effectPool = effectPool,
                         filterPool = filterPool,
                         fit = photoFit,
-                        bg = bgColorOf(bgColor),
+                        bg = slideBg,
                         filter = photoFilter,
                         volume = volume,
                         collageOn = collage,
@@ -1559,8 +1570,11 @@ internal fun bgColorOf(key: String): Color = when (key.lowercase()) {
     "slate" -> Color(0xFF2B2F36)
     "warm" -> Color(0xFF1C140D)
     "white" -> Color(0xFFF2EEE6)
-    else -> Color.Black
+    else -> Color.Black   // "black" and "auto" (auto resolves to a per-photo colour at the call site)
 }
+
+/** A muted, darkened version of a colour — for the "Auto" background wash behind a photo. */
+internal fun muteDark(c: Color): Color = Color(c.red * 0.3f, c.green * 0.3f, c.blue * 0.3f, 1f)
 
 /** Renders one photo, applying its studio [transform], a [filter] look and an optional Ken-Burns [kb] zoom. */
 @Composable
