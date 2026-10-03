@@ -185,6 +185,7 @@ class ScreenSession(
                 Log.i("SalonScreen", "PhotoServer on port $port as '${effectiveName()}'")
                 runCatching { nsd.register(effectiveName(), port) }
                 running.value = true
+                dedupeLibrary()
                 sweepOrientation()
                 return
             } else runCatching { s.stop() }
@@ -834,6 +835,24 @@ class ScreenSession(
     private fun autoOrient(f: File) {
         if (isVideoName(f.name)) return
         runCatching { orientExec.execute { orientOne(f) } }
+    }
+
+    /**
+     * One-time cleanup: remove any byte-identical duplicates already stored (new uploads are deduped
+     * on arrival, but copies from before that, or an optimised copy of an original, could linger).
+     * Runs on the orient executor so the MD5 hashing never blocks the server/UI, and before the
+     * orientation sweep so we don't bother straightening copies we're about to delete.
+     */
+    private fun dedupeLibrary() {
+        runCatching {
+            orientExec.execute {
+                val dups = runCatching { library.duplicateNames() }.getOrDefault(emptyList())
+                if (dups.isNotEmpty()) {
+                    dups.forEach { deletePhoto(it) }
+                    libraryVersion.value = System.currentTimeMillis()
+                }
+            }
+        }
     }
 
     /** Queues every not-yet-checked photo in the library for the face-orientation check. */

@@ -245,6 +245,27 @@ class LibraryStore(private val dir: File) {
 
     fun count(): Int = mediaFiles().size
 
+    /**
+     * Byte-identical duplicates already sitting in the library (e.g. added before content-dedup
+     * existed, or an optimised copy of an original): the FIRST file of each content signature in
+     * library order is kept, the rest are returned as names to delete. Signatures are computed by
+     * streaming, so a big video is never held in memory, and the [sigs] cache is backfilled for any
+     * legacy file that never had one. Caller deletes the returned names (so album/transform/etc. are
+     * cleaned up too).
+     */
+    @Synchronized
+    fun duplicateNames(): List<String> {
+        val seen = HashSet<String>()
+        val dups = ArrayList<String>()
+        for (f in list()) {                       // library order, pinned first → the kept copy
+            if (!f.exists()) continue
+            val sig = sigs[f.name] ?: sigOfFile(f).also { sigs[f.name] = it }
+            if (!seen.add(sig)) dups.add(f.name)  // this content was already seen → a duplicate
+        }
+        if (dups.isNotEmpty()) runCatching { saveSigs() }
+        return dups
+    }
+
     @Synchronized
     fun delete(name: String) {
         runCatching { File(dir, name).delete() }

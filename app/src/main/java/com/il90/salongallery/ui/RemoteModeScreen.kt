@@ -919,7 +919,8 @@ private fun ControlPanel(
                 busy = false
                 if (wasRunning && up.total > 0) {
                     progress = 0 to 0
-                    status = "Added ${up.done} / ${up.total} ✓"
+                    status = if (up.cancelled) context.getString(R.string.upload_stopped, up.done)
+                             else "Added ${up.done} / ${up.total} ✓"
                     onInfoRefresh(scope); refreshLib()
                 }
             }
@@ -1026,8 +1027,21 @@ private fun ControlPanel(
             Spacer(Modifier.height(12.dp))
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ElecSurface).border(1.dp, ElecBorder, RoundedCornerShape(14.dp)).padding(vertical = 12.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
                 when {
-                    busy && progress.second > 1 -> ProgressRow("Sending ${progress.first}/${progress.second}…")
-                    busy -> ProgressRow(stringResource(R.string.remote_sending))
+                    // While sending: progress text on the left, a Stop button on the right so the owner
+                    // can call off a long transfer (it empties the queue; the file in flight finishes).
+                    busy -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                            if (progress.second > 1) ProgressRow("Sending ${progress.first}/${progress.second}…")
+                            else ProgressRow(stringResource(R.string.remote_sending))
+                        }
+                        Text(
+                            stringResource(R.string.upload_stop),
+                            style = MaterialTheme.typography.labelLarge, color = Color(0xFFF2B07A), fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clip(RoundedCornerShape(50))
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { UploadManager.cancel() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        )
+                    }
                     status != null -> Text(
                         status!!, style = MaterialTheme.typography.labelMedium,
                         color = if (status!!.contains("✓") || status!!.contains("cleared")) GoodGreen else Color(0xFFC0503A),
