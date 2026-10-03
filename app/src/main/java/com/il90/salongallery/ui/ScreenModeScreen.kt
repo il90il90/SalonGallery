@@ -560,6 +560,23 @@ private fun Slideshow(
         colorsReady = true
     }
 
+    // No-repeat playback order: a permutation of every item that the slideshow walks strictly in
+    // order, so every photo appears once before any repeats — this is what stops "the same photos I
+    // started with keep coming back". Shuffle → a random permutation; Smart grouping → clustered by
+    // colour (so a spread of consecutive entries is colour-matched AND still never repeats within a
+    // cycle); otherwise the library's own order. Rebuilt only when one of these inputs changes.
+    val playOrder = remember(files, shuffle, smartGroup, colorsReady) {
+        val base = files.indices.toMutableList()
+        when {
+            smartGroup && colorsReady -> base.sortedBy { colorCache[files[it].name] ?: 0 }
+            shuffle -> base.shuffled()
+            else -> base.toList()
+        }
+    }
+    val posOf = remember(playOrder) {
+        HashMap<Int, Int>(playOrder.size * 2).apply { playOrder.forEachIndexed { p, i -> put(i, p) } }
+    }
+
     // Which items (by index) form the slide starting at [from]: a collage of same-orientation
     // photos that would otherwise leave big side gaps, or just the single item.
     // Which spread (if any) the slide starting at [from] is: fixed by the layout setting, or for
@@ -650,65 +667,60 @@ private fun Slideshow(
         return resolveSpread(m)
     }
 
-    fun membersAt(from: Int): List<Int> {
-        val f0 = files[from]
-        if (isVideoName(f0.name)) return listOf(from)
-        // A spread: this photo plus the next stills it needs (wrapping, skipping clips) — a count
-        // within the layout's range, seeded per slide, never more than the library holds.
-        spreadAt(from)?.let { m ->
+    // The slide anchored at index [from]: the photos it shows, and the index of the NEXT slide's
+    // anchor — both taken by walking [playOrder] from [from]'s position, so a spread consumes the next
+    // consecutive entries in the no-repeat order and the next anchor is the first entry after them.
+    // Nothing is shown twice until the whole order has played through.
+    fun slideFrom(from: Int): Pair<List<Int>, Int> {
+        val n = playOrder.size
+        if (n == 0) return listOf(from) to from
+        val p = posOf[from] ?: 0
+        val anchor = playOrder[p]
+        fun entry(off: Int) = playOrder[(p + off) % n]
+        if (isVideoName(files[anchor].name)) return listOf(anchor) to entry(1)
+        // A spread: the anchor plus the next consecutive stills in the order (a clip ends the spread —
+        // it becomes its own slide next). Count within the layout's range, seeded per anchor, capped by
+        // the live memory budget and how many stills exist.
+        spreadAt(anchor)?.let { m ->
             val range = rangeOf(m)
-            val want = (range.first + kotlin.random.Random(from.toLong() * 31 + 3).nextInt(range.last - range.first + 1))
+            val want = (range.first + kotlin.random.Random(anchor.toLong() * 31 + 3).nextInt(range.last - range.first + 1))
                 .coerceAtMost(minOf(stillCount, spreadBudget.maxSpreadPhotos))
-            // Smart grouping: once dominant colours are known, fill the spread with the stills most
-            // similar in colour to the anchor (within a forward window) instead of the next in order.
-            if (smartGroup && colorsReady) {
-                val anchor = colorCache[files[from].name] ?: 0
-                val window = mutableListOf<Int>()
-                var j = from; var scanned = 0
-                while (window.size < 80 && scanned < files.size) {
-                    j = (j + 1) % files.size; scanned++
-                    if (j == from) break
-                    if (!isVideoName(files[j].name)) window.add(j)
+            val out = mutableListOf<Int>()
+            var walked = 0
+            while (out.size < want && walked < n) {
+                val idx = entry(walked)
+                if (isVideoName(files[idx].name)) break
+                out.add(idx); walked++
+            }
+            if (out.size >= 3) return out to entry(out.size)
+        }
+        // Collage-fill a single photo whose orientation would otherwise leave big side/top gaps: pull
+        // the next same-orientation stills from the order.
+        if (collageOn && files.size >= 2) {
+            val portrait = orientationMap[files[anchor].name]
+            if (portrait != null && portrait == screenLandscape) {
+                val want = if (screenLandscape) 3 else 2
+                val out = mutableListOf(anchor)
+                var walked = 1
+                while (out.size < want && walked < n) {
+                    val idx = entry(walked)
+                    if (!isVideoName(files[idx].name) && orientationMap[files[idx].name] == portrait) { out.add(idx); walked++ }
+                    else break
                 }
-                val picked = window.sortedBy { colorDistance(anchor, colorCache[files[it].name] ?: 0) }.take(want - 1)
-                val out = (listOf(from) + picked)
-                if (out.size >= 3) return out
+                if (out.size >= 2) return out to entry(out.size)
             }
-            val out = mutableListOf(from)
-            var j = from
-            while (out.size < want) {
-                j = (j + 1) % files.size
-                if (j == from) break
-                if (!isVideoName(files[j].name)) out.add(j)
-            }
-            if (out.size >= 3) return out
         }
-        if (!collageOn || files.size < 2) return listOf(from)
-        val f = files[from]
-        val portrait = orientationMap[f.name] ?: return listOf(from)
-        // Fillable when the photo's orientation is opposite the screen's (big side gaps).
-        val fillable = portrait == screenLandscape
-        if (!fillable) return listOf(from)
-        val want = if (screenLandscape) 3 else 2
-        val out = mutableListOf(from)
-        var j = from
-        while (out.size < want) {
-            j = (j + 1) % files.size
-            if (j == from) break
-            val nf = files[j]
-            if (!isVideoName(nf.name) && orientationMap[nf.name] == portrait) out.add(j) else break
-        }
-        return if (out.size >= 2) out else listOf(from)
+        return listOf(anchor) to entry(1)
     }
+
+    fun membersAt(from: Int): List<Int> = slideFrom(from).first
 
     val ctx = androidx.compose.ui.platform.LocalContext.current
     fun nextIndexFrom(from: Int): Int {
         if (files.size <= 1) return from
-        val next = if (shuffle) (files.indices - from).randomOrNull() ?: from
-        else (from + membersAt(from).size) % files.size
-        // Never land back on the same index (e.g. a spread that spans the whole library) — that would
-        // leave `idx` unchanged, so the advance timer never re-arms and the wall freezes. Step on.
-        return if (next == from) (from + 1) % files.size else next
+        val next = slideFrom(from).second
+        // Never land back on the same index (would freeze the advance timer) — step on in the order.
+        return if (next == from) playOrder[((posOf[from] ?: 0) + 1) % playOrder.size] else next
     }
     fun advanceFrom(from: Int) {
         if (files.size > 1) onNext(runCatching { nextIndexFrom(from) }.getOrDefault((from + 1) % files.size))
@@ -763,7 +775,7 @@ private fun Slideshow(
     // of its cells we pre-decode, so the warm buffer can never pile a dozen full-size bitmaps on top of
     // the slide already on screen — that pile-up was crashing modest TV boxes after a run of spreads.
     // (Shuffle can't be predicted, so there we just warm a few upcoming files.)
-    LaunchedEffect(idx, files.size, layout, shuffle, spreadMix) {
+    LaunchedEffect(idx, files.size, layout, shuffle, spreadMix, smartGroup) {
         if (files.size <= 1) return@LaunchedEffect
         val spx = slidePx(ctx)
         fun warm(f: File) {
@@ -775,12 +787,8 @@ private fun Slideshow(
                     .build()
             )
         }
-        if (shuffle) {
-            repeat(4) { warm(files[(idx + 1 + it) % files.size]) }
-            return@LaunchedEffect
-        }
-        val start = (idx + membersAt(idx).size) % files.size
-        membersAt(start).take(SLIDE_READY_CAP).forEach { warm(files[it]) }
+        // Warm the actual next slide (predicted from the no-repeat order, which works for shuffle too).
+        membersAt(nextIndexFrom(idx)).take(SLIDE_READY_CAP).forEach { warm(files[it]) }
     }
     val poolEnums = remember(effectPool) { effectPool.map { SlideEffect.from(it) }.filter { it != SlideEffect.RANDOM } }
     // Resolve the effect for a given slide: a seeded random from the pool when RANDOM.
@@ -1353,13 +1361,6 @@ private fun VideoSlide(file: File, volume: Float, fit: PhotoFit, vignette: Boole
 }
 
 /** Extracts a pleasing dominant colour from a photo for the Adaptive frame. */
-/** Squared RGB distance between two packed-ARGB colours (0 = identical). */
-private fun colorDistance(a: Int, b: Int): Int {
-    val dr = ((a shr 16) and 0xFF) - ((b shr 16) and 0xFF)
-    val dg = ((a shr 8) and 0xFF) - ((b shr 8) and 0xFF)
-    val db = (a and 0xFF) - (b and 0xFF)
-    return dr * dr + dg * dg + db * db
-}
 
 internal fun dominantColor(f: java.io.File): Color? = runCatching {
     val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
