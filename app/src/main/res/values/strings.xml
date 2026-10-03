@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Salon Gallery</string>
+    <string name="notif_channel_screen">Screen status</string>
+    <string name="notif_screen_offline_title">Screen offline</string>
+    <string name="notif_screen_offline_body">\"%1$s\" isn\'t responding — it may be off, restarting, or off the Wi-Fi.</string>
+    <string name="notif_screen_online_title">Screen back online</string>
+    <string name="notif_screen_online_body">\"%1$s\" is connected again.</string>
     <string name="tagline">Turn any screen into art</string>
 
     <!-- Role selection -->
@@ -233,6 +238,12 @@
     <string name="admin_schedule_hint">The screen dims to a quiet clock during these hours, and wakes on its own.</string>
     <string name="admin_sleep_at">Sleep at</string>
     <string name="admin_wake_at">Wake at</string>
+    <string name="admin_content_schedule">Content schedule</string>
+    <string name="admin_content_schedule_hint">Show one album during business hours and another when closed — perfect for promotions by day and a quieter gallery after.</string>
+    <string name="admin_open_at">Open at</string>
+    <string name="admin_close_at">Close at</string>
+    <string name="admin_album_open">Album while open</string>
+    <string name="admin_album_closed">Album while closed</string>
     <string name="admin_enter_pin">Enter screen PIN</string>
     <string name="admin_unlock">Unlock</string>
     <string name="admin_pin_wrong">Incorrect PIN</string>

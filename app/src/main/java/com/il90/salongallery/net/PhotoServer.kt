@@ -37,6 +37,7 @@ interface ScreenCommands {
     fun onText(content: String, pos: String, size: String, color: String, font: String)
     fun onClock(on: Boolean, pos: String, showDate: Boolean, style: String, size: String)
     fun onWeather(on: Boolean, place: String, lat: Double, lon: Double, units: String, pos: String, style: String = "pill")
+    fun onContentSchedule(on: Boolean, openMin: Int, closeMin: Int, openAlbum: String, closedAlbum: String)
     fun overlaysJson(): String             // current clock/weather/text state, so the Remote reflects reality
     fun onOpenScreensaver()
     fun onRss(on: Boolean, feeds: List<String>, pos: String, showImage: Boolean, showSource: Boolean, showSummary: Boolean)
@@ -349,6 +350,15 @@ class PhotoServer(
                 val start = session.parameters["start"]?.firstOrNull()?.toIntOrNull() ?: 1380
                 val end = session.parameters["end"]?.firstOrNull()?.toIntOrNull() ?: 420
                 commands.onSchedule(on, start, end); ok()
+            }
+            session.method == Method.GET && uri == "/contentschedule" -> {
+                commands.onContentSchedule(
+                    session.parameters["on"]?.firstOrNull() == "1",
+                    session.parameters["open"]?.firstOrNull()?.toIntOrNull() ?: 540,
+                    session.parameters["close"]?.firstOrNull()?.toIntOrNull() ?: 1080,
+                    session.parameters["openAlbum"]?.firstOrNull() ?: "all",
+                    session.parameters["closedAlbum"]?.firstOrNull() ?: "all",
+                ); ok()
             }
             session.method == Method.GET && uri == "/screenpin" -> {
                 commands.onSetScreenPin(session.parameters["code"]?.firstOrNull() ?: ""); ok()

@@ -79,6 +79,7 @@ import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Layers
@@ -233,7 +234,13 @@ fun RemoteModeScreen(actions: AppActions) {
     val lastScreen by prefs.lastScreen.collectAsStateWithLifecycle(initialValue = null)
     var autoJoined by remember { mutableStateOf(false) }
     // Remember whatever we're controlling (including an address the watchdog recovered).
-    LaunchedEffect(selected) { selected?.let { prefs.setLastScreen(it) } }
+    LaunchedEffect(selected) {
+        selected?.let {
+            prefs.setLastScreen(it)
+            // Keep an eye on this screen in the background and notify if it drops offline.
+            runCatching { com.il90.salongallery.ScreenWatchWorker.ensureScheduled(context) }
+        }
+    }
     LaunchedEffect(lastScreen) {
         val last = lastScreen ?: return@LaunchedEffect
         // Keep trying until we're in: the screen is often still booting (or Wi-Fi still settling)
@@ -566,6 +573,16 @@ private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit)
     var sleepStart by remember(screen.host, screen.port) { mutableIntStateOf(1380) }
     var sleepEnd by remember(screen.host, screen.port) { mutableIntStateOf(420) }
     var confirmReset by remember { mutableStateOf(false) }
+    // Content schedule (business hours)
+    var csOn by remember(screen.host, screen.port) { mutableStateOf(false) }
+    var csOpen by remember(screen.host, screen.port) { mutableIntStateOf(540) }
+    var csClose by remember(screen.host, screen.port) { mutableIntStateOf(1080) }
+    var csOpenAlbum by remember(screen.host, screen.port) { mutableStateOf("all") }
+    var csClosedAlbum by remember(screen.host, screen.port) { mutableStateOf("all") }
+    var csAlbums by remember(screen.host, screen.port) { mutableStateOf<List<AlbumInfo>>(emptyList()) }
+    fun pushContentSchedule() {
+        scope.launch { PhotoSender.setContentSchedule(screen.host, screen.port, csOn, csOpen, csClose, csOpenAlbum, csClosedAlbum) }
+    }
 
     // Load the screen's real name / PIN / schedule, retrying until it succeeds so a single flaky
     // request doesn't leave the fields blank (which looks like the settings were never saved).
@@ -574,9 +591,13 @@ private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit)
             val s = PhotoSender.getSettings(screen.host, screen.port)
             if (s != null) {
                 name = s.name; hasPin = s.hasPin; schedOn = s.schedOn
-                sleepStart = s.sleepStart; sleepEnd = s.sleepEnd; loaded = true
+                sleepStart = s.sleepStart; sleepEnd = s.sleepEnd
+                csOn = s.csOn; csOpen = s.csOpen; csClose = s.csClose
+                csOpenAlbum = s.csOpenAlbum; csClosedAlbum = s.csClosedAlbum
+                loaded = true
             } else kotlinx.coroutines.delay(1500)
         }
+        PhotoSender.getAlbums(screen.host, screen.port)?.let { csAlbums = it.albums }
     }
 
     val tf = OutlinedTextFieldDefaults.colors(
@@ -665,6 +686,45 @@ private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit)
                 Spacer(Modifier.height(10.dp))
                 RemoteTimeRow(stringResource(R.string.admin_wake_at), sleepEnd) {
                     sleepEnd = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, schedOn, sleepStart, it) }
+                }
+            }
+        }
+
+        // Content schedule (business hours): which album shows while open vs. closed.
+        Spacer(Modifier.height(16.dp))
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                .background(ElecSurfaceElevated).border(1.dp, ElecBorder, RoundedCornerShape(18.dp))
+                .padding(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Storefront, null, tint = NeonCyan, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(stringResource(R.string.admin_content_schedule), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                Switch(checked = csOn, onCheckedChange = { csOn = it; pushContentSchedule() })
+            }
+            if (csOn) {
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.admin_content_schedule_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Spacer(Modifier.height(12.dp))
+                RemoteTimeRow(stringResource(R.string.admin_open_at), csOpen) { csOpen = it; pushContentSchedule() }
+                Spacer(Modifier.height(10.dp))
+                RemoteTimeRow(stringResource(R.string.admin_close_at), csClose) { csClose = it; pushContentSchedule() }
+                // Album while open
+                Spacer(Modifier.height(14.dp))
+                FieldLabel(stringResource(R.string.admin_album_open))
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AlbumChip(stringResource(R.string.album_all), csOpenAlbum == "all") { csOpenAlbum = "all"; pushContentSchedule() }
+                    csAlbums.forEach { a -> AlbumChip(a.name, csOpenAlbum == a.id) { csOpenAlbum = a.id; pushContentSchedule() } }
+                }
+                // Album while closed
+                Spacer(Modifier.height(12.dp))
+                FieldLabel(stringResource(R.string.admin_album_closed))
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AlbumChip(stringResource(R.string.album_all), csClosedAlbum == "all") { csClosedAlbum = "all"; pushContentSchedule() }
+                    csAlbums.forEach { a -> AlbumChip(a.name, csClosedAlbum == a.id) { csClosedAlbum = a.id; pushContentSchedule() } }
                 }
             }
         }

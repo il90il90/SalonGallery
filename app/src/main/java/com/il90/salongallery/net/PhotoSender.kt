@@ -66,6 +66,8 @@ data class RssState(
 data class ScreenSettings(
     val name: String, val hasPin: Boolean,
     val schedOn: Boolean, val sleepStart: Int, val sleepEnd: Int,
+    val csOn: Boolean = false, val csOpen: Int = 540, val csClose: Int = 1080,
+    val csOpenAlbum: String = "all", val csClosedAlbum: String = "all",
 )
 
 data class MusicTrack(val name: String, val title: String)
@@ -513,6 +515,11 @@ object PhotoSender {
                 schedOn = o.optBoolean("schedOn", false),
                 sleepStart = o.optInt("sleepStart", 1380),
                 sleepEnd = o.optInt("sleepEnd", 420),
+                csOn = o.optBoolean("csOn", false),
+                csOpen = o.optInt("csOpen", 540),
+                csClose = o.optInt("csClose", 1080),
+                csOpenAlbum = o.optString("csOpenAlbum", "all"),
+                csClosedAlbum = o.optString("csClosedAlbum", "all"),
             )
         } catch (e: Exception) { null }
     }
@@ -522,6 +529,9 @@ object PhotoSender {
 
     suspend fun setSchedule(host: String, port: Int, on: Boolean, start: Int, end: Int) =
         get(host, port, "/schedule?on=${if (on) 1 else 0}&start=$start&end=$end")
+
+    suspend fun setContentSchedule(host: String, port: Int, on: Boolean, openMin: Int, closeMin: Int, openAlbum: String, closedAlbum: String) =
+        get(host, port, "/contentschedule?on=${if (on) 1 else 0}&open=$openMin&close=$closeMin&openAlbum=${enc(openAlbum)}&closedAlbum=${enc(closedAlbum)}")
 
     suspend fun setScreenPin(host: String, port: Int, code: String) =
         get(host, port, "/screenpin?code=${enc(code)}")

@@ -227,10 +227,15 @@ fun ScreenModeScreen(actions: AppActions) {
     val rootFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { runCatching { rootFocus.requestFocus() } }
 
-    // Auto-sleep schedule: re-evaluate every 30s.
+    // Auto-sleep schedule + content schedule (business hours): re-evaluate every 30s.
     var sleeping by remember { mutableStateOf(session.prefs.isSleepingNow()) }
     LaunchedEffect(Unit) {
-        while (true) { sleeping = session.prefs.isSleepingNow(); delay(30_000) }
+        session.applyContentSchedule()
+        while (true) {
+            sleeping = session.prefs.isSleepingNow()
+            session.applyContentSchedule()   // switch album when the open/closed window changes
+            delay(30_000)
+        }
     }
 
     // Keep the display awake permanently.

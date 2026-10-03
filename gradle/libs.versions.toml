@@ -32,6 +32,7 @@ media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", versi
 media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.ref = "reorderable" }
 mlkit-face = { group = "com.google.mlkit", name = "face-detection", version = "16.1.7" }
+work-runtime = { group = "androidx.work", name = "work-runtime-ktx", version = "2.9.1" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

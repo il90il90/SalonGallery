@@ -479,7 +479,9 @@ class ScreenSession(
 
     override fun settingsJson(): String =
         """{"name":"${esc(prefs.customName)}","hasPin":${prefs.hasPin},""" +
-            """"schedOn":${prefs.scheduleEnabled},"sleepStart":${prefs.sleepStartMin},"sleepEnd":${prefs.sleepEndMin}}"""
+            """"schedOn":${prefs.scheduleEnabled},"sleepStart":${prefs.sleepStartMin},"sleepEnd":${prefs.sleepEndMin},""" +
+            """"csOn":${prefs.contentScheduleOn},"csOpen":${prefs.bizOpenMin},"csClose":${prefs.bizCloseMin},""" +
+            """"csOpenAlbum":"${esc(prefs.openAlbumId)}","csClosedAlbum":"${esc(prefs.closedAlbumId)}"}"""
 
     override fun onSchedule(on: Boolean, start: Int, end: Int) {
         prefs.scheduleEnabled = on
@@ -488,6 +490,25 @@ class ScreenSession(
     }
 
     override fun onSetScreenPin(code: String) { prefs.pin = code.filter { it.isDigit() }.take(6) }
+
+    override fun onContentSchedule(on: Boolean, openMin: Int, closeMin: Int, openAlbum: String, closedAlbum: String) {
+        prefs.contentScheduleOn = on
+        prefs.bizOpenMin = openMin.coerceIn(0, 1439)
+        prefs.bizCloseMin = closeMin.coerceIn(0, 1439)
+        prefs.openAlbumId = openAlbum
+        prefs.closedAlbumId = closedAlbum
+        // Apply immediately so the wall reflects the new schedule without waiting for the next tick.
+        applyContentSchedule()
+    }
+
+    /** The album id currently active (what the slideshow is drawing from). */
+    fun activeAlbumId(): String = albums.activeId
+
+    /** If the content schedule is on, switch to the album it wants for the current time. */
+    fun applyContentSchedule() {
+        val target = prefs.scheduledAlbumNow() ?: return
+        if (target != albums.activeId) setActiveAlbum(target)
+    }
 
     override fun screenPinCheckJson(code: String): String =
         """{"ok":${!prefs.hasPin || code == prefs.pin}}"""

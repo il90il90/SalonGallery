@@ -93,6 +93,7 @@ dependencies {
     implementation(libs.media3.ui)
     implementation(libs.reorderable)
     implementation(libs.mlkit.face)
+    implementation(libs.work.runtime)
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation("junit:junit:4.13.2")
 }

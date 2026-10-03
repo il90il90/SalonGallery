@@ -154,6 +154,34 @@ class DisplayPrefs(context: Context) {
         get() = sp.getBoolean("smartgroup", false)
         set(v) = sp.edit().putBoolean("smartgroup", v).apply()
 
+    // ---- Content schedule (business hours): show one album during open hours, another when closed. ----
+    var contentScheduleOn: Boolean
+        get() = sp.getBoolean("csOn", false)
+        set(v) = sp.edit().putBoolean("csOn", v).apply()
+    var bizOpenMin: Int
+        get() = sp.getInt("csOpen", 9 * 60)
+        set(v) = sp.edit().putInt("csOpen", v).apply()
+    var bizCloseMin: Int
+        get() = sp.getInt("csClose", 18 * 60)
+        set(v) = sp.edit().putInt("csClose", v).apply()
+    var openAlbumId: String
+        get() = sp.getString("csOpenAlbum", "all") ?: "all"
+        set(v) = sp.edit().putString("csOpenAlbum", v).apply()
+    var closedAlbumId: String
+        get() = sp.getString("csClosedAlbum", "all") ?: "all"
+        set(v) = sp.edit().putString("csClosedAlbum", v).apply()
+
+    /** True if, right now, we're inside the business-open window. */
+    fun isOpenNow(nowMinOfDay: Int = currentMinOfDay()): Boolean {
+        val start = bizOpenMin; val end = bizCloseMin
+        if (start == end) return true
+        return if (start < end) nowMinOfDay in start until end
+        else nowMinOfDay >= start || nowMinOfDay < end   // overnight window
+    }
+
+    /** The album the content schedule wants active right now, or null when the schedule is off. */
+    fun scheduledAlbumNow(): String? = if (!contentScheduleOn) null else if (isOpenNow()) openAlbumId else closedAlbumId
+
     /** True if, right now, the schedule says the frame should be asleep. */
     fun isSleepingNow(nowMinOfDay: Int = currentMinOfDay()): Boolean {
         if (!scheduleEnabled) return false
