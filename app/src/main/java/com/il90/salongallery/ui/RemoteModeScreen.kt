@@ -801,6 +801,14 @@ private fun ControlPanel(
     var busy by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0 to 0) } // done to total
 
+    // Keep the phone awake while uploading — otherwise the screen sleeps mid-transfer, the upload
+    // stalls and the "Sending x/y" counter freezes.
+    val keepOnView = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(busy) {
+        keepOnView.keepScreenOn = busy
+        onDispose { keepOnView.keepScreenOn = false }
+    }
+
     var frameId by remember { mutableIntStateOf(0) }
     var frameWidth by remember { mutableStateOf(1f) }
     var frameRandom by remember { mutableStateOf(false) }
@@ -891,17 +899,20 @@ private fun ControlPanel(
         // the new album receive the photos on every server version, and the wall shows them.
         if (album != null) PhotoSender.setActiveAlbum(screen.host, screen.port, album)
         var ok = 0
-        uris.forEachIndexed { i, uri ->
-            val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true
-            val bytes = readBytes(uri)
-            if (bytes != null) {
-                val err = if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, bytes, album)
-                    else PhotoSender.sendPhoto(screen.host, screen.port, bytes, album)
-                if (err == null) ok++
+        try {
+            uris.forEachIndexed { i, uri ->
+                val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true
+                val bytes = readBytes(uri)
+                if (bytes != null) {
+                    val err = if (isVideo) PhotoSender.sendVideo(screen.host, screen.port, bytes, album)
+                        else PhotoSender.sendPhoto(screen.host, screen.port, bytes, album)
+                    if (err == null) ok++
+                }
+                progress = (i + 1) to uris.size
             }
-            progress = (i + 1) to uris.size
+        } finally {
+            busy = false   // always clear, even if a send throws, so the UI never stays stuck
         }
-        busy = false
         status = "Added $ok / ${uris.size} ✓"
         onInfoRefresh(scope); refreshLib()
     }
@@ -1451,6 +1462,12 @@ private fun LibraryManager(screen: DiscoveredScreen, bottomInset: androidx.compo
     var activeId by remember { mutableStateOf("all") }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
+    // Keep the phone awake while uploading from the library manager too.
+    val libKeepOnView = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(busy) {
+        libKeepOnView.keepScreenOn = busy
+        onDispose { libKeepOnView.keepScreenOn = false }
+    }
     var showNew by remember { mutableStateOf(false) }
     var addTarget by remember { mutableStateOf<List<String>?>(null) }
     var studioPhoto by remember { mutableStateOf<String?>(null) }
