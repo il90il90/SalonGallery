@@ -92,6 +92,10 @@ class PhotoServer(
     companion object {
         /** A fixed, well-known port so the Remote can connect by IP alone (no port needed). */
         const val FIXED_PORT = 50505
+
+        /** Largest upload we'll buffer in memory (photos are a few MB; this leaves room for short
+         *  video clips while refusing anything big enough to risk OutOfMemory on a modest TV box). */
+        const val MAX_UPLOAD_BYTES = 96 * 1024 * 1024
     }
 
     override fun serve(session: IHTTPSession): Response = try {
@@ -371,12 +375,21 @@ class PhotoServer(
         }
     } catch (e: Exception) {
         newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", e.message ?: "error")
+    } catch (e: OutOfMemoryError) {
+        // A single oversized request (e.g. a large decode/upload) must never crash the whole app:
+        // free what we can and fail just this request. Coil's cache is cleared opportunistically.
+        runCatching { System.gc() }
+        newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "low memory")
     }
 
     private fun readBody(session: IHTTPSession): ByteArray? {
         val len = session.headers["content-length"]?.toIntOrNull() ?: return null
         if (len <= 0) return null
-        val buf = ByteArray(len)
+        // Refuse an upload too big to hold in memory before we even try to allocate it: a huge (or
+        // spoofed) Content-Length would otherwise throw OutOfMemoryError and take the app down. The
+        // allocation itself is also guarded, so a tight device fails the one upload instead of crashing.
+        if (len > MAX_UPLOAD_BYTES) return null
+        val buf = try { ByteArray(len) } catch (e: OutOfMemoryError) { return null }
         var read = 0
         while (read < len) {
             val r = session.inputStream.read(buf, read, len - read)
