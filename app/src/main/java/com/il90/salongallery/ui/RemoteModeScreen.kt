@@ -873,7 +873,7 @@ private fun ControlPanel(
     var shuffle by remember { mutableStateOf(false) }
     var intervalMs by remember { mutableStateOf(30000L) }
     var orientation by remember { mutableStateOf("auto") }
-    var effect by remember { mutableStateOf("fade") }
+    var effect by remember { mutableStateOf("none") }
     var effectPool by remember { mutableStateOf(setOf("fade", "slide", "zoom", "dissolve")) }
     var filter by remember { mutableStateOf("none") }
     var filterPool by remember { mutableStateOf(setOf("none", "mono", "sepia", "warm", "cool", "vignette")) }
@@ -2779,12 +2779,13 @@ private fun RssSheet(screen: DiscoveredScreen, onDismiss: () -> Unit) {
     }
 }
 
-/** All transitions as (key, label) for the Effects picker. */
+/** All transitions as (key, label) for the Effects picker. "None" (no transition) is first and is the
+ *  default. */
 private val TRANSITIONS = listOf(
-    "fade" to "Fade", "dissolve" to "Dissolve", "slide" to "Slide ←", "slideright" to "Slide →",
+    "none" to "None", "fade" to "Fade", "dissolve" to "Dissolve", "slide" to "Slide ←", "slideright" to "Slide →",
     "slideup" to "Slide ↑", "slidedown" to "Slide ↓", "zoom" to "Zoom in", "zoomout" to "Zoom out",
     "reveal" to "Reveal", "grow" to "Grow", "swap" to "Swap", "drift" to "Drift",
-    "cardstack" to "Stack", "kenburns" to "Ken Burns", "none" to "Off",
+    "cardstack" to "Stack", "kenburns" to "Ken Burns",
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -2804,7 +2805,7 @@ private fun EffectsSheet(
             val isRandom = effect == "random"
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 EffectChip("🎲 " + stringResource(R.string.effects_random), selected = isRandom, showCheck = false) {
-                    onEffect(if (isRandom) "fade" else "random")
+                    onEffect(if (isRandom) "none" else "random")
                 }
                 TRANSITIONS.forEach { (key, label) ->
                     val sel = if (isRandom) key in pool else key == effect

@@ -74,7 +74,8 @@ class ScreenSession(
     val frameWidth = MutableStateFlow(1f)
     val intervalMs = MutableStateFlow(prefs.slideInterval)
     val shuffle = MutableStateFlow(prefs.slideShuffle)
-    val effect = MutableStateFlow(SlideEffect.FADE)
+    // Default to NONE: no transition between slides unless the user picks one.
+    val effect = MutableStateFlow(SlideEffect.NONE)
     /** Transitions to shuffle among when effect == RANDOM. */
     val effectPool = MutableStateFlow(listOf("fade", "slide", "zoom", "dissolve"))
     /** Which looks the "Random" look shuffles between (per-photo). */
