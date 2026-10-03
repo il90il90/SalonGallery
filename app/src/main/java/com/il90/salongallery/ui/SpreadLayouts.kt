@@ -196,8 +196,9 @@ private fun tossed(n: Int, w: Float, h: Float, r: kotlin.random.Random, style: P
     val cols = if (landscape) min(n, 3) else 2
     val rows = (n + cols - 1) / cols
     val cellW = w / cols; val cellH = h / rows
-    // Fit a print (width pw, height pw*aspect) in its cell with room to tilt.
-    val pw = min(cellW * 0.8f, cellH * 0.8f / aspectHW)
+    // Fit a print (width pw, height pw*aspect) in its cell with room to tilt. Bigger fill (0.9) so the
+    // photos dominate instead of floating small on the surface.
+    val pw = min(cellW * 0.9f, cellH * 0.9f / aspectHW)
     return List(n) { k ->
         val col = k % cols; val row = k / cols
         val rowCount = if (row == rows - 1) n - row * cols else cols
@@ -542,41 +543,48 @@ private fun pyramid(n: Int, w: Float, h: Float): List<Placement> {
 
 /** Prints arranged in a diamond around the centre (one at each point, extras stacked in the middle). */
 private fun diamond(n: Int, w: Float, h: Float): List<Placement> {
-    val s = min(w, h) * 0.30f
-    val pw = s; val ph = s * 0.82f
-    val dx = w * 0.26f; val dy = h * 0.28f
-    val cx = w / 2f; val cy = h / 2f
-    val offsets = listOf(0f to -1f, 1f to 0f, 0f to 1f, -1f to 0f, 0f to 0f)
-    return List(n) { k ->
-        val (ox, oy) = offsets[k % offsets.size]
-        Placement(cx + ox * dx - pw / 2f, cy + oy * dy - ph / 2f, pw, ph, 0f, PrintStyle.PRINT)
+    // A plus of large bordered prints filling the middle row and column of a 3×3 grid — big photos,
+    // only the four corners left as surface (distinct from Cross by its white print borders).
+    val g = min(w, h) * 0.018f
+    val cw = (w - 4 * g) / 3f
+    val ch = (h - 4 * g) / 3f
+    val inset = min(cw, ch) * 0.04f
+    fun cell(col: Int, row: Int): Placement {
+        val x = g + col * (cw + g) + inset
+        val y = g + row * (ch + g) + inset
+        return Placement(x, y, cw - 2 * inset, ch - 2 * inset, 0f, PrintStyle.PRINT)
     }
+    val cells = listOf(cell(1, 1), cell(1, 0), cell(2, 1), cell(1, 2), cell(0, 1))
+    return List(n) { k -> cells[k % cells.size] }
 }
 
-/** A plus/cross of five prints: centre, up, down, left, right. */
+/** A plus/cross filling the middle row and column of a 3×3 grid — big edge-to-edge cells (only the
+ *  four corners stay empty), so the photos are large instead of small prints floating on black. */
 private fun cross(n: Int, w: Float, h: Float): List<Placement> {
-    val pw = min(w, h) * 0.3f; val ph = pw * 0.8f
-    val dx = w * 0.27f; val dy = h * 0.29f
-    val cx = w / 2f; val cy = h / 2f
-    val offsets = listOf(0f to 0f, 0f to -1f, 0f to 1f, -1f to 0f, 1f to 0f)
-    return List(n) { k ->
-        val (ox, oy) = offsets[k % offsets.size]
-        Placement(cx + ox * dx - pw / 2f, cy + oy * dy - ph / 2f, pw, ph, 0f, PrintStyle.PRINT)
-    }
+    val g = min(w, h) * 0.02f
+    val cw = (w - 4 * g) / 3f
+    val ch = (h - 4 * g) / 3f
+    fun cell(col: Int, row: Int) = Placement(g + col * (cw + g), g + row * (ch + g), cw, ch, 0f, PrintStyle.CELL)
+    // centre, up, down, left, right
+    val cells = listOf(cell(1, 1), cell(1, 0), cell(1, 2), cell(0, 1), cell(2, 1))
+    return List(n) { k -> cells[k % cells.size] }
 }
 
-/** A framed hero in the centre with a framed print in each corner. */
+/** A big framed hero in the centre with a framed print in each corner — sized so the four corner
+ *  prints and the hero nearly meet, leaving little empty surface. */
 private fun corners(n: Int, w: Float, h: Float): List<Placement> {
     val out = mutableListOf<Placement>()
-    val heroW = w * 0.42f; val heroH = h * 0.42f
-    out += Placement(w / 2f - heroW / 2f, h / 2f - heroH / 2f, heroW, heroH, 0f, PrintStyle.FRAMED)
-    val cw = w * 0.26f; val ch = h * 0.3f
-    val m = min(w, h) * 0.03f
+    val m = min(w, h) * 0.02f
+    // Corners first: each ~1/3 of the slide, tucked into the four corners.
+    val cw = w * 0.33f; val ch = h * 0.40f
     val pos = listOf(
         m to m, (w - cw - m) to m, m to (h - ch - m), (w - cw - m) to (h - ch - m),
     )
     for (k in 0 until (n - 1).coerceAtMost(4)) out += Placement(pos[k].first, pos[k].second, cw, ch, 0f, PrintStyle.FRAMED)
-    return out
+    // Hero fills the middle, slightly overlapping the corners for a layered, full look.
+    val heroW = w * 0.46f; val heroH = h * 0.56f
+    out.add(0, Placement(w / 2f - heroW / 2f, h / 2f - heroH / 2f, heroW, heroH, 0f, PrintStyle.FRAMED))
+    return out.take(n)
 }
 
 /** Full-width horizontal bands stacked down the slide (rows of one photo each). */
