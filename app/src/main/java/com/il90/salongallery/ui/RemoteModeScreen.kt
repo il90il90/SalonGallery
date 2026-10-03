@@ -85,7 +85,6 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.DragIndicator
@@ -3043,8 +3042,6 @@ private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (St
             leadingIcon = { Icon(Icons.Outlined.Image, null, tint = NeonCyan) })
         DropdownMenuItem(text = { Text(stringResource(R.string.add_videos), color = TextPrimary) }, onClick = { onFiles("video") },
             leadingIcon = { Icon(Icons.Outlined.PlayArrow, null, tint = NeonBlue) })
-        DropdownMenuItem(text = { Text(stringResource(R.string.add_both), color = TextPrimary) }, onClick = { onFiles("all") },
-            leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null, tint = NeonCyan) })
         // The gallery picker above is Android's Photo Picker, which caps a selection at ~100. This
         // uses the file picker instead, which has no such limit — for sending hundreds at once.
         DropdownMenuItem(text = { Text(stringResource(R.string.add_many_files), color = TextPrimary) }, onClick = { onManyFiles() },
@@ -3052,8 +3049,6 @@ private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (St
         androidx.compose.material3.HorizontalDivider(color = ElecBorder)
         DropdownMenuItem(text = { Text(stringResource(R.string.add_folder), color = TextPrimary) }, onClick = { onFolder() },
             leadingIcon = { Icon(Icons.Outlined.Folder, null, tint = NeonTeal) })
-        if (hasSyncFolder) DropdownMenuItem(text = { Text(stringResource(R.string.add_sync_folder), color = TextPrimary) }, onClick = { onSync() },
-            leadingIcon = { Icon(Icons.Outlined.Sync, null, tint = NeonTeal) })
         DropdownMenuItem(text = { Text(stringResource(R.string.home_gphotos), color = TextPrimary) }, onClick = { onGooglePhotos() },
             leadingIcon = { Icon(Icons.Outlined.Link, null, tint = NeonBlue) })
     }

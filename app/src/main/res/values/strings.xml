@@ -86,7 +86,6 @@
     <string name="home_gphotos">Google Photos</string>
     <string name="add_photos">Photos</string>
     <string name="add_videos">Videos</string>
-    <string name="add_both">Photos &amp; videos</string>
     <string name="add_folder">Whole folder…</string>
     <string name="folder_empty">No photos or videos in that folder.</string>
     <string name="gphotos_title">Google Photos</string>
@@ -344,7 +343,6 @@
     <string name="slideshow_orient_eyebrow">Screen orientation</string>
     <string name="slideshow_orient_explain">Auto follows how the screen is mounted; lock it if your frame doesn\'t rotate.</string>
     <string name="slideshow_framing_eyebrow">Framing</string>
-    <string name="add_sync_folder">Sync folder (new photos)</string>
     <string name="slideshow_bg_eyebrow">Background</string>
     <string name="slideshow_bg_title">The colour behind a photo</string>
     <string name="slideshow_bg_explain">Shown around a photo that doesn\'t fill the screen. A darker colour is easier on the eyes.</string>
