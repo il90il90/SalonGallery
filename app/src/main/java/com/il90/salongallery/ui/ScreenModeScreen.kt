@@ -710,7 +710,9 @@ private fun Slideshow(
         // leave `idx` unchanged, so the advance timer never re-arms and the wall freezes. Step on.
         return if (next == from) (from + 1) % files.size else next
     }
-    fun advanceFrom(from: Int) { if (files.size > 1) onNext(nextIndexFrom(from)) }
+    fun advanceFrom(from: Int) {
+        if (files.size > 1) onNext(runCatching { nextIndexFrom(from) }.getOrDefault((from + 1) % files.size))
+    }
 
     // Decode every still of a slide and WAIT until they are all in Coil's memory cache, so the wall
     // never swaps to a slide whose photos haven't loaded (no blank cell during the transition).
@@ -734,13 +736,15 @@ private fun Slideshow(
     }
 
     // Still photos advance on their own duration (or the slideshow default); videos advance when they end.
+    // Every step is guarded so no single slide's layout maths can ever throw (which would crash the wall)
+    // or stall it: whatever happens, we always advance to a valid next index. A 24/7 wall must never freeze.
     LaunchedEffect(idx, shuffle, intervalMs, files.size, currentIsVideo, collageOn, layout) {
         if (currentIsVideo || files.size <= 1) return@LaunchedEffect
-        val sec = durationOf(files[idx])
+        val sec = runCatching { durationOf(files[idx]) }.getOrDefault(0)
         delay(if (sec > 0) sec * 1000L else intervalMs)
         // Make sure the next slide's photos are decoded before switching (cap the wait so a slow
-        // decode can never stall the show), then advance.
-        val next = nextIndexFrom(idx)
+        // decode can never stall the show), then advance. Any error → just step to the next item.
+        val next = runCatching { nextIndexFrom(idx) }.getOrDefault((idx + 1) % files.size)
         runCatching { withTimeout(2500) { awaitSlideReady(next) } }
         onNext(next)
     }

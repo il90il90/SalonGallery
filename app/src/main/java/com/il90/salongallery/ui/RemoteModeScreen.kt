@@ -940,6 +940,15 @@ private fun ControlPanel(
             pendingMedia = uris
         }
     }
+    // Uncapped multi-select via the file picker (SAF): Android's Photo Picker limits a selection to
+    // ~100, this one doesn't, so hundreds can be sent at once (from device storage and file providers).
+    val manyFilesPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            destAlbums = PhotoSender.getAlbums(screen.host, screen.port)?.albums ?: emptyList()
+            pendingMedia = uris
+        }
+    }
     // "Whole folder": pick a folder (e.g. DCIM/Camera) and send every photo and video in it, sub-folders
     // included — no selection to make and no cap at all.
     // Remembered sync folder (persisted), so "Sync folder" can re-scan it later for new files.
@@ -1086,6 +1095,7 @@ private fun ControlPanel(
                     onGooglePhotos = { mediaMenu = false; showGooglePhotos = true },
                     hasSyncFolder = syncFolder != null,
                     onSync = { mediaMenu = false; syncFolderNow() },
+                    onManyFiles = { mediaMenu = false; manyFilesPicker.launch(arrayOf("image/*", "video/*")) },
                 )
                 // Second step for "Whole folder": which kinds to pull from it.
                 MediaKindMenu(folderKindMenu, { folderKindMenu = false }) { kind ->
@@ -2979,13 +2989,17 @@ private fun visualTypeFor(kind: String): ActivityResultContracts.PickVisualMedia
  * file picker for the chosen kind; [onFolder] opens the folder picker.
  */
 @Composable
-private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (String) -> Unit, onFolder: () -> Unit, onGooglePhotos: () -> Unit = {}, hasSyncFolder: Boolean = false, onSync: () -> Unit = {}) {
+private fun AddSourceMenu(expanded: Boolean, onDismiss: () -> Unit, onFiles: (String) -> Unit, onFolder: () -> Unit, onGooglePhotos: () -> Unit = {}, hasSyncFolder: Boolean = false, onSync: () -> Unit = {}, onManyFiles: () -> Unit = {}) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, containerColor = com.il90.salongallery.ui.theme.ElecSurface) {
         DropdownMenuItem(text = { Text(stringResource(R.string.add_photos), color = TextPrimary) }, onClick = { onFiles("photo") },
             leadingIcon = { Icon(Icons.Outlined.Image, null, tint = NeonCyan) })
         DropdownMenuItem(text = { Text(stringResource(R.string.add_videos), color = TextPrimary) }, onClick = { onFiles("video") },
             leadingIcon = { Icon(Icons.Outlined.PlayArrow, null, tint = NeonBlue) })
         DropdownMenuItem(text = { Text(stringResource(R.string.add_both), color = TextPrimary) }, onClick = { onFiles("all") },
+            leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null, tint = NeonCyan) })
+        // The gallery picker above is Android's Photo Picker, which caps a selection at ~100. This
+        // uses the file picker instead, which has no such limit — for sending hundreds at once.
+        DropdownMenuItem(text = { Text(stringResource(R.string.add_many_files), color = TextPrimary) }, onClick = { onManyFiles() },
             leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null, tint = NeonCyan) })
         androidx.compose.material3.HorizontalDivider(color = ElecBorder)
         DropdownMenuItem(text = { Text(stringResource(R.string.add_folder), color = TextPrimary) }, onClick = { onFolder() },
