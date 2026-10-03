@@ -871,6 +871,14 @@ private fun ControlPanel(
             fit = it.fit; bgColor = it.bg; spreadMix = it.spreadMix
             stagger = it.stagger; shuffle = it.shuffle; collage = it.collage
             orientation = it.orientation; intervalMs = it.intervalMs; smartGroup = it.smartGroup
+            effect = it.effect; filter = it.filter
+            frameId = it.frameId; frameRandom = it.frameRandom; frameWidth = it.frameWidth
+            effectPool = it.effectPool.split(",").map { s -> s.trim() }.filter { s -> s.isNotBlank() }.toSet()
+                .ifEmpty { setOf("fade", "slide", "zoom", "dissolve") }
+            filterPool = it.filterPool.split(",").map { s -> s.trim() }.filter { s -> s.isNotBlank() }.toSet()
+                .ifEmpty { setOf("none", "mono", "sepia", "warm", "cool", "vignette") }
+            framePool = it.framePool.split(",").mapNotNull { s -> s.trim().toIntOrNull() }.toSet()
+                .ifEmpty { setOf(1, 3, 4, 8) }
         }
     }
     // Re-list whenever the Display reports its library changed (fixes "cleared photos still shown").

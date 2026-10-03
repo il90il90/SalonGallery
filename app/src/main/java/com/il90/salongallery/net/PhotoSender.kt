@@ -34,6 +34,14 @@ data class ScreenInfo(
     val collage: Boolean = false,
     val orientation: String = "auto",
     val smartGroup: Boolean = false,
+    val effect: String = "none",
+    val filter: String = "none",
+    val frameId: Int = 0,
+    val frameRandom: Boolean = false,
+    val frameWidth: Float = 1f,
+    val effectPool: String = "fade,slide,zoom,dissolve",
+    val filterPool: String = "none,mono,sepia,warm,cool,vignette",
+    val framePool: String = "1,3,4,8",
 )
 
 /** The Display's current (active-album) library, as seen by the Remote. */
@@ -242,6 +250,14 @@ object PhotoSender {
                 collage = o.optBoolean("collage", false),
                 orientation = o.optString("orient", "auto"),
                 smartGroup = o.optBoolean("smartgroup", false),
+                effect = o.optString("effect", "none"),
+                filter = o.optString("filter", "none"),
+                frameId = o.optInt("frame", 0),
+                frameRandom = o.optBoolean("framerand", false),
+                frameWidth = o.optDouble("framew", 1.0).toFloat(),
+                effectPool = o.optString("effectpool", "fade,slide,zoom,dissolve"),
+                filterPool = o.optString("filterpool", "none,mono,sepia,warm,cool,vignette"),
+                framePool = o.optString("framepool", "1,3,4,8"),
             )
         } catch (e: Exception) {
             null

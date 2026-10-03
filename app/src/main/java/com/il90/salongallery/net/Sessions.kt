@@ -67,23 +67,29 @@ class ScreenSession(
     val resetRoleTrigger = MutableStateFlow(0L)
     /** Index into the music library that is currently playing (updated by the player). */
     val musicIndex = MutableStateFlow(0)
-    val frameId = MutableStateFlow(0)
-    val frameRandom = MutableStateFlow(false)
+    val frameId = MutableStateFlow(prefs.frameId)
+    val frameRandom = MutableStateFlow(prefs.frameRandom)
     /** Frame ids to shuffle among when frameRandom is on. */
-    val framePool = MutableStateFlow(listOf(1, 3, 4, 8))
-    val frameWidth = MutableStateFlow(1f)
+    val framePool = MutableStateFlow(
+        prefs.framePool.split(",").mapNotNull { it.trim().toIntOrNull() }.ifEmpty { listOf(1, 3, 4, 8) }
+    )
+    val frameWidth = MutableStateFlow(prefs.frameWidth)
     val intervalMs = MutableStateFlow(prefs.slideInterval)
     val shuffle = MutableStateFlow(prefs.slideShuffle)
     // Default to NONE: no transition between slides unless the user picks one.
-    val effect = MutableStateFlow(SlideEffect.NONE)
+    val effect = MutableStateFlow(SlideEffect.from(prefs.effect))
     /** Transitions to shuffle among when effect == RANDOM. */
-    val effectPool = MutableStateFlow(listOf("fade", "slide", "zoom", "dissolve"))
+    val effectPool = MutableStateFlow(
+        prefs.effectPool.split(",").map { it.trim() }.filter { it.isNotBlank() }.ifEmpty { listOf("fade", "slide", "zoom", "dissolve") }
+    )
     /** Which looks the "Random" look shuffles between (per-photo). */
-    val filterPool = MutableStateFlow(listOf("none", "mono", "sepia", "warm", "cool", "vignette"))
+    val filterPool = MutableStateFlow(
+        prefs.filterPool.split(",").map { it.trim() }.filter { it.isNotBlank() }.ifEmpty { listOf("none", "mono", "sepia", "warm", "cool", "vignette") }
+    )
     val photoFit = MutableStateFlow(PhotoFit.from(prefs.photoFit))
     /** Backing colour behind photos (and letterbox bars): black | charcoal | slate | warm | white. */
     val bgColor = MutableStateFlow(prefs.bgColor)
-    val photoFilter = MutableStateFlow(PhotoFilter.NONE)
+    val photoFilter = MutableStateFlow(PhotoFilter.from(prefs.photoFilter))
     /** Auto-fill the screen with a tasteful collage when a photo's orientation leaves big gaps. */
     val collage = MutableStateFlow(prefs.collageOn)
     /** Slide composition: single photos, mosaics, scatters, or a random mix. */
@@ -236,6 +242,11 @@ class ScreenSession(
             """"bg":"${esc(bgColor.value)}","spreadmix":"${spreadMix.value.name.lowercase()}",""" +
             """"stagger":${spreadStagger.value},"shuffle":${shuffle.value},"collage":${collage.value},""" +
             """"orient":"${orientation.value.name.lowercase()}","smartgroup":${smartGroup.value},""" +
+            // Frame, transition effect and photo filter (+ their random pools) travel too, so those
+            // sheets also open showing the wall's real state and survive a Display restart.
+            """"effect":"${effect.value.name.lowercase()}","filter":"${photoFilter.value.name.lowercase()}",""" +
+            """"frame":${frameId.value},"framerand":${frameRandom.value},"framew":${frameWidth.value},""" +
+            """"effectpool":"${esc(effectPool.value.joinToString(","))}","filterpool":"${esc(filterPool.value.joinToString(","))}","framepool":"${esc(framePool.value.joinToString(","))}",""" +
             // "lib" changes on every library mutation (add/delete/clear/rotate/reorder) so the Remote can
             // refresh what it shows from a single poll instead of guessing after each of its own actions.
             """"brightness":$b,"volume":${volume.value},"interval":${intervalMs.value},"lib":${libraryVersion.value}}"""
@@ -408,14 +419,21 @@ class ScreenSession(
         }
     }
 
-    override fun onFrame(id: Int) { frameRandom.value = false; frameId.value = id }
+    override fun onFrame(id: Int) {
+        frameRandom.value = false; frameId.value = id
+        prefs.frameRandom = false; prefs.frameId = id
+    }
 
     override fun onFrameRandom(on: Boolean, pool: List<Int>) {
         frameRandom.value = on
-        if (pool.isNotEmpty()) framePool.value = pool
+        prefs.frameRandom = on
+        if (pool.isNotEmpty()) { framePool.value = pool; prefs.framePool = pool.joinToString(",") }
     }
 
-    override fun onFrameWidth(value: Float) { frameWidth.value = value.coerceIn(0.4f, 2.2f) }
+    override fun onFrameWidth(value: Float) {
+        frameWidth.value = value.coerceIn(0.4f, 2.2f)
+        prefs.frameWidth = frameWidth.value
+    }
 
     override fun onSlideshow(intervalMs: Long, shuffle: Boolean) {
         this.intervalMs.value = intervalMs.coerceIn(2000L, 86_400_000L)
@@ -430,14 +448,15 @@ class ScreenSession(
 
     override fun onEffect(effect: String) {
         this.effect.value = SlideEffect.from(effect)
+        prefs.effect = this.effect.value.name.lowercase()
     }
 
     override fun onFilterPool(names: List<String>) {
-        if (names.isNotEmpty()) filterPool.value = names
+        if (names.isNotEmpty()) { filterPool.value = names; prefs.filterPool = names.joinToString(",") }
     }
 
     override fun onEffectPool(names: List<String>) {
-        if (names.isNotEmpty()) effectPool.value = names
+        if (names.isNotEmpty()) { effectPool.value = names; prefs.effectPool = names.joinToString(",") }
     }
 
     override fun onFit(fit: String) {
@@ -449,6 +468,7 @@ class ScreenSession(
 
     override fun onFilter(filter: String) {
         this.photoFilter.value = PhotoFilter.from(filter)
+        prefs.photoFilter = this.photoFilter.value.name.lowercase()
     }
 
     override fun onCollage(on: Boolean) { collage.value = on; prefs.collageOn = on }

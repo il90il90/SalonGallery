@@ -126,6 +126,37 @@ class DisplayPrefs(context: Context) {
     var motion: String
         get() = sp.getString("motion", "off") ?: "off"
         set(v) = sp.edit().putString("motion", v).apply()
+    /** Slide transition effect (none | fade | slide | …). */
+    var effect: String
+        get() = sp.getString("effect", "none") ?: "none"
+        set(v) = sp.edit().putString("effect", v).apply()
+    /** Comma-joined transitions that the "Random" effect shuffles among. */
+    var effectPool: String
+        get() = sp.getString("effect_pool", "fade,slide,zoom,dissolve") ?: "fade,slide,zoom,dissolve"
+        set(v) = sp.edit().putString("effect_pool", v).apply()
+    /** Per-photo look/filter (none | mono | sepia | …). */
+    var photoFilter: String
+        get() = sp.getString("filter", "none") ?: "none"
+        set(v) = sp.edit().putString("filter", v).apply()
+    /** Comma-joined filters that the "Random" look shuffles among. */
+    var filterPool: String
+        get() = sp.getString("filter_pool", "none,mono,sepia,warm,cool,vignette") ?: "none,mono,sepia,warm,cool,vignette"
+        set(v) = sp.edit().putString("filter_pool", v).apply()
+    /** Decorative frame/border id around photos (0 = none). */
+    var frameId: Int
+        get() = sp.getInt("frame_id", 0)
+        set(v) = sp.edit().putInt("frame_id", v).apply()
+    var frameRandom: Boolean
+        get() = sp.getBoolean("frame_random", false)
+        set(v) = sp.edit().putBoolean("frame_random", v).apply()
+    /** Comma-joined frame ids to shuffle among when [frameRandom] is on. */
+    var framePool: String
+        get() = sp.getString("frame_pool", "1,3,4,8") ?: "1,3,4,8"
+        set(v) = sp.edit().putString("frame_pool", v).apply()
+    /** Frame thickness multiplier (0.4..2.2). */
+    var frameWidth: Float
+        get() = sp.getFloat("frame_width", 1f)
+        set(v) = sp.edit().putFloat("frame_width", v).apply()
     var motionSpeed: String
         get() = sp.getString("mspeed", "slow") ?: "slow"
         set(v) = sp.edit().putString("mspeed", v).apply()
