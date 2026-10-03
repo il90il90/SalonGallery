@@ -419,6 +419,9 @@ object PhotoSender {
     /** Slide composition: single | mosaic | scatter | random. */
     suspend fun setLayout(host: String, port: Int, mode: String) =
         get(host, port, "/layout?mode=$mode")
+    /** Which spread layouts "Mix" draws from (empty = every spread). */
+    suspend fun setLayoutPool(host: String, port: Int, names: List<String>) =
+        get(host, port, "/layoutpool?names=${enc(names.joinToString(","))}")
     /** How often a spread replaces a single photo: always | often | sometimes | rarely. */
     suspend fun setSpreadMix(host: String, port: Int, level: String) =
         get(host, port, "/spreadmix?level=$level")

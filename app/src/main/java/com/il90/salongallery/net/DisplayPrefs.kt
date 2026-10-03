@@ -119,6 +119,10 @@ class DisplayPrefs(context: Context) {
     var layout: String
         get() = sp.getString("layout", "single") ?: "single"
         set(v) = sp.edit().putString("layout", v).apply()
+    /** Comma-joined spread keys that "Mix" draws from; empty = every spread. */
+    var layoutPool: String
+        get() = sp.getString("layout_pool", "") ?: ""
+        set(v) = sp.edit().putString("layout_pool", v).apply()
     var motion: String
         get() = sp.getString("motion", "off") ?: "off"
         set(v) = sp.edit().putString("motion", v).apply()

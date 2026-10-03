@@ -15,6 +15,7 @@
     <string name="upload_notif_title">Sending photos to the screen</string>
     <string name="upload_notif_progress">Sent %1$d of %2$d</string>
     <string name="upload_notif_working">Uploading…</string>
+    <string name="slideshow_mix_pick">Tick the collages Mix should choose from.</string>
     <string name="notif_channel_screen">Screen status</string>
     <string name="notif_screen_offline_title">Screen offline</string>
     <string name="notif_screen_offline_body">\"%1$s\" isn\'t responding — it may be off, restarting, or off the Wi-Fi.</string>

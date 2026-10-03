@@ -197,6 +197,7 @@ fun ScreenModeScreen(actions: AppActions) {
     val photoFilter by session.photoFilter.collectAsStateWithLifecycle()
     val collage by session.collage.collectAsStateWithLifecycle()
     val layout by session.layout.collectAsStateWithLifecycle()
+    val layoutPool by session.layoutPool.collectAsStateWithLifecycle()
     val motion by session.motion.collectAsStateWithLifecycle()
     val spreadStagger by session.spreadStagger.collectAsStateWithLifecycle()
     val smartGroup by session.smartGroup.collectAsStateWithLifecycle()
@@ -411,6 +412,7 @@ fun ScreenModeScreen(actions: AppActions) {
                         volume = volume,
                         collageOn = collage,
                         layout = layout,
+                        layoutPool = layoutPool,
                         motion = motion,
                         stagger = spreadStagger,
                         smartGroup = smartGroup,
@@ -525,6 +527,7 @@ private fun Slideshow(
     volume: Float,
     collageOn: Boolean,
     layout: LayoutMode = LayoutMode.SINGLE,
+    layoutPool: List<String> = emptyList(),
     motion: MotionMode = MotionMode.OFF,
     stagger: Boolean = false,
     smartGroup: Boolean = false,
@@ -564,6 +567,13 @@ private fun Slideshow(
     // spread layout. [spreadMix] decides how often a slide is a spread at all — the others show one
     // photo. A layout that needs more photos than there are falls back to a Grid. Needs 4+ stills.
     val stillCount = remember(files) { files.count { !isVideoName(it.name) } }
+
+    // The spread layouts "Mix" (RANDOM) draws from — the user's chosen subset, or every spread when
+    // the pool is empty / none of the chosen names are valid spreads.
+    val randomSpreads = remember(layoutPool) {
+        layoutPool.map { LayoutMode.from(it) }.filter { it.isSpread }.distinct()
+            .ifEmpty { LayoutMode.SPREADS }
+    }
 
     // Smart, live memory budget: how many photos a spread may hold RIGHT NOW — derived from the
     // device's RAM, how much is free this moment, and the cost of one photo at the decode size, rather
@@ -636,7 +646,7 @@ private fun Slideshow(
             return resolveSpread(m)
         }
         if (rr.nextFloat() >= spreadMix.chance) return null
-        val m = if (layout == LayoutMode.RANDOM) LayoutMode.SPREADS[rr.nextInt(LayoutMode.SPREADS.size)] else layout
+        val m = if (layout == LayoutMode.RANDOM) randomSpreads[rr.nextInt(randomSpreads.size)] else layout
         return resolveSpread(m)
     }
 

@@ -62,6 +62,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BrightnessMedium
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.SkipNext
@@ -827,6 +828,7 @@ private fun ControlPanel(
     var bgColor by remember { mutableStateOf("black") }
     var collage by remember { mutableStateOf(false) }
     var layout by remember { mutableStateOf("single") }
+    var layoutPool by remember { mutableStateOf(SPREAD_KEYS.toSet()) }
     var motion by remember { mutableStateOf("off") }
     var stagger by remember { mutableStateOf(false) }
     var smartGroup by remember { mutableStateOf(false) }
@@ -1138,6 +1140,8 @@ private fun ControlPanel(
             shuffle = shuffle, intervalMs = intervalMs, orientation = orientation, fit = fit, collage = collage,
             layout = layout,
             onLayout = { layout = it; scope.launch { PhotoSender.setLayout(screen.host, screen.port, it) } },
+            layoutPool = layoutPool,
+            onLayoutPool = { layoutPool = it; scope.launch { PhotoSender.setLayoutPool(screen.host, screen.port, it.toList()) } },
             motion = motion, motionSpeed = motionSpeed,
             stagger = stagger,
             spreadMix = spreadMix,
@@ -3052,7 +3056,7 @@ private val MEDIA_TYPES = arrayOf("image/*", "video/*")
  * Built from the exact same [placeSpread] geometry the TV uses, so the preview matches the result.
  */
 @Composable
-private fun LayoutPreviewTile(key: String, label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun LayoutPreviewTile(key: String, label: String, selected: Boolean, modifier: Modifier = Modifier, check: Boolean? = null, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -3064,6 +3068,17 @@ private fun LayoutPreviewTile(key: String, label: String, selected: Boolean, mod
                 .border(if (selected) 2.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
         ) {
+            // When picking which layouts "Mix" uses, each spread tile shows a check in its corner.
+            if (check != null) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(5.dp).size(18.dp).clip(CircleShape)
+                        .background(if (check) NeonCyan else Color(0x66000000))
+                        .border(1.dp, if (check) NeonCyan else Color.White.copy(0.5f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (check) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                }
+            }
             if (key == "auto") {
                 // "Auto": a tall print beside two stacked ones — the wall fits the photos itself.
                 androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(7.dp)) {
@@ -3143,11 +3158,15 @@ private val LAYOUTS = listOf(
     "collage" to "Collage", "frames" to "Frames", "patchwork" to "Patchwork", "overlap" to "Overlap", "diagonal" to "Diagonal",
 )
 
+/** The spread layout keys (everything except Auto / Mix / Single) — the pool "Mix" can draw from. */
+private val SPREAD_KEYS = LAYOUTS.map { it.first }.filter { it != "auto" && it != "random" && it != "single" }
+
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun SlideshowSheet(
     shuffle: Boolean, intervalMs: Long, orientation: String, fit: String, collage: Boolean,
     layout: String = "single", onLayout: (String) -> Unit = {},
+    layoutPool: Set<String> = emptySet(), onLayoutPool: (Set<String>) -> Unit = {},
     motion: String = "off", motionSpeed: String = "medium",
     stagger: Boolean = false, onStagger: (Boolean) -> Unit = {},
     smartGroup: Boolean = false, onSmartGroup: (Boolean) -> Unit = {},
@@ -3191,6 +3210,18 @@ private fun SlideshowSheet(
 
             // LAYOUT
             SettingsCard(stringResource(R.string.slideshow_layout_eyebrow), stringResource(R.string.slideshow_layout_title), stringResource(R.string.slideshow_layout_hint)) {
+                // When "Mix" is chosen, the spread tiles become a multi-select pool — tick the collages
+                // Mix should draw from. Otherwise a tile just picks that one layout.
+                val isMix = layout == "random"
+                if (isMix) {
+                    val allOn = SPREAD_KEYS.all { it in layoutPool }
+                    Text(stringResource(R.string.slideshow_mix_pick), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    EffectChip(stringResource(if (allOn) R.string.pool_clear_all else R.string.pool_select_all), selected = allOn, showCheck = false) {
+                        onLayoutPool(if (allOn) setOf(SPREAD_KEYS.first()) else SPREAD_KEYS.toSet())
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
                 // Three tiles per row (was two): sized to the card width so they stay uniform and the
                 // whole layout list is easier to scan.
                 val gap = 10.dp
@@ -3198,7 +3229,15 @@ private fun SlideshowSheet(
                     val tileW = (maxWidth - gap * 2) / 3
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         LAYOUTS.forEach { (key, label) ->
-                            LayoutPreviewTile(key, label, selected = key == layout, modifier = Modifier.width(tileW)) { onLayout(key) }
+                            if (isMix && key in SPREAD_KEYS) {
+                                val inPool = key in layoutPool
+                                LayoutPreviewTile(key, label, selected = inPool, modifier = Modifier.width(tileW), check = inPool) {
+                                    val np = if (inPool) layoutPool - key else layoutPool + key
+                                    if (np.isNotEmpty()) onLayoutPool(np)   // keep at least one in the mix
+                                }
+                            } else {
+                                LayoutPreviewTile(key, label, selected = key == layout, modifier = Modifier.width(tileW)) { onLayout(key) }
+                            }
                         }
                     }
                 }

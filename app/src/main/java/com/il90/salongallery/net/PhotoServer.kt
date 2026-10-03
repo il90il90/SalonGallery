@@ -33,6 +33,7 @@ interface ScreenCommands {
     fun onFilter(filter: String)
     fun onCollage(on: Boolean)
     fun onLayout(mode: String)             // single | mosaic | scatter | random
+    fun onLayoutPool(names: List<String>)  // spread keys that "Mix" draws from (empty = all)
     fun onStagger(on: Boolean)             // spread photos appear one by one
     fun onSmartGroup(on: Boolean)          // group visually-similar photos into each spread
     fun onSpreadMix(level: String)         // always | often | sometimes | rarely
@@ -194,6 +195,10 @@ class PhotoServer(
             }
             session.method == Method.GET && uri == "/layout" -> {
                 session.parameters["mode"]?.firstOrNull()?.let { commands.onLayout(it) }; ok()
+            }
+            session.method == Method.GET && uri == "/layoutpool" -> {
+                val names = session.parameters["names"]?.firstOrNull()?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+                commands.onLayoutPool(names); ok()
             }
             session.method == Method.GET && uri == "/spreadmix" -> {
                 session.parameters["level"]?.firstOrNull()?.let { commands.onSpreadMix(it) }; ok()

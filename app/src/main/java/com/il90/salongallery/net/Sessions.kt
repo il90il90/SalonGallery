@@ -88,6 +88,8 @@ class ScreenSession(
     val collage = MutableStateFlow(prefs.collageOn)
     /** Slide composition: single photos, mosaics, scatters, or a random mix. */
     val layout = MutableStateFlow(LayoutMode.from(prefs.layout))
+    /** Which spread layouts "Mix" (RANDOM) draws from; empty = every spread. */
+    val layoutPool = MutableStateFlow(prefs.layoutPool.split(",").filter { it.isNotBlank() })
     /** Spread photos appear one by one (a staggered entrance) instead of all at once. */
     val spreadStagger = MutableStateFlow(prefs.spreadStagger)
     /** Group visually-similar photos (dominant colour) into each spread. */
@@ -448,6 +450,11 @@ class ScreenSession(
     override fun onCollage(on: Boolean) { collage.value = on; prefs.collageOn = on }
 
     override fun onLayout(mode: String) { layout.value = LayoutMode.from(mode); prefs.layout = mode }
+
+    override fun onLayoutPool(names: List<String>) {
+        layoutPool.value = names
+        prefs.layoutPool = names.joinToString(",")
+    }
 
     override fun onStagger(on: Boolean) { spreadStagger.value = on; prefs.spreadStagger = on }
 
