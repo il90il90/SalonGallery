@@ -78,6 +78,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Layers
@@ -618,23 +619,33 @@ private fun RemoteScreenAdmin(screen: DiscoveredScreen, onRoleReset: () -> Unit)
         }
         pinMsg?.let { Spacer(Modifier.height(8.dp)); Text(it, style = MaterialTheme.typography.labelMedium, color = NeonCyan) }
 
+        // Auto-sleep schedule lives in its own card (a clock section), set apart from the plain
+        // name/PIN fields above.
         Spacer(Modifier.height(22.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.admin_schedule), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
-            Switch(checked = schedOn, onCheckedChange = {
-                schedOn = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, it, sleepStart, sleepEnd) }
-            })
-        }
-        if (schedOn) {
-            Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.admin_schedule_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-            Spacer(Modifier.height(12.dp))
-            RemoteTimeRow(stringResource(R.string.admin_sleep_at), sleepStart) {
-                sleepStart = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, schedOn, it, sleepEnd) }
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                .background(ElecSurfaceElevated).border(1.dp, ElecBorder, RoundedCornerShape(18.dp))
+                .padding(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Schedule, null, tint = NeonCyan, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(stringResource(R.string.admin_schedule), style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
+                Switch(checked = schedOn, onCheckedChange = {
+                    schedOn = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, it, sleepStart, sleepEnd) }
+                })
             }
-            Spacer(Modifier.height(10.dp))
-            RemoteTimeRow(stringResource(R.string.admin_wake_at), sleepEnd) {
-                sleepEnd = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, schedOn, sleepStart, it) }
+            if (schedOn) {
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.admin_schedule_hint), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Spacer(Modifier.height(12.dp))
+                RemoteTimeRow(stringResource(R.string.admin_sleep_at), sleepStart) {
+                    sleepStart = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, schedOn, it, sleepEnd) }
+                }
+                Spacer(Modifier.height(10.dp))
+                RemoteTimeRow(stringResource(R.string.admin_wake_at), sleepEnd) {
+                    sleepEnd = it; scope.launch { PhotoSender.setSchedule(screen.host, screen.port, schedOn, sleepStart, it) }
+                }
             }
         }
 
@@ -2817,14 +2828,14 @@ private val MEDIA_TYPES = arrayOf("image/*", "video/*")
  * Built from the exact same [placeSpread] geometry the TV uses, so the preview matches the result.
  */
 @Composable
-private fun LayoutPreviewTile(key: String, label: String, selected: Boolean, onClick: () -> Unit) {
+private fun LayoutPreviewTile(key: String, label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(96.dp)
+        modifier = modifier
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() },
     ) {
         Box(
-            Modifier.size(96.dp, 62.dp).clip(RoundedCornerShape(12.dp))
+            Modifier.fillMaxWidth().aspectRatio(96f / 62f).clip(RoundedCornerShape(12.dp))
                 .background(if (key == "single" || key == "mosaic") Color(0xFF2A2017) else Color(0xFF1C1712))
                 .border(if (selected) 2.dp else 1.dp, if (selected) NeonCyan else ElecBorder, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
@@ -2938,8 +2949,16 @@ private fun SlideshowSheet(
 
             // LAYOUT
             SettingsCard(stringResource(R.string.slideshow_layout_eyebrow), stringResource(R.string.slideshow_layout_title), stringResource(R.string.slideshow_layout_hint)) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    LAYOUTS.forEach { (key, label) -> LayoutPreviewTile(key, label, selected = key == layout) { onLayout(key) } }
+                // Three tiles per row (was two): sized to the card width so they stay uniform and the
+                // whole layout list is easier to scan.
+                val gap = 10.dp
+                BoxWithConstraints {
+                    val tileW = (maxWidth - gap * 2) / 3
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LAYOUTS.forEach { (key, label) ->
+                            LayoutPreviewTile(key, label, selected = key == layout, modifier = Modifier.width(tileW)) { onLayout(key) }
+                        }
+                    }
                 }
             }
 
